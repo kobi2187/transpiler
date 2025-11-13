@@ -1,0 +1,33 @@
+import macros
+import strutils
+
+proc prettifyNimCode(code: string): string =
+  var indentLevel = 0
+  for line in code.splitLines():
+    let trimmedLine = line.strip()
+    if trimmedLine.endsWith(":"):
+      result.add("  ".repeat(indentLevel) & trimmedLine & "\n")
+      indentLevel.inc
+    elif trimmedLine == ")" or trimmedLine == "else:":
+      indentLevel.dec
+      result.add("  ".repeat(indentLevel) & trimmedLine & "\n")
+    else:
+      result.add("  ".repeat(indentLevel) & trimmedLine & "\n")
+
+proc nimTreeToCode*(node: NimNode): string =
+  let rawCode = repr(node)
+  result = prettifyNimCode(rawCode)
+
+# Example usage
+when isMainModule:
+  let testCode = quote do:
+    proc hello(name: string) =
+      echo "Hello, " & name
+    
+    let x = 10
+    if x > 5:
+      echo "x is greater than 5"
+    else:
+      echo "x is not greater than 5"
+
+  echo nimTreeToCode(testCode)

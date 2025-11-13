@@ -1,0 +1,91 @@
+import json, macros
+
+# XLang AST node types
+type
+  NodeKind = enum
+    # Basic Types
+    nkIntLit, nkFloatLit, nkBoolLit, nkStringLit, nkCharLit,
+    nkArrayExpr, nkSliceExpr, nkMapExpr, nkTupleExpr, nkSetExpr,
+
+    # Control Flow
+    nkIfStmt, nkSwitchStmt, nkForStmt, nkWhileStmt, nkDoWhileStmt,
+    nkForEachStmt, nkBreakStmt, nkContinueStmt, nkReturnStmt, nkGotoStmt,
+
+    # Functions and Methods
+    nkFuncDecl, nkMethodDecl, nkLambda, nkFuncCall, nkMethodCall,
+
+    # Object-Oriented Programming
+    nkClassDecl, nkInterfaceDecl, nkStructDecl, nkObjConstr,
+    nkInheritance, nkMethodOverride, nkConstructor, nkDestructor,
+
+    # Error Handling
+    nkTryStmt, nkDeferStmt, nkPanicStmt, nkRecoverStmt, nkRaiseStmt,
+
+    # Modules and Packages
+    nkImportStmt, nkExportStmt, nkPackageDecl,
+
+    # Concurrency and Parallelism
+    nkGoroutine, nkChannel, nkAsyncAwait, nkTask, nkThread,
+
+    # Memory Management
+    nkPointer, nkReference,
+
+    # Generics
+    nkGenericType, nkGenericFunc,
+
+    # Miscellaneous
+    nkDecorator, nkAttribute, nkEnum, nkYieldStmt, nkUsingStmt, nkWithStmt, nkAssertStmt,
+
+    # Operators
+    nkInfixExpr, nkPrefixExpr, nkPostfixExpr,
+
+    # Type-Related
+    nkTypeAssertion, nkTypeCast, nkTypeCheck, nkTypeInference, nkTypeAlias,
+
+    # Namespaces and Scoping
+    nkNamespaceDecl, nkScopeResolution, nkClosure,
+
+    # Reflection
+    nkReflection,
+
+    # Preprocessor Directives
+    nkPreprocessor,
+
+    # Annotations
+    nkAnnotation
+
+  XLangNode = ref object
+    case kind: NodeKind
+    of nkIntLit, nkFloatLit, nkBoolLit, nkStringLit, nkCharLit:
+      litValue: string
+    of nkArrayExpr, nkSliceExpr, nkTupleExpr, nkSetExpr:
+      elements: seq[XLangNode]
+    of nkMapExpr:
+      pairs: seq[tuple[key, value: XLangNode]]
+    of nkIfStmt:
+      condition: XLangNode
+      thenBranch: XLangNode
+      elseBranch: XLangNode
+    of nkSwitchStmt:
+      switchExpr: XLangNode
+      cases: seq[tuple[cond, body: XLangNode]]
+    of nkForStmt, nkWhileStmt, nkDoWhileStmt, nkForEachStmt:
+      loopCond: XLangNode
+      loopBody: XLangNode
+    of nkBreakStmt, nkContinueStmt, nkReturnStmt, nkGotoStmt:
+      label: string
+    of nkFuncDecl, nkMethodDecl, nkLambda:
+      name: string
+      params: seq[XLangNode]
+      returnType: XLangNode
+      body: XLangNode
+    of nkFuncCall, nkMethodCall:
+      funcName: string
+      args: seq[XLangNode]
+    of nkClassDecl, nkInterfaceDecl, nkStructDecl:
+      typeName: string
+      members: seq[XLangNode]
+    # ... Add more cases for other node kinds
+
+  # The rest of the code (JSON serialization, deserialization, etc.) remains the same
+  # but needs to be updated to handle the new node kinds

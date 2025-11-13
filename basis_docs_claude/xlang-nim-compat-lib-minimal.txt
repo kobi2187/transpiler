@@ -1,0 +1,45 @@
+# compat_lib.nim
+
+import asyncdispatch, locks
+
+# Go-like concurrency
+type
+  GoRoutine = proc() {.thread.}
+  Channel[T] = ref object
+    queue: seq[T]
+    lock: Lock
+    notEmpty, notFull: Cond
+    capacity: int
+
+proc go*(routine: GoRoutine) =
+  ## Mimics Go's goroutine creation
+  var thread: Thread[void]
+  createThread(thread, routine)
+
+proc newChannel[T](capacity: int = 0): Channel[T] =
+  ## Creates a new channel with optional capacity
+  result = Channel[T](capacity: capacity)
+  initLock(result.lock)
+  initCond(result.notEmpty)
+  initCond(result.notFull)
+
+proc send[T](ch: Channel[T], item: T) =
+  ## Sends an item to the channel
+  acquire(ch.lock)
+  while ch.queue.len == ch.capacity and ch.capacity > 0:
+    wait(ch.notFull, ch.lock)
+  ch.queue.add(item)
+  signal(ch.notEmpty)
+  release(ch.lock)
+
+proc recv[T](ch: Channel[T]): T =
+  ## Receives an item from the channel
+  acquire(ch.lock)
+  while ch.queue.len == 0:
+    wait(ch.notEmpty, ch.lock)
+  result = ch.queue.pop()
+  signal(ch.notFull)
+  release(ch.lock)
+
+# Exporting the public API
+export go, Channel, newChannel, send, recv

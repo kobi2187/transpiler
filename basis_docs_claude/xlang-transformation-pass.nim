@@ -1,0 +1,96 @@
+import options
+
+import xlangtypes
+# import xlang-ast
+
+# This module contains a set of transformations that are applied to the XLang AST
+proc transformXLang(node: XLangNode): XLangNode =
+  case node.kind
+  of xnkFile, xnkModule:
+    result = node
+    result.moduleDecls = result.moduleDecls.map(transformXLang)
+
+  of xnkFuncDecl, xnkMethodDecl:
+    result = node
+    result.body = transformXLang(result.body)
+    # Transform Go's defer to a try-finally block
+    if result.body.kind == xnkBlockStmt:
+      var deferStmts: seq[XLangNode] = @[]
+      var nonDeferStmts: seq[XLangNode] = @[]
+      for stmt in result.body.blockBody:
+        if stmt.kind == xnkDeferStmt:
+          deferStmts.add(stmt.deferredStmt)
+        else:
+          nonDeferStmts.add(stmt)
+      if deferStmts.len > 0:
+        result.body = XLangNode(kind: xnkTryStmt,
+          tryBody: XLangNode(kind: xnkBlockStmt, blockBody: nonDeferStmts),
+          catchClauses: @[],
+          finallyClause: some(XLangNode(kind: xnkBlockStmt, blockBody: deferStmts.reversed))
+        )
+
+  of xnkForStmt:
+    if node.forInit.isSome and node.forCond.isSome and node.forIncrement.isSome:
+      # Transform C-style for loop to while loop
+      result = XLangNode(kind: xnkBlockStmt)
+      result.blockBody = @[
+        node.forInit.get,
+        XLangNode(kind: xnkWhileStmt,
+          whileCondition: node.forCond.get,
+          whileBody: XLangNode(kind: xnkBlockStmt,
+            blockBody: node.forBody.blockBody & @[node.forIncrement.get]
+          )
+        )
+      ]
+    else:
+      result = node
+
+  of xnkSwitchStmt:
+    # Transform switch to if-elif-else chain if it contains fallthrough cases
+    var hasFallthrough = false
+    for case in node.switchCases:
+      if case.caseBody.len > 0 and case.caseBody[^1].kind == xnkFallthroughStmt:
+        hasFallthrough = true
+        break
+
+    if hasFallthrough:
+      result = XLangNode(kind: xnkIfStmt)
+      var currentIf = result
+      for i, case in node.switchCases:
+        let condition = XLangNode(kind: xnkBinaryExpr,
+          binaryLeft: node.switchExpr,
+          binaryOp: "==",
+          binaryRight: case.caseExpr
+        )
+        if i == 0:
+          currentIf.ifCondition = condition
+          currentIf.ifBody = XLangNode(kind: xnkBlockStmt, blockBody: case.caseBody)
+        else:
+          let newIf = XLangNode(kind: xnkIfStmt,
+            ifCondition: condition,
+            ifBody: XLangNode(kind: xnkBlockStmt, blockBody: case.caseBody)
+          )
+          currentIf.elseBody = some(newIf)
+          currentIf = newIf
+      if node.switchDefault.isSome:
+        currentIf.elseBody = node.switchDefault
+    else:
+      result = node
+
+  # Add more transformation cases as needed...
+
+  else:
+    result = node
+
+  # Recursively transform child nodes
+  for field in result.fields:
+    if field is XLangNode:
+      field = transformXLang(field)
+    elif field is seq[XLangNode]:
+      field = field.map(transformXLang)
+
+# Usage in the main transpilation pipeline:
+# let xlangAst = parseInputLanguage(sourceCode)
+# let transformedAst = transformXLang(xlangAst)
+# let nimAst = convertToNim(transformedAst)
+# let nimCode = repr(nimAst)
