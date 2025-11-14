@@ -21,6 +21,10 @@ import with_to_defer
 import async_normalization
 import union_to_variant
 import linq_to_sequtils
+import operator_overload
+import pattern_matching
+import decorator_attribute
+import extension_methods
 
 proc registerNimPasses*(pm: PassManager) =
   ## Register all transformation passes for Nim target language
@@ -213,11 +217,67 @@ proc registerNimPasses*(pm: PassManager) =
     dependencies: @[]  # No dependencies
   ))
 
-  # TODO: More passes to add:
-  # - Operator overloading normalization
-  # - Pattern matching (Rust/F#/Haskell) → case statements
-  # - Attributes/Decorators normalization
-  # - Extension methods (C#) → regular procs
+  # 17. Operator overloading normalization (Python, C++, C#)
+  # Transform operator special methods to Nim operator procs
+  pm.addPass(newTransformPass(
+    id: tpOperatorOverload,
+    name: "operator-overload",
+    kind: tpkNormalization,
+    description: "Normalize operator overloads to Nim syntax (backtick operators)",
+    transform: transformOperatorOverload,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 18. Pattern matching → case/if-elif (Rust, F#, Haskell, Python 3.10+)
+  # Advanced pattern matching to Nim case statements or if-elif chains
+  pm.addPass(newTransformPass(
+    id: tpPatternMatching,
+    name: "pattern-matching",
+    kind: tpkLowering,
+    description: "Transform pattern matching to case statements or if-elif chains",
+    transform: transformPatternMatching,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 19. Decorators/Attributes → pragmas (Python decorators, C# attributes)
+  # @decorator, [Attribute] → {.pragma.}
+  pm.addPass(newTransformPass(
+    id: tpDecoratorAttribute,
+    name: "decorator-attribute",
+    kind: tpkNormalization,
+    description: "Transform decorators and attributes to Nim pragmas",
+    transform: transformDecoratorAttribute,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 20. Extension methods → regular procs (C#)
+  # C# extension methods to Nim procedures (UFCS)
+  pm.addPass(newTransformPass(
+    id: tpExtensionMethods,
+    name: "extension-methods",
+    kind: tpkNormalization,
+    description: "Transform C# extension methods to regular Nim procedures",
+    transform: transformExtensionMethods,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # TODO: More passes to add (prioritizing Python, Go, C#):
+  # Python:
+  # - Generator expressions (yield) → iterators
+  # - Type hints/annotations → Nim types
+  # - Multiple inheritance → composition/interfaces
+  #
+  # Go:
+  # - Goroutines/channels → async/spawn + channels
+  # - Defer statement (different from Python's with)
+  # - Error handling pattern (if err != nil)
+  # - Implicit interfaces → explicit concepts
+  #
+  # C#:
+  # - Events and delegates → callbacks/closures
+  # - using statement (IDisposable) → defer
+  # - var keyword normalization → let with type inference
+  # - Partial classes → module organization
 
 proc createNimPassManager*(): PassManager =
   ## Create a pass manager with all Nim transformation passes registered

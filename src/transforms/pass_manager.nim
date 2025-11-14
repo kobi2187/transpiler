@@ -31,6 +31,10 @@ type
     tpAsyncNormalization = "async-normalization"
     tpUnionToVariant = "union-to-variant"
     tpLinqToSequtils = "linq-to-sequtils"
+    tpOperatorOverload = "operator-overload"
+    tpPatternMatching = "pattern-matching"
+    tpDecoratorAttribute = "decorator-attribute"
+    tpExtensionMethods = "extension-methods"
     # Add more passes here as they are implemented
 
   TransformPassKind* = enum
