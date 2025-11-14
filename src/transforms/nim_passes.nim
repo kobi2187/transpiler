@@ -25,6 +25,10 @@ import operator_overload
 import pattern_matching
 import decorator_attribute
 import extension_methods
+import go_error_handling
+import go_defer
+import csharp_using
+import go_concurrency
 
 proc registerNimPasses*(pm: PassManager) =
   ## Register all transformation passes for Nim target language
@@ -261,23 +265,67 @@ proc registerNimPasses*(pm: PassManager) =
     dependencies: @[]  # No dependencies
   ))
 
+  # 21. Go error handling pattern (if err != nil)
+  # Transform Go's explicit error returns to Nim exceptions
+  pm.addPass(newTransformPass(
+    id: tpGoErrorHandling,
+    name: "go-error-handling",
+    kind: tpkLowering,
+    description: "Transform Go error handling patterns to Nim exception handling",
+    transform: transformGoErrorHandling,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 22. Go defer statement normalization
+  # Go defer executes at function exit, Nim defer at scope exit
+  pm.addPass(newTransformPass(
+    id: tpGoDefer,
+    name: "go-defer",
+    kind: tpkNormalization,
+    description: "Normalize Go defer to Nim defer (handles scope differences)",
+    transform: transformGoDefer,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 23. C# using statement (IDisposable pattern)
+  # Transform C# using to Nim defer for resource cleanup
+  pm.addPass(newTransformPass(
+    id: tpCSharpUsing,
+    name: "csharp-using",
+    kind: tpkLowering,
+    description: "Transform C# using statements to Nim defer pattern",
+    transform: transformCSharpUsing,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 24. Go concurrency (goroutines and channels)
+  # Transform Go goroutines to Nim spawn/async and channels
+  pm.addPass(newTransformPass(
+    id: tpGoConcurrency,
+    name: "go-concurrency",
+    kind: tpkLowering,
+    description: "Transform Go goroutines and channels to Nim concurrency primitives",
+    transform: transformGoStatement,  # Main transform function
+    dependencies: @[]  # No dependencies
+  ))
+
   # TODO: More passes to add (prioritizing Python, Go, C#):
   # Python:
   # - Generator expressions (yield) → iterators
   # - Type hints/annotations → Nim types
   # - Multiple inheritance → composition/interfaces
+  # - f-string advanced features (format specs, conversions)
   #
   # Go:
-  # - Goroutines/channels → async/spawn + channels
-  # - Defer statement (different from Python's with)
-  # - Error handling pattern (if err != nil)
   # - Implicit interfaces → explicit concepts
+  # - Recover/panic → exception handling
+  # - Type assertions and type switches
   #
   # C#:
   # - Events and delegates → callbacks/closures
-  # - using statement (IDisposable) → defer
   # - var keyword normalization → let with type inference
   # - Partial classes → module organization
+  # - Nullable reference types → Option types
 
 proc createNimPassManager*(): PassManager =
   ## Create a pass manager with all Nim transformation passes registered

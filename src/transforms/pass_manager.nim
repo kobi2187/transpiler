@@ -35,6 +35,10 @@ type
     tpPatternMatching = "pattern-matching"
     tpDecoratorAttribute = "decorator-attribute"
     tpExtensionMethods = "extension-methods"
+    tpGoErrorHandling = "go-error-handling"
+    tpGoDefer = "go-defer"
+    tpCSharpUsing = "csharp-using"
+    tpGoConcurrency = "go-concurrency"
     # Add more passes here as they are implemented
 
   TransformPassKind* = enum
