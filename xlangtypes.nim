@@ -11,15 +11,17 @@ type
     xnkFieldDecl, xnkConstructorDecl, xnkDestructorDecl, xnkDelegateDecl
 
     # Statements
-    xnkBlockStmt, xnkIfStmt, xnkSwitchStmt, xnkForStmt, xnkWhileStmt
+    xnkBlockStmt, xnkIfStmt, xnkSwitchStmt, xnkCaseClause, xnkDefaultClause, xnkForStmt, xnkWhileStmt
     xnkDoWhileStmt, xnkForeachStmt, xnkTryStmt, xnkCatchStmt, xnkFinallyStmt
     xnkReturnStmt, xnkYieldStmt, xnkBreakStmt, xnkContinueStmt
     xnkThrowStmt, xnkAssertStmt, xnkWithStmt, xnkPassStmt
 
     # Expressions
     xnkBinaryExpr, xnkUnaryExpr, xnkTernaryExpr, xnkCallExpr, xnkIndexExpr
-    xnkSliceExpr, xnkMemberAccessExpr, xnkLambdaExpr, xnkListExpr, xnkDictExpr
-    xnkSetExpr, xnkTupleExpr, xnkComprehensionExpr, xnkAwaitExpr, xnkYieldExpr
+    xnkSliceExpr, xnkMemberAccessExpr, xnkSafeNavigationExpr, xnkNullCoalesceExpr
+    xnkLambdaExpr, xnkListExpr, xnkDictExpr
+    xnkSetExpr, xnkTupleExpr, xnkComprehensionExpr, xnkAwaitExpr, xnkYieldExpr,
+    xnkStringInterpolation
 
     # Literals
     xnkIntLit, xnkFloatLit, xnkStringLit, xnkCharLit, xnkBoolLit, xnkNoneLit
@@ -35,7 +37,8 @@ type
 
     xnkTemplateDef, xnkMacroDef, xnkPragma, xnkStaticStmt, xnkDeferStmt,
     xnkAsmStmt, xnkDistinctTypeDef, xnkConceptDef, xnkMixinStmt,
-    xnkBindStmt, xnkTupleConstr, xnkTupleUnpacking, xnkUsingStmt
+    xnkBindStmt, xnkTupleConstr, xnkTupleUnpacking, xnkUsingStmt,
+    xnkDestructureObj, xnkDestructureArray
 
 
 
@@ -103,8 +106,13 @@ type
       elseBody*: Option[XLangNode]
     of xnkSwitchStmt:
       switchExpr*: XLangNode
-      switchCases*: seq[tuple[caseExpr: XLangNode, caseBody: XLangNode]]
-      switchDefault*: Option[XLangNode]
+      switchCases*: seq[XLangNode]  # Contains xnkCaseClause and xnkDefaultClause nodes
+    of xnkCaseClause:
+      caseValues*: seq[XLangNode]  # Multiple values for case 1, 2, 3:
+      caseBody*: XLangNode
+      caseFallthrough*: bool  # For Go's fallthrough keyword
+    of xnkDefaultClause:
+      defaultBody*: XLangNode
     of xnkForStmt:
       forInit*: Option[XLangNode]
       forCond*: Option[XLangNode]
@@ -168,6 +176,12 @@ type
     of xnkMemberAccessExpr:
       memberExpr*: XLangNode
       memberName*: string
+    of xnkSafeNavigationExpr:
+      safeNavObject*: XLangNode
+      safeNavMember*: string  # For user?.Name
+    of xnkNullCoalesceExpr:
+      nullCoalesceLeft*: XLangNode  # Left side of ??
+      nullCoalesceRight*: XLangNode  # Right side of ??
     of xnkLambdaExpr:
       lambdaParams*: seq[XLangNode]
       lambdaBody*: XLangNode
@@ -184,6 +198,9 @@ type
       awaitExpr*: XLangNode
     of xnkYieldExpr:
       yieldExpr*: Option[XLangNode]
+    of xnkStringInterpolation:
+      interpParts*: seq[XLangNode]  # Mix of string literals and expressions
+      interpIsExpr*: seq[bool]       # True if corresponding part is expression
     of xnkIntLit, xnkFloatLit, xnkStringLit, xnkCharLit:
       literalValue*: string
     of xnkBoolLit:
@@ -263,6 +280,13 @@ type
     of xnkUsingStmt:
       usingExpr*: XLangNode
       usingBody*: XLangNode
+    of xnkDestructureObj:
+      destructObjFields*: seq[string]  # Field names to extract
+      destructObjSource*: XLangNode     # Source object
+    of xnkDestructureArray:
+      destructArrayVars*: seq[string]   # Variable names for elements
+      destructArrayRest*: Option[string] # Rest/spread variable name
+      destructArraySource*: XLangNode    # Source array
     # else: discard
 
 

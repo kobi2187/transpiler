@@ -5,6 +5,7 @@ import nimastToCode
 import xlangtonim_complete
 import src/transforms/pass_manager
 import src/transforms/nim_passes
+import src/error_handling
 import macros
 
 
@@ -38,48 +39,102 @@ proc main() =
     else:
       echo "Transformations: ENABLED"
 
-  # Step 1: Parse JSON to XLang AST
-  var xlangAst = parseXLangJson(inputFile)
+  # Create error collector for the entire pipeline
+  let errorCollector = newErrorCollector()
 
-  if verbose:
-    echo "✓ XLang AST created successfully"
+  # Step 1: Parse JSON to XLang AST
+  var xlangAst: XLangNode
+  try:
+    xlangAst = parseXLangJson(inputFile)
+    if verbose:
+      echo "✓ XLang AST created successfully"
+  except Exception as e:
+    errorCollector.addError(
+      tekParseError,
+      "Failed to parse input file: " & e.msg,
+      location = inputFile,
+      details = e.getStackTrace()
+    )
+    errorCollector.reportAndExit()
 
   # Step 2: Apply transformation passes (unless disabled)
   if not skipTransforms:
     if verbose:
       echo "Running transformation passes..."
 
-    let pm = createNimPassManager()
+    try:
+      let pm = createNimPassManager()
+      # Use the same error collector
+      pm.errorCollector = errorCollector
 
-    if verbose:
-      echo "  Registered passes:"
-      for passDesc in pm.listPasses():
-        echo "    ", passDesc
+      if verbose:
+        echo "  Registered passes:"
+        for passDesc in pm.listPasses():
+          echo "    ", passDesc
 
-    xlangAst = pm.runPasses(xlangAst)
+      xlangAst = pm.runPasses(xlangAst)
 
-    if verbose:
-      echo "✓ Transformations applied successfully"
+      if verbose:
+        echo "✓ Transformations applied successfully"
+    except Exception as e:
+      errorCollector.addError(
+        tekTransformError,
+        "Transformation pipeline failed: " & e.msg,
+        location = "Pass manager",
+        details = e.getStackTrace()
+      )
+      errorCollector.reportAndExit()
 
   # Step 3: Convert XLang AST to Nim AST
-  let nimAst: NimNode = convertXLangToNim(xlangAst)
-
-  if verbose:
-    echo "✓ Nim AST created successfully"
+  var nimAst: NimNode
+  try:
+    nimAst = convertXLangToNim(xlangAst)
+    if verbose:
+      echo "✓ Nim AST created successfully"
+  except Exception as e:
+    errorCollector.addError(
+      tekConversionError,
+      "Failed to convert XLang to Nim AST: " & e.msg,
+      location = "xlangtonim_complete",
+      details = e.getStackTrace()
+    )
+    errorCollector.reportAndExit()
 
   # Step 4: Generate Nim code from AST
-  let nimCode = generateNimCode(nimAst)
-
-  if verbose:
-    echo "✓ Nim code generated successfully"
+  var nimCode: string
+  try:
+    nimCode = generateNimCode(nimAst)
+    if verbose:
+      echo "✓ Nim code generated successfully"
+  except Exception as e:
+    errorCollector.addError(
+      tekCodegenError,
+      "Failed to generate Nim code: " & e.msg,
+      location = "nimastToCode",
+      details = e.getStackTrace()
+    )
+    errorCollector.reportAndExit()
 
   # Step 5: Write output
-  if outputFile != "":
-    writeFile(outputFile, nimCode)
-    if verbose:
-      echo "✓ Output written to: ", outputFile
-  else:
-    echo nimCode
+  try:
+    if outputFile != "":
+      writeFile(outputFile, nimCode)
+      if verbose:
+        echo "✓ Output written to: ", outputFile
+    else:
+      echo nimCode
+  except Exception as e:
+    errorCollector.addError(
+      tekCodegenError,
+      "Failed to write output: " & e.msg,
+      location = outputFile,
+      details = e.getStackTrace()
+    )
+    errorCollector.reportAndExit()
+
+  # Report any warnings (success case)
+  if errorCollector.hasWarnings():
+    errorCollector.reportSummary()
 
 when isMainModule:
   main()
