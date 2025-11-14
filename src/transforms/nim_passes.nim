@@ -13,6 +13,10 @@ import property_to_procs
 import switch_fallthrough
 import null_coalesce
 import multiple_catch
+import destructuring
+import list_comprehension
+import normalize_simple
+import string_interpolation
 
 proc registerNimPasses*(pm: PassManager) =
   ## Register all transformation passes for Nim target language
@@ -116,12 +120,53 @@ proc registerNimPasses*(pm: PassManager) =
     dependencies: @[]  # No dependencies
   ))
 
+  # 9. Destructuring assignment (JS/Python)
+  # Object: {a, b} = obj and Array: [a, ...rest] = arr
+  pm.addPass(newTransformPass(
+    id: tpDestructuring,
+    name: "destructuring",
+    kind: tpkLowering,
+    description: "Transform object and array destructuring to explicit assignments",
+    transform: transformDestructuring,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 10. List comprehensions (Python)
+  # [expr for x in iter if cond] → for loop with collect
+  pm.addPass(newTransformPass(
+    id: tpListComprehension,
+    name: "list-comprehension",
+    kind: tpkLowering,
+    description: "Transform list comprehensions to for loops",
+    transform: transformListComprehension,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 11. String interpolation (Python f-strings, JS template literals, C#)
+  # f"Hello {name}" → "Hello " & name
+  pm.addPass(newTransformPass(
+    id: tpStringInterpolation,
+    name: "string-interpolation",
+    kind: tpkNormalization,
+    description: "Transform string interpolation to concatenation",
+    transform: transformStringInterpolation,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 12. Simple normalizations (pass → discard, empty blocks)
+  pm.addPass(newTransformPass(
+    id: tpNormalizeSimple,
+    name: "normalize-simple",
+    kind: tpkNormalization,
+    description: "Normalize pass statements and simple constructs",
+    transform: transformNormalizeSimple,
+    dependencies: @[]  # No dependencies
+  ))
+
   # TODO: More passes to add:
-  # - List comprehensions (Python)
-  # - LINQ queries (C#)
-  # - Destructuring assignment (JS/Python)
+  # - LINQ queries (C#) - complex functional pipeline
   # - Union types → variant objects
-  # - Async/await normalization
+  # - Async/await normalization with statement → defer pattern
   # - Operator overloading normalization
 
 proc createNimPassManager*(): PassManager =

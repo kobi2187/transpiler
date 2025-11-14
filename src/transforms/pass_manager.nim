@@ -23,6 +23,10 @@ type
     tpSwitchFallthrough = "switch-fallthrough"
     tpNullCoalesce = "null-coalesce"
     tpMultipleCatch = "multiple-catch"
+    tpDestructuring = "destructuring"
+    tpListComprehension = "list-comprehension"
+    tpNormalizeSimple = "normalize-simple"
+    tpStringInterpolation = "string-interpolation"
     # Add more passes here as they are implemented
 
   TransformPassKind* = enum
@@ -140,10 +144,10 @@ proc applyPass(pass: TransformPass, node: XLangNode): XLangNode =
   of xnkForStmt:
     if result.forInit.isSome:
       result.forInit = some(applyPass(pass, result.forInit.get))
-    if result.forCondition.isSome:
-      result.forCondition = some(applyPass(pass, result.forCondition.get))
-    if result.forUpdate.isSome:
-      result.forUpdate = some(applyPass(pass, result.forUpdate.get))
+    if result.forCond.isSome:
+      result.forCond = some(applyPass(pass, result.forCond.get))
+    if result.forIncrement.isSome:
+      result.forIncrement = some(applyPass(pass, result.forIncrement.get))
     result.forBody = applyPass(pass, result.forBody)
 
   of xnkSwitchStmt:
@@ -161,8 +165,8 @@ proc applyPass(pass: TransformPass, node: XLangNode): XLangNode =
       for catch_node in result.catchClauses:
         newCatches.add(applyPass(pass, catch_node))
       result.catchClauses = newCatches
-    if result.finallyBody.isSome:
-      result.finallyBody = some(applyPass(pass, result.finallyBody.get))
+    if result.finallyClause.isSome:
+      result.finallyClause = some(applyPass(pass, result.finallyClause.get))
 
   of xnkFuncDecl, xnkMethodDecl:
     result.body = applyPass(pass, result.body)
@@ -180,20 +184,20 @@ proc applyPass(pass: TransformPass, node: XLangNode): XLangNode =
     result.unaryOperand = applyPass(pass, result.unaryOperand)
 
   of xnkCallExpr:
-    result.callFunc = applyPass(pass, result.callFunc)
-    if result.callArgs.len > 0:
+    result.callee = applyPass(pass, result.callee)
+    if result.args.len > 0:
       var newArgs: seq[XLangNode] = @[]
-      for arg in result.callArgs:
+      for arg in result.args:
         newArgs.add(applyPass(pass, arg))
-      result.callArgs = newArgs
+      result.args = newArgs
 
   of xnkReturnStmt:
-    if result.returnValue.isSome:
-      result.returnValue = some(applyPass(pass, result.returnValue.get))
+    if result.returnExpr.isSome:
+      result.returnExpr = some(applyPass(pass, result.returnExpr.get))
 
   of xnkVarDecl, xnkLetDecl, xnkConstDecl:
-    if result.varValue.isSome:
-      result.varValue = some(applyPass(pass, result.varValue.get))
+    if result.initializer.isSome:
+      result.initializer = some(applyPass(pass, result.initializer.get))
 
   else:
     # For other node types, return as-is
