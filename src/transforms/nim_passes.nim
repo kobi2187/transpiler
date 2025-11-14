@@ -23,40 +23,48 @@ proc registerNimPasses*(pm: PassManager) =
   # Nim doesn't have C-style for loops (for init; cond; update)
   if pm.targetLang.requiresLowering("for-loop"):
     pm.addPass(newTransformPass(
+      id: tpForToWhile,
       name: "for-to-while",
       kind: tpkLowering,
       description: "Lower C-style for loops to while loops",
-      transform: transformForToWhile
+      transform: transformForToWhile,
+      dependencies: @[]  # No dependencies
     ))
 
   # 2. Do-while → while true + break
   # Nim doesn't have do-while loops
   if pm.targetLang.requiresLowering("do-while"):
     pm.addPass(newTransformPass(
+      id: tpDoWhileToWhile,
       name: "dowhile-to-while",
       kind: tpkLowering,
       description: "Lower do-while loops to while loops with break",
-      transform: transformDoWhileToWhile
+      transform: transformDoWhileToWhile,
+      dependencies: @[]  # No dependencies
     ))
 
   # 3. Ternary → if expression
   # Nim doesn't have ternary operator (? :)
   if pm.targetLang.requiresLowering("ternary"):
     pm.addPass(newTransformPass(
+      id: tpTernaryToIf,
       name: "ternary-to-if",
       kind: tpkLowering,
       description: "Transform ternary operators to if expressions",
-      transform: transformTernaryToIf
+      transform: transformTernaryToIf,
+      dependencies: @[]  # No dependencies
     ))
 
   # 4. Interface → concept
   # Nim doesn't have interfaces, uses concepts instead
   if pm.targetLang.requiresLowering("interface"):
     pm.addPass(newTransformPass(
+      id: tpInterfaceToConcept,
       name: "interface-to-concept",
       kind: tpkLowering,
       description: "Transform interface declarations to concepts",
-      transform: transformInterfaceToConcept
+      transform: transformInterfaceToConcept,
+      dependencies: @[]  # No dependencies
     ))
 
   # 5. Property → getter/setter procs
@@ -64,10 +72,12 @@ proc registerNimPasses*(pm: PassManager) =
   # Uses proc Name() and proc `Name=`() instead
   if pm.targetLang.requiresLowering("properties"):
     pm.addPass(newTransformPass(
+      id: tpPropertyToProcs,
       name: "property-to-procs",
       kind: tpkLowering,
       description: "Transform properties to getter/setter procedures",
-      transform: transformPropertyToProcs
+      transform: transformPropertyToProcs,
+      dependencies: @[]  # No dependencies
     ))
 
   # TODO: More passes to add:
