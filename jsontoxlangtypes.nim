@@ -1,8 +1,17 @@
-import jsony, xlangtypes
+import jsony
+import xlangtypes
+import os
 
+proc parseXLangJson*(filePath: string): XLangNode =
+  ## Parse XLang AST from a JSON file
+  ## Returns the root XLangNode
+  let jsonString = readFile(filePath)
+  result = jsonString.fromJson(XLangNode)
 
-proc parseXLangJson*(jsonString: string): XLangAST =
-  result = jsonString.fromJson(XLangAST)
+proc parseXLangJsonString*(jsonString: string): XLangNode =
+  ## Parse XLang AST from a JSON string
+  ## Returns the root XLangNode
+  result = jsonString.fromJson(XLangNode)
 
 proc example() =
 
