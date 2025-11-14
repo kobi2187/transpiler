@@ -10,6 +10,9 @@ import dowhile_to_while
 import ternary_to_if
 import interface_to_concept
 import property_to_procs
+import switch_fallthrough
+import null_coalesce
+import multiple_catch
 
 proc registerNimPasses*(pm: PassManager) =
   ## Register all transformation passes for Nim target language
@@ -80,10 +83,45 @@ proc registerNimPasses*(pm: PassManager) =
       dependencies: @[]  # No dependencies
     ))
 
+  # 6. Switch with fallthrough → if-elif chain
+  # Nim's case doesn't support fallthrough (like Go has)
+  pm.addPass(newTransformPass(
+    id: tpSwitchFallthrough,
+    name: "switch-fallthrough",
+    kind: tpkLowering,
+    description: "Transform switch with fallthrough to if-elif chain",
+    transform: transformSwitchFallthrough,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 7. Null coalescing and safe navigation
+  # Nim doesn't have ?? and ?. operators (C# has these)
+  pm.addPass(newTransformPass(
+    id: tpNullCoalesce,
+    name: "null-coalesce",
+    kind: tpkLowering,
+    description: "Transform null coalescing (??) and safe navigation (?.) operators",
+    transform: transformNullCoalesce,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 8. Multiple catch blocks → single catch with type checking
+  # Nim only supports single catch block (Java has multiple)
+  pm.addPass(newTransformPass(
+    id: tpMultipleCatch,
+    name: "multiple-catch",
+    kind: tpkLowering,
+    description: "Transform multiple catch blocks to single catch with type checking",
+    transform: transformMultipleCatch,
+    dependencies: @[]  # No dependencies
+  ))
+
   # TODO: More passes to add:
+  # - List comprehensions (Python)
+  # - LINQ queries (C#)
+  # - Destructuring assignment (JS/Python)
   # - Union types → variant objects
   # - Async/await normalization
-  # - Exception handling normalization
   # - Operator overloading normalization
 
 proc createNimPassManager*(): PassManager =

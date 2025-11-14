@@ -11,14 +11,15 @@ type
     xnkFieldDecl, xnkConstructorDecl, xnkDestructorDecl, xnkDelegateDecl
 
     # Statements
-    xnkBlockStmt, xnkIfStmt, xnkSwitchStmt, xnkForStmt, xnkWhileStmt
+    xnkBlockStmt, xnkIfStmt, xnkSwitchStmt, xnkCaseClause, xnkDefaultClause, xnkForStmt, xnkWhileStmt
     xnkDoWhileStmt, xnkForeachStmt, xnkTryStmt, xnkCatchStmt, xnkFinallyStmt
     xnkReturnStmt, xnkYieldStmt, xnkBreakStmt, xnkContinueStmt
     xnkThrowStmt, xnkAssertStmt, xnkWithStmt, xnkPassStmt
 
     # Expressions
     xnkBinaryExpr, xnkUnaryExpr, xnkTernaryExpr, xnkCallExpr, xnkIndexExpr
-    xnkSliceExpr, xnkMemberAccessExpr, xnkLambdaExpr, xnkListExpr, xnkDictExpr
+    xnkSliceExpr, xnkMemberAccessExpr, xnkSafeNavigationExpr, xnkNullCoalesceExpr
+    xnkLambdaExpr, xnkListExpr, xnkDictExpr
     xnkSetExpr, xnkTupleExpr, xnkComprehensionExpr, xnkAwaitExpr, xnkYieldExpr
 
     # Literals
@@ -103,8 +104,13 @@ type
       elseBody*: Option[XLangNode]
     of xnkSwitchStmt:
       switchExpr*: XLangNode
-      switchCases*: seq[tuple[caseExpr: XLangNode, caseBody: XLangNode]]
-      switchDefault*: Option[XLangNode]
+      switchCases*: seq[XLangNode]  # Contains xnkCaseClause and xnkDefaultClause nodes
+    of xnkCaseClause:
+      caseValues*: seq[XLangNode]  # Multiple values for case 1, 2, 3:
+      caseBody*: XLangNode
+      caseFallthrough*: bool  # For Go's fallthrough keyword
+    of xnkDefaultClause:
+      defaultBody*: XLangNode
     of xnkForStmt:
       forInit*: Option[XLangNode]
       forCond*: Option[XLangNode]
@@ -168,6 +174,12 @@ type
     of xnkMemberAccessExpr:
       memberExpr*: XLangNode
       memberName*: string
+    of xnkSafeNavigationExpr:
+      safeNavObject*: XLangNode
+      safeNavMember*: string  # For user?.Name
+    of xnkNullCoalesceExpr:
+      nullCoalesceLeft*: XLangNode  # Left side of ??
+      nullCoalesceRight*: XLangNode  # Right side of ??
     of xnkLambdaExpr:
       lambdaParams*: seq[XLangNode]
       lambdaBody*: XLangNode

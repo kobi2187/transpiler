@@ -20,6 +20,9 @@ type
     tpTernaryToIf = "ternary-to-if"
     tpInterfaceToConcept = "interface-to-concept"
     tpPropertyToProcs = "property-to-procs"
+    tpSwitchFallthrough = "switch-fallthrough"
+    tpNullCoalesce = "null-coalesce"
+    tpMultipleCatch = "multiple-catch"
     # Add more passes here as they are implemented
 
   TransformPassKind* = enum
