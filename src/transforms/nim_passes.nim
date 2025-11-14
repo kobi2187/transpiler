@@ -29,6 +29,15 @@ import go_error_handling
 import go_defer
 import csharp_using
 import go_concurrency
+import python_generators
+import python_type_hints
+import go_panic_recover
+import csharp_events
+import lambda_normalization
+import go_type_assertions
+import go_implicit_interfaces
+import enum_transformations
+import python_multiple_inheritance
 
 proc registerNimPasses*(pm: PassManager) =
   ## Register all transformation passes for Nim target language
@@ -309,23 +318,129 @@ proc registerNimPasses*(pm: PassManager) =
     dependencies: @[]  # No dependencies
   ))
 
-  # TODO: More passes to add (prioritizing Python, Go, C#):
+  # 25. Python generators → Nim iterators
+  # Transform generator functions (with yield) to Nim iterators
+  pm.addPass(newTransformPass(
+    id: tpPythonGenerators,
+    name: "python-generators",
+    kind: tpkLowering,
+    description: "Transform Python generator functions to Nim iterators",
+    transform: transformPythonGenerator,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 26. Python type hints → Nim types
+  # Transform Python 3.5+ type hints to Nim's static types
+  pm.addPass(newTransformPass(
+    id: tpPythonTypeHints,
+    name: "python-type-hints",
+    kind: tpkNormalization,
+    description: "Transform Python type hints to Nim type annotations",
+    transform: transformPythonTypeHints,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 27. Go panic/recover → exceptions
+  # Transform Go's panic/recover to Nim's try/except
+  pm.addPass(newTransformPass(
+    id: tpGoPanicRecover,
+    name: "go-panic-recover",
+    kind: tpkLowering,
+    description: "Transform Go panic/recover to Nim exception handling",
+    transform: transformGoPanicRecover,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 28. C# events and delegates → callbacks
+  # Transform event/delegate pattern to proc types and callback lists
+  pm.addPass(newTransformPass(
+    id: tpCSharpEvents,
+    name: "csharp-events",
+    kind: tpkLowering,
+    description: "Transform C# events and delegates to Nim callbacks",
+    transform: transformCSharpEvents,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 29. Lambda normalization (Python, JS, C#, Java)
+  # Normalize various lambda syntaxes to Nim anonymous procs
+  pm.addPass(newTransformPass(
+    id: tpLambdaNormalization,
+    name: "lambda-normalization",
+    kind: tpkNormalization,
+    description: "Normalize lambda expressions to Nim anonymous procs",
+    transform: transformLambdaNormalization,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 30. Go type assertions and type switches
+  # Transform Go's type assertions (x.(Type)) and type switches
+  pm.addPass(newTransformPass(
+    id: tpGoTypeAssertions,
+    name: "go-type-assertions",
+    kind: tpkLowering,
+    description: "Transform Go type assertions and type switches",
+    transform: transformGoTypeAssertions,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 31. Go implicit interfaces → explicit concepts
+  # Transform Go's structural interfaces to Nim's concepts
+  pm.addPass(newTransformPass(
+    id: tpGoImplicitInterfaces,
+    name: "go-implicit-interfaces",
+    kind: tpkLowering,
+    description: "Transform Go implicit interfaces to Nim concepts",
+    transform: transformGoImplicitInterfaces,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 32. Enum normalization (Python, C#, TypeScript, Java)
+  # Normalize enum declarations from various languages
+  pm.addPass(newTransformPass(
+    id: tpEnumNormalization,
+    name: "enum-normalization",
+    kind: tpkNormalization,
+    description: "Normalize enum declarations to Nim enum syntax",
+    transform: transformEnumNormalization,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 33. Python multiple inheritance → composition
+  # Transform multiple inheritance to single inheritance + composition
+  pm.addPass(newTransformPass(
+    id: tpPythonMultipleInheritance,
+    name: "python-multiple-inheritance",
+    kind: tpkLowering,
+    description: "Transform Python multiple inheritance to composition pattern",
+    transform: transformPythonMultipleInheritance,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # TODO: Additional passes for even more completeness:
   # Python:
-  # - Generator expressions (yield) → iterators
-  # - Type hints/annotations → Nim types
-  # - Multiple inheritance → composition/interfaces
   # - f-string advanced features (format specs, conversions)
+  # - Metaclasses → macros/templates
+  # - Context managers (contextlib) → defer patterns
   #
   # Go:
-  # - Implicit interfaces → explicit concepts
-  # - Recover/panic → exception handling
-  # - Type assertions and type switches
+  # - Struct tags → pragmas
+  # - Build tags → conditional compilation
   #
   # C#:
-  # - Events and delegates → callbacks/closures
   # - var keyword normalization → let with type inference
   # - Partial classes → module organization
   # - Nullable reference types → Option types
+  # - LINQ query syntax → method syntax
+  #
+  # Java:
+  # - Annotations → pragmas
+  # - Checked exceptions → explicit error handling
+  #
+  # TypeScript:
+  # - Intersection types → composition
+  # - Type guards → type checking
+  # - Mapped types → generics
 
 proc createNimPassManager*(): PassManager =
   ## Create a pass manager with all Nim transformation passes registered

@@ -39,6 +39,15 @@ type
     tpGoDefer = "go-defer"
     tpCSharpUsing = "csharp-using"
     tpGoConcurrency = "go-concurrency"
+    tpPythonGenerators = "python-generators"
+    tpPythonTypeHints = "python-type-hints"
+    tpGoPanicRecover = "go-panic-recover"
+    tpCSharpEvents = "csharp-events"
+    tpLambdaNormalization = "lambda-normalization"
+    tpGoTypeAssertions = "go-type-assertions"
+    tpGoImplicitInterfaces = "go-implicit-interfaces"
+    tpEnumNormalization = "enum-normalization"
+    tpPythonMultipleInheritance = "python-multiple-inheritance"
     # Add more passes here as they are implemented
 
   TransformPassKind* = enum
