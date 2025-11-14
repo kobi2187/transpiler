@@ -27,6 +27,10 @@ type
     tpListComprehension = "list-comprehension"
     tpNormalizeSimple = "normalize-simple"
     tpStringInterpolation = "string-interpolation"
+    tpWithToDefer = "with-to-defer"
+    tpAsyncNormalization = "async-normalization"
+    tpUnionToVariant = "union-to-variant"
+    tpLinqToSequtils = "linq-to-sequtils"
     # Add more passes here as they are implemented
 
   TransformPassKind* = enum

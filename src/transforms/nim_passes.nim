@@ -17,6 +17,10 @@ import destructuring
 import list_comprehension
 import normalize_simple
 import string_interpolation
+import with_to_defer
+import async_normalization
+import union_to_variant
+import linq_to_sequtils
 
 proc registerNimPasses*(pm: PassManager) =
   ## Register all transformation passes for Nim target language
@@ -163,11 +167,57 @@ proc registerNimPasses*(pm: PassManager) =
     dependencies: @[]  # No dependencies
   ))
 
+  # 13. With statement → defer pattern (Python)
+  # Python's with statement uses context managers for resource cleanup
+  # Nim uses defer for automatic cleanup on scope exit
+  pm.addPass(newTransformPass(
+    id: tpWithToDefer,
+    name: "with-to-defer",
+    kind: tpkLowering,
+    description: "Transform with statements to defer pattern for resource cleanup",
+    transform: transformWithToDefer,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 14. Async/await normalization
+  # Normalize async/await patterns from various languages to Nim's async
+  pm.addPass(newTransformPass(
+    id: tpAsyncNormalization,
+    name: "async-normalization",
+    kind: tpkNormalization,
+    description: "Normalize async/await patterns to Nim conventions",
+    transform: transformAsyncNormalization,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 15. Union types → variant objects (TypeScript/Python)
+  # type Foo = A | B → enum + variant object with case
+  pm.addPass(newTransformPass(
+    id: tpUnionToVariant,
+    name: "union-to-variant",
+    kind: tpkLowering,
+    description: "Transform union types to Nim variant objects (sum types)",
+    transform: transformUnionToVariant,
+    dependencies: @[]  # No dependencies
+  ))
+
+  # 16. LINQ queries → sequtils/zero-functional (C#)
+  # LINQ method chains to Nim's sequtils or zero-functional library
+  # Note: zero-functional provides LINQ-like syntax in Nim
+  pm.addPass(newTransformPass(
+    id: tpLinqToSequtils,
+    name: "linq-to-sequtils",
+    kind: tpkLowering,
+    description: "Transform LINQ queries to Nim sequtils/algorithm operations",
+    transform: transformLinqToSequtils,
+    dependencies: @[]  # No dependencies
+  ))
+
   # TODO: More passes to add:
-  # - LINQ queries (C#) - complex functional pipeline
-  # - Union types → variant objects
-  # - Async/await normalization with statement → defer pattern
   # - Operator overloading normalization
+  # - Pattern matching (Rust/F#/Haskell) → case statements
+  # - Attributes/Decorators normalization
+  # - Extension methods (C#) → regular procs
 
 proc createNimPassManager*(): PassManager =
   ## Create a pass manager with all Nim transformation passes registered
