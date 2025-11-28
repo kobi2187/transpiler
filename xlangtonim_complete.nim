@@ -1,5 +1,188 @@
-import macros, options, strutils
-import xlangtypes
+import options, strutils
+import src/xlang/xlang_types
+
+# Runtime NimNode - our own copy that can be used at runtime
+type
+  NimNodeKind* = enum
+    nnkNone, nnkEmpty, nnkIdent, nnkSym, nnkType, nnkCharLit, nnkIntLit,
+    nnkInt8Lit, nnkInt16Lit, nnkInt32Lit, nnkInt64Lit, nnkUIntLit, nnkUInt8Lit,
+    nnkUInt16Lit, nnkUInt32Lit, nnkUInt64Lit, nnkFloatLit, nnkFloat32Lit,
+    nnkFloat64Lit, nnkFloat128Lit, nnkStrLit, nnkRStrLit, nnkTripleStrLit,
+    nnkNilLit, nnkComesFrom, nnkDotCall, nnkCommand, nnkCall, nnkCallStrLit,
+    nnkInfix, nnkPrefix, nnkPostfix, nnkHiddenCallConv, nnkExprEqExpr,
+    nnkExprColonExpr, nnkIdentDefs, nnkVarTuple, nnkPar, nnkObjConstr,
+    nnkCurly, nnkCurlyExpr, nnkBracket, nnkBracketExpr, nnkPragmaExpr,
+    nnkRange, nnkDotExpr, nnkCheckedFieldExpr, nnkDerefExpr, nnkIfExpr,
+    nnkElifExpr, nnkElseExpr, nnkLambda, nnkDo, nnkAccQuoted, nnkTableConstr,
+    nnkBind, nnkClosedSymChoice, nnkOpenSymChoice, nnkHiddenStdConv,
+    nnkHiddenSubConv, nnkConv, nnkCast, nnkStaticExpr, nnkAddr, nnkHiddenAddr,
+    nnkHiddenDeref, nnkObjDownConv, nnkObjUpConv, nnkChckRangeF, nnkChckRange64,
+    nnkChckRange, nnkStringToCString, nnkCStringToString, nnkAsgn, nnkFastAsgn,
+    nnkGenericParams, nnkFormalParams, nnkOfInherit, nnkImportAs, nnkProcDef,
+    nnkMethodDef, nnkConverterDef, nnkMacroDef, nnkTemplateDef, nnkIteratorDef,
+    nnkOfBranch, nnkElifBranch, nnkExceptBranch, nnkElse, nnkAsmStmt,
+    nnkPragma, nnkPragmaBlock, nnkIfStmt, nnkWhenStmt, nnkForStmt, nnkParForStmt,
+    nnkWhileStmt, nnkCaseStmt, nnkTypeSection, nnkVarSection, nnkLetSection,
+    nnkConstSection, nnkConstDef, nnkTypeDef, nnkYieldStmt, nnkDefer,
+    nnkTryStmt, nnkFinally, nnkRaiseStmt, nnkReturnStmt, nnkBreakStmt,
+    nnkContinueStmt, nnkBlockStmt, nnkStaticStmt, nnkDiscardStmt, nnkStmtList,
+    nnkImportStmt, nnkImportExceptStmt, nnkExportStmt, nnkExportExceptStmt,
+    nnkFromStmt, nnkIncludeStmt, nnkBindStmt, nnkMixinStmt, nnkUsingStmt,
+    nnkCommentStmt, nnkStmtListExpr, nnkBlockExpr, nnkStmtListType, nnkBlockType,
+    nnkWith, nnkWithout, nnkTypeOfExpr, nnkObjectTy, nnkTupleTy, nnkTupleClassTy,
+    nnkTypeClassTy, nnkStaticTy, nnkRecList, nnkRecCase, nnkRecWhen,
+    nnkRefTy, nnkPtrTy, nnkVarTy, nnkConstTy, nnkOutTy, nnkDistinctTy,
+    nnkProcTy, nnkIteratorTy, nnkSinkAsgn, nnkEnumTy, nnkEnumFieldDef,
+    nnkArgList, nnkPattern, nnkHiddenTryStmt, nnkClosure, nnkGotoState,
+    nnkState, nnkBreakState, nnkFuncDef, nnkTupleConstr, nnkError,
+    nnkModuleRef, nnkReplayAction, nnkNilRodNode
+
+  NimNode* = ref object
+    kind*: NimNodeKind
+    strVal*: string      # For ident, string literals
+    intVal*: BiggestInt  # For int literals
+    floatVal*: BiggestFloat  # For float literals
+    sons*: seq[NimNode]  # Child nodes
+
+# Helper constructors
+proc newNimNode*(kind: NimNodeKind): NimNode =
+  NimNode(kind: kind, sons: @[])
+
+proc newIdentNode*(ident: string): NimNode =
+  NimNode(kind: nnkIdent, strVal: ident, sons: @[])
+
+proc newIntLitNode*(val: BiggestInt): NimNode =
+  NimNode(kind: nnkIntLit, intVal: val, sons: @[])
+
+proc newFloatLitNode*(val: BiggestFloat): NimNode =
+  NimNode(kind: nnkFloatLit, floatVal: val, sons: @[])
+
+proc newStrLitNode*(val: string): NimNode =
+  NimNode(kind: nnkStrLit, strVal: val, sons: @[])
+
+proc newEmptyNode*(): NimNode =
+  NimNode(kind: nnkEmpty, sons: @[])
+
+proc newStmtList*(): NimNode =
+  NimNode(kind: nnkStmtList, sons: @[])
+
+proc newCommentStmtNode*(comment: string): NimNode =
+  NimNode(kind: nnkCommentStmt, strVal: comment, sons: @[])
+
+proc newLit*(val: int): NimNode =
+  newIntLitNode(val)
+
+proc newLit*(val: string): NimNode =
+  newStrLitNode(val)
+
+proc newLit*(val: float): NimNode =
+  newFloatLitNode(val)
+
+proc newLit*(val: char): NimNode =
+  NimNode(kind: nnkCharLit, intVal: val.ord, sons: @[])
+
+proc newLit*(val: bool): NimNode =
+  newIdentNode(if val: "true" else: "false")
+
+proc newNilLit*(): NimNode =
+  NimNode(kind: nnkNilLit, sons: @[])
+
+proc add*(parent, child: NimNode): NimNode {.discardable.} =
+  parent.sons.add(child)
+  return parent
+
+proc add*(parent: NimNode, children: varargs[NimNode]): NimNode {.discardable.} =
+  for child in children:
+    parent.sons.add(child)
+  return parent
+
+proc `[]`*(node: NimNode, i: int): NimNode =
+  node.sons[i]
+
+proc `[]=`*(node: NimNode, i: int, child: NimNode) =
+  node.sons[i] = child
+
+proc len*(node: NimNode): int =
+  node.sons.len
+
+proc params*(node: NimNode): NimNode =
+  # For proc/func/method nodes, params are at index 3
+  if node.kind in {nnkProcDef, nnkMethodDef, nnkFuncDef, nnkIteratorDef,
+                   nnkTemplateDef, nnkMacroDef}:
+    return node.sons[3]
+  else:
+    raise newException(ValueError, "params only valid for proc-like nodes")
+
+proc newProc*(name: NimNode = nil, params: openArray[NimNode] = [],
+              body: NimNode = nil, procType = nnkProcDef,
+              pragmas: NimNode = nil): NimNode =
+  result = newNimNode(procType)
+  result.add(if name != nil: name else: newEmptyNode())
+  result.add(newEmptyNode())  # term rewriting macros
+  result.add(newEmptyNode())  # generic params
+  let formalParams = newNimNode(nnkFormalParams)
+  for p in params:
+    formalParams.add(p)
+  result.add(formalParams)
+  result.add(if pragmas != nil: pragmas else: newEmptyNode())
+  result.add(newEmptyNode())  # reserved
+  result.add(if body != nil: body else: newStmtList())
+
+proc addPragma*(procDef, pragma: NimNode) =
+  # pragmas are at index 4 in proc def
+  if procDef.sons[4].kind == nnkEmpty:
+    procDef.sons[4] = newNimNode(nnkPragma)
+  procDef.sons[4].add(pragma)
+
+proc newIdentDefs*(name, typ: NimNode, default: NimNode = nil): NimNode =
+  result = newNimNode(nnkIdentDefs)
+  result.add(name)
+  result.add(typ)
+  result.add(if default != nil: default else: newEmptyNode())
+
+# Simple repr - just for debugging/basic output
+proc repr*(node: NimNode, indent = 0): string =
+  let ind = "  ".repeat(indent)
+  case node.kind
+  of nnkIdent:
+    result = node.strVal
+  of nnkStrLit, nnkRStrLit, nnkTripleStrLit:
+    result = "\"" & node.strVal & "\""
+  of nnkIntLit:
+    result = $node.intVal
+  of nnkFloatLit:
+    result = $node.floatVal
+  of nnkCommentStmt:
+    result = "# " & node.strVal
+  of nnkEmpty:
+    result = ""
+  of nnkStmtList:
+    var stmts: seq[string]
+    for son in node.sons:
+      let s = repr(son, indent)
+      if s.len > 0:
+        stmts.add(s)
+    result = stmts.join("\n")
+  else:
+    # For complex nodes, just show kind and children
+    result = ind & $node.kind
+    for son in node.sons:
+      result &= "\n" & repr(son, indent + 1)
+
+proc treeRepr*(node: NimNode, indent = 0): string =
+  let ind = "  ".repeat(indent)
+  result = ind & $node.kind
+  case node.kind
+  of nnkIdent, nnkStrLit, nnkCommentStmt:
+    result &= " \"" & node.strVal & "\""
+  of nnkIntLit:
+    result &= " " & $node.intVal
+  of nnkFloatLit:
+    result &= " " & $node.floatVal
+  else:
+    discard
+  for son in node.sons:
+    result &= "\n" & treeRepr(son, indent + 1)
 
 ## Complete XLang AST to Nim AST converter
 ## Handles all XLang node kinds defined in xlangtypes.nim
@@ -230,15 +413,17 @@ proc convertStatement(node: XLangNode): NimNode =
   of xnkSwitchStmt:
     result = newNimNode(nnkCaseStmt)
     result.add(convertExpression(node.switchExpr))
-    for case in node.switchCases:
-      let ofBranch = newNimNode(nnkOfBranch)
-      ofBranch.add(convertExpression(case.caseExpr))
-      ofBranch.add(convertStatement(case.caseBody))
-      result.add(ofBranch)
-    if node.switchDefault.isSome:
-      let elseBranch = newNimNode(nnkElse)
-      elseBranch.add(convertStatement(node.switchDefault.get))
-      result.add(elseBranch)
+    for caseItem in node.switchCases:
+      if caseItem.kind == xnkCaseClause:
+        let ofBranch = newNimNode(nnkOfBranch)
+        for val in caseItem.caseValues:
+          ofBranch.add(convertExpression(val))
+        ofBranch.add(convertStatement(caseItem.caseBody))
+        result.add(ofBranch)
+      elif caseItem.kind == xnkDefaultClause:
+        let elseBranch = newNimNode(nnkElse)
+        elseBranch.add(convertStatement(caseItem.defaultBody))
+        result.add(elseBranch)
 
   of xnkForStmt:
     if node.forInit.isSome and node.forCond.isSome and node.forIncrement.isSome:
@@ -269,11 +454,13 @@ proc convertStatement(node: XLangNode): NimNode =
     body.add(convertStatement(node.whileBody))
     let ifStmt = newNimNode(nnkIfStmt)
     let branch = newNimNode(nnkElifBranch)
-    branch.add(newNimNode(nnkPrefix).add(
-      newIdentNode("not"),
-      convertExpression(node.whileCondition)
-    ))
-    branch.add(newNimNode(nnkBreakStmt).add(newEmptyNode()))
+    let notExpr = newNimNode(nnkPrefix)
+    notExpr.add(newIdentNode("not"))
+    notExpr.add(convertExpression(node.whileCondition))
+    branch.add(notExpr)
+    let breakStmt = newNimNode(nnkBreakStmt)
+    breakStmt.add(newEmptyNode())
+    branch.add(breakStmt)
     ifStmt.add(branch)
     body.add(ifStmt)
     whileStmt.add(body)
@@ -383,17 +570,17 @@ proc convertStatement(node: XLangNode): NimNode =
 proc convertDeclaration(node: XLangNode): NimNode =
   case node.kind
   of xnkFuncDecl, xnkMethodDecl:
-    let params = newNimNode(nnkFormalParams)
+    var paramSeq: seq[NimNode] = @[]
     if node.returnType.isSome:
-      params.add(convertType(node.returnType.get))
+      paramSeq.add(convertType(node.returnType.get))
     else:
-      params.add(newEmptyNode())
+      paramSeq.add(newEmptyNode())
     for param in node.params:
-      params.add(convertXLangToNim(param))
+      paramSeq.add(convertXLangToNim(param))
 
     result = newProc(
       name = newIdentNode(node.funcName),
-      params = params,
+      params = paramSeq,
       body = convertStatement(node.body),
       procType = if node.kind == xnkFuncDecl: nnkProcDef else: nnkMethodDef
     )
@@ -429,7 +616,7 @@ proc convertDeclaration(node: XLangNode): NimNode =
     let conceptDef = newNimNode(nnkTypeDef)
     conceptDef.add(newIdentNode(node.typeNameDecl))
     conceptDef.add(newEmptyNode())
-    let conceptTy = newNimNode(nnkConceptTy)
+    let conceptTy = newNimNode(nnkObjectTy)
     conceptTy.add(newEmptyNode())  # no generic params
     for member in node.members:
       conceptTy.add(convertXLangToNim(member))
@@ -610,7 +797,7 @@ proc convertDeclaration(node: XLangNode): NimNode =
     let typeDef = newNimNode(nnkTypeDef)
     typeDef.add(newIdentNode(node.conceptName))
     typeDef.add(newEmptyNode())
-    let conceptTy = newNimNode(nnkConceptTy)
+    let conceptTy = newNimNode(nnkObjectTy)
     conceptTy.add(newEmptyNode())
     conceptTy.add(convertStatement(node.conceptBody))
     typeDef.add(conceptTy)
@@ -740,7 +927,8 @@ proc convertXLangToNim*(node: XLangNode): NimNode =
      xnkIdentifier, xnkBinaryExpr, xnkUnaryExpr, xnkTernaryExpr, xnkCallExpr,
      xnkIndexExpr, xnkSliceExpr, xnkMemberAccessExpr, xnkLambdaExpr,
      xnkListExpr, xnkSetExpr, xnkTupleExpr, xnkDictExpr, xnkComprehensionExpr,
-     xnkAwaitExpr, xnkYieldExpr:
+     xnkAwaitExpr, xnkYieldExpr, xnkSafeNavigationExpr, xnkNullCoalesceExpr,
+     xnkStringInterpolation:
     result = convertExpression(node)
 
   # Statements
@@ -748,7 +936,8 @@ proc convertXLangToNim*(node: XLangNode): NimNode =
      xnkDoWhileStmt, xnkForeachStmt, xnkTryStmt, xnkCatchStmt, xnkFinallyStmt,
      xnkReturnStmt, xnkYieldStmt, xnkBreakStmt, xnkContinueStmt, xnkThrowStmt,
      xnkAssertStmt, xnkWithStmt, xnkPassStmt, xnkDeferStmt, xnkStaticStmt,
-     xnkAsmStmt, xnkUsingStmt:
+     xnkAsmStmt, xnkUsingStmt, xnkDestructureObj, xnkDestructureArray,
+     xnkCaseClause, xnkDefaultClause:
     result = convertStatement(node)
 
   # Declarations
@@ -762,7 +951,13 @@ proc convertXLangToNim*(node: XLangNode): NimNode =
   # Other
   of xnkImport, xnkExport, xnkComment, xnkParameter, xnkArgument,
      xnkGenericParameter, xnkAttribute, xnkDecorator, xnkPragma, xnkMixinStmt,
-     xnkBindStmt, xnkTupleConstr, xnkTupleUnpacking:
+     xnkBindStmt, xnkTupleConstr, xnkTupleUnpacking, xnkModuleDecl, xnkTypeAlias,
+     xnkAbstractDecl, xnkEnumMember, xnkLibDecl, xnkCFuncDecl, xnkExternalVar,
+     xnkUnlessStmt, xnkUntilStmt, xnkStaticAssert, xnkSwitchCase, xnkMixinDecl,
+     xnkTemplateDecl, xnkMacroDecl, xnkInclude, xnkExtend, xnkCastExpr,
+     xnkAssignExpr, xnkInstanceVar, xnkClassVar, xnkGlobalVar, xnkProcLiteral,
+     xnkProcPointer, xnkArrayLit, xnkNumberLit, xnkSymbolLit, xnkDynamicType,
+     xnkAbstractType, xnkFunctionType, xnkMetadata:
     result = convertOther(node)
 
 # =============================================================================

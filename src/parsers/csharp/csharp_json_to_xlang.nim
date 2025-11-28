@@ -401,7 +401,12 @@ proc fixFieldNames(node: JsonNode): JsonNode =
       else:
         result[key] = fixFieldNames(val)
     of "parameters": result["params"] = fixFieldNames(val)
-    of "declarations": result["moduleDecls"] = fixFieldNames(val)
+    of "declarations", "moduleDecls":
+      # Context-sensitive: namespace uses namespaceBody, file uses moduleDecls
+      if node.hasKey("kind") and node["kind"].getStr() == "xnkNamespace":
+        result["namespaceBody"] = fixFieldNames(val)
+      else:
+        result["moduleDecls"] = fixFieldNames(val)
     of "statements": result["blockBody"] = fixFieldNames(val)
     of "members": result["members"] = fixFieldNames(val)
     of "body": result["funcBody"] = fixFieldNames(val)
