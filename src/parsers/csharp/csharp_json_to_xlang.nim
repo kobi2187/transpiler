@@ -368,15 +368,69 @@ proc convertLiteral(node: JsonNode, xlangKind: string): JsonNode =
   else:
     result = node
 
+proc fixFieldNames(node: JsonNode): JsonNode =
+  ## Recursively fix field names to match canonical XLang format
+  if node.isNil:
+    return newJNull()
+
+  if node.kind == JArray:
+    result = newJArray()
+    for item in node:
+      result.add(fixFieldNames(item))
+    return result
+
+  if node.kind != JObject:
+    return node
+
+  result = newJObject()
+
+  for key, val in node.pairs:
+    case key
+    of "className": result["typeNameDecl"] = fixFieldNames(val)
+    of "name":
+      # Context-sensitive: could be funcName, declName, etc.
+      if node.hasKey("kind"):
+        let kind = node["kind"].getStr()
+        case kind
+        of "xnkFuncDecl", "xnkMethodDecl": result["funcName"] = fixFieldNames(val)
+        of "xnkClassDecl", "xnkStructDecl", "xnkInterfaceDecl": result["typeNameDecl"] = fixFieldNames(val)
+        of "xnkVarDecl", "xnkParameter": result["declName"] = fixFieldNames(val)
+        of "xnkIdentifier": result["identName"] = fixFieldNames(val)
+        of "xnkNamespace": result["namespaceName"] = fixFieldNames(val)
+        else: result[key] = fixFieldNames(val)
+      else:
+        result[key] = fixFieldNames(val)
+    of "parameters": result["params"] = fixFieldNames(val)
+    of "declarations": result["moduleDecls"] = fixFieldNames(val)
+    of "statements": result["blockBody"] = fixFieldNames(val)
+    of "members": result["members"] = fixFieldNames(val)
+    of "body": result["funcBody"] = fixFieldNames(val)
+    of "expr": result["callExpr"] = fixFieldNames(val)
+    of "args": result["callArgs"] = fixFieldNames(val)
+    else:
+      if val.kind == JObject or val.kind == JArray:
+        result[key] = fixFieldNames(val)
+      else:
+        result[key] = val
+
+  return result
+
 proc convertNode(node: JsonNode): JsonNode =
   if node.isNil or node.kind == JNull:
     return newJNull()
 
-  if not node.hasKey("Kind"):
+  # Check for both "Kind" (ANTLR) and "kind" (Roslyn)
+  let hasKind = node.hasKey("kind") or node.hasKey("Kind")
+  if not hasKind:
     return node
 
-  let kind = node["Kind"].getStr
+  let kind = if node.hasKey("kind"): node["kind"].getStr() else: node["Kind"].getStr()
 
+  # If already in xnk* format, just fix field names
+  if kind.startsWith("xnk"):
+    return fixFieldNames(node)
+
+  # Otherwise convert from ANTLR format
   case kind
   of "CompilationUnit": result = convertCompilationUnit(node)
   of "Namespace": result = convertNamespace(node)

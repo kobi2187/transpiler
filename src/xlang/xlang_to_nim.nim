@@ -788,3 +788,27 @@ proc convertXLangASTToNimAST*(xlangAST: XLangAST): NimNode =
   result = newStmtList()
   for node in xlangAST:
     result.add(convertXLangToNim(node))
+
+# =============================================================================
+# Main Module - Standalone Executable
+# =============================================================================
+
+when isMainModule:
+  import os, json
+  
+  if paramCount() < 1:
+    echo "Usage: xlang_to_nim <xlang.json>"
+    quit(1)
+  
+  let inputFile = paramStr(1)
+  let jsonContent = readFile(inputFile)
+  let xlangJson = parseJson(jsonContent)
+  
+  # Parse JSON to XLang nodes (simplified - just convert top-level)
+  var xlangAST: seq[XLangNode] = @[]
+  
+  # For now, output a comment - full implementation would parse JSON to XLangNode
+  echo "# Transpiled from XLang"
+  echo "# Input: ", inputFile
+  echo ""
+  echo "# TODO: Complete XLang JSON to XLangNode parser"

@@ -168,20 +168,19 @@ proc transpileToNim(xlangAst: JsonNode): tuple[success: bool, nimCode: string] =
   let tempInput = getTempDir() / "xlang_ast.json"
   writeFile(tempInput, $xlangAst)
 
-  # For now, we'll use the xlang_to_nim module
-  # This assumes it can be compiled as a standalone binary
-  let xlangToNimBinary = "src/xlang/xlang_to_nim"
+  # Use xlang_codegen to convert XLang JSON to Nim code
+  let xlangCodegenBinary = "src/xlang/xlang_codegen"
 
   # Check if we need to compile it
-  if not fileExists(xlangToNimBinary):
-    echo "  Compiling xlang_to_nim transpiler..."
-    let compileResult = execCmd("nim c -d:release src/xlang/xlang_to_nim.nim")
+  if not fileExists(xlangCodegenBinary):
+    echo "  Compiling xlang_codegen..."
+    let compileResult = execCmd("nim c -d:release src/xlang/xlang_codegen.nim")
     if compileResult != 0:
-      echo "Failed to compile xlang_to_nim"
+      echo "Failed to compile xlang_codegen"
       removeFile(tempInput)
       return (false, "")
 
-  let cmd = quoteShell(xlangToNimBinary) & " " & quoteShell(tempInput)
+  let cmd = quoteShell(xlangCodegenBinary) & " " & quoteShell(tempInput)
   let (output, exitCode) = execCmdEx(cmd)
 
   removeFile(tempInput)
