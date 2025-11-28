@@ -1,3 +1,38 @@
+# Nim build artifacts
 nimcache/
-nimblecache/
-htmldocs/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# .NET build artifacts
+[Bb]in/
+[Oo]bj/
+*.dll
+*.pdb
+*.deps.json
+*.runtimeconfig.json
+
+# Compiled binaries
+transpile
+src/xlang/xlang_to_nim
+src/parsers/*/bin/
+src/parsers/*/obj/
+src/parsers/*/*.exe
+src/parsers/*/*_json_to_xlang
+!src/parsers/*/*_json_to_xlang.nim
+
+# Output
+output/
+*.bak
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

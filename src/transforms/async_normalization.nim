@@ -5,7 +5,7 @@
 ## Nim uses asyncdispatch module with {.async.} pragma
 ## This transformation ensures async functions and await expressions are properly normalized
 
-import ../../xlangtypes
+import ../xlang/xlang_types
 import options
 
 proc transformAsyncNormalization*(node: XLangNode): XLangNode =
