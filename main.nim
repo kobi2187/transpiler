@@ -2,11 +2,11 @@ import os, parseopt
 import xlangtypes
 import jsontoxlangtypes
 import nimastToCode
-import xlangtonim_complete
+import xlangtonim
 import src/transforms/pass_manager
 import src/transforms/nim_passes
 import src/error_handling
-import macros
+
 
 
 

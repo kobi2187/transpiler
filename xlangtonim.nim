@@ -1,12 +1,11 @@
-import macros
 import xlangtypes
 
-import macros, options, strutils
+import options, strutils
+import src/my_nim_node
 
 
 
-
-proc convertToNimAST*(node: XLangNode): NimNode =
+proc convertToNimAST*(node: XLangNode): MyNimNode =
   case node.kind
   
   of xnkFile:
@@ -24,6 +23,7 @@ proc convertToNimAST*(node: XLangNode): NimNode =
     # Nim doesn't have a direct equivalent to Java's module system
     # We'll create a comment node to preserve the information
     result = newCommentStmtNode("Module: " & node.moduleName)
+    # result.moduleName = node.moduleName
     for stmt in node.moduleBody:
       result.add(convertToNimAST(stmt))
   
@@ -587,7 +587,7 @@ proc convertToNimAST*(node: XLangNode): NimNode =
 
 
 
-proc convertXLangASTToNimAST*(xlangAST: XLangAST): NimNode =
+proc convertXLangASTToNimAST*(xlangAST: XLangAST): MyNimNode =
   result = newStmtList()
   for node in xlangAST:
     result.add(convertToNimAST(node))
