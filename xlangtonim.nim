@@ -4,590 +4,504 @@ import options, strutils
 import src/my_nim_node
 import src/helpers
 
+# Forward declaration for mutual recursion (helpers call this)
+proc convertToNimAST*(node: XLangNode): MyNimNode
+
+# Helper procs for each XLang node kind — extract case logic here
+proc conv_xnkFile(node: XLangNode): MyNimNode =
+  result = newStmtList()
+  for decl in node.moduleDecls:
+    result.add(convertToNimAST(decl))
+
+proc conv_xnkModule(node: XLangNode): MyNimNode =
+  # Nim doesn't have a direct equivalent to Java's module system
+  # We'll create a comment node to preserve the information
+  result = newCommentStmtNode("Module: " & node.moduleName)
+  for stmt in node.moduleBody:
+    result.add(convertToNimAST(stmt))
+
+proc conv_xnkNamespace(node: XLangNode): MyNimNode =
+  result = newCommentStmtNode("Namespace: " & node.namespaceName)
+  for stmt in node.namespaceBody:
+    result.add(convertToNimAST(stmt))
+
+proc conv_xnkFuncDecl_method(node: XLangNode): MyNimNode =
+  # Build a proc/method node using my_nim_node API
+  let kind = if node.kind == xnkFuncDecl: nnkProcDef else: nnkMethodDef
+  result = newNimNode(kind)
+  # 0: name
+  result.add(newIdentNode(node.funcName))
+  # 1: pattern/term rewriting placeholder
+  result.add(newEmptyNode())
+  # 2: generic params placeholder
+  result.add(newEmptyNode())
+  # 3: formal params
+  let formalParams = newNimNode(nnkFormalParams)
+  if node.returnType.isSome:
+    formalParams.add(convertToNimAST(node.returnType.get))
+  else:
+    formalParams.add(newEmptyNode())
+  for param in node.params:
+    formalParams.add(convertToNimAST(param))
+  result.add(formalParams)
+  # 4: pragmas
+  result.add(newEmptyNode())
+  # 5: reserved
+  result.add(newEmptyNode())
+  # 6: body
+  result.add(convertToNimAST(node.body))
+  if node.isAsync:
+    setPragma(result, newPragma(newIdentNode("async")))
+
+proc conv_xnkClassDecl_structDecl(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkTypeSection)
+  let typeDef = newNimNode(nnkTypeDef)
+  typeDef.add(newIdentNode(node.typeNameDecl))
+  typeDef.add(newEmptyNode())
+  let refTy = newNimNode(nnkRefTy)
+  let objType = newNimNode(nnkObjectTy)
+  objType.add(newEmptyNode()) # no pragmas
+  # base types / inheritance
+  let inheritList = newNimNode(nnkOfInherit)
+  for baseType in node.baseTypes:
+    inheritList.add(convertToNimAST(baseType))
+  objType.add(inheritList)
+  # members
+  let recList = newNimNode(nnkRecList)
+  for member in node.members:
+    recList.add(convertToNimAST(member))
+  objType.add(recList)
+  refTy.add(objType)
+  typeDef.add(refTy)
+  result.add(typeDef)
+
+proc conv_xnkInterfaceDecl(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkTypeSection)
+  let conceptDef = newNimNode(nnkTypeDef)
+  conceptDef.add(newIdentNode(node.typeNameDecl))
+  conceptDef.add(newEmptyNode())
+  let conceptTy = newNimNode(nnkObjectTy)
+  for meth in node.members:
+    conceptTy.add(convertToNimAST(meth))
+  conceptDef.add(conceptTy)
+  result.add(conceptDef)
+
+proc conv_xnkEnumDecl(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkTypeSection)
+  let enumTy = newNimNode(nnkEnumTy)
+  enumTy.add(newEmptyNode())
+  for member in node.enumMembers:
+    if member.value.isSome:
+      let field = newNimNode(nnkEnumFieldDef)
+      field.add(newIdentNode(member.name))
+      field.add(convertToNimAST(member.value.get))
+      enumTy.add(field)
+    else:
+      enumTy.add(newIdentNode(member.name))
+  let typeDef = newNimNode(nnkTypeDef)
+  typeDef.add(newIdentNode(node.enumName))
+  typeDef.add(newEmptyNode())
+  typeDef.add(enumTy)
+  result.add(typeDef)
+
+proc conv_xnkVarLetConst(node: XLangNode): MyNimNode =
+  let kind = if node.kind == xnkVarDecl: nnkVarSection elif node.kind == xnkLetDecl: nnkLetSection else: nnkConstSection
+  result = newNimNode(kind)
+  let identDefs = newNimNode(nnkIdentDefs)
+  identDefs.add(newIdentNode(node.declName))
+  if node.declType.isSome:
+    identDefs.add(convertToNimAST(node.declType.get))
+  else:
+    identDefs.add(newEmptyNode())
+  if node.initializer.isSome:
+    identDefs.add(convertToNimAST(node.initializer.get))
+  else:
+    identDefs.add(newEmptyNode())
+  result.add(identDefs)
+
+proc conv_xnkIfStmt(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkIfStmt)
+  let branchNode = newNimNode(nnkElifBranch)
+  branchNode.add(convertToNimAST(node.ifCondition))
+  branchNode.add(convertToNimAST(node.ifBody))
+  result.add(branchNode)
+  if node.elseBody.isSome:
+    let elseNode = newNimNode(nnkElse)
+    elseNode.add(convertToNimAST(node.elseBody.get))
+    result.add(elseNode)
+
+proc conv_xnkWhileStmt(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkWhileStmt)
+  result.add(convertToNimAST(node.whileCondition))
+  result.add(convertToNimAST(node.whileBody))
+
+proc conv_xnkForStmt(node: XLangNode): MyNimNode =
+  # Handle C-style or for-in style
+  if node.forInit.isSome and node.forCond.isSome and node.forIncrement.isSome:
+    result = newStmtList()
+    result.add(convertToNimAST(node.forInit.get))
+    let whileStmt = newNimNode(nnkWhileStmt)
+    whileStmt.add(convertToNimAST(node.forCond.get))
+    let body = newStmtList()
+    body.add(convertToNimAST(node.forBody))
+    body.add(convertToNimAST(node.forIncrement.get))
+    whileStmt.add(body)
+    result.add(whileStmt)
+  else:
+    # fallback: map to a simple for stmt if a foreach-like structure exists
+    result = newNimNode(nnkForStmt)
+    if node.forBody.isSome:
+      result.add(convertToNimAST(node.forBody))
+    else:
+      result.add(newEmptyNode())
+
+proc conv_xnkBlockStmt(node: XLangNode): MyNimNode =
+  # xlangtypes: blockBody is a seq[XLangNode]
+  let body = newStmtList()
+  for stmt in node.blockBody:
+    body.add(convertToNimAST(stmt))
+  result = newBlockStmt(newEmptyNode(), body)
+
+# Patch member access and index kinds to xlangtypes style
+proc conv_xnkMemberAccess(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkDotExpr)
+  result.add(convertToNimAST(node.memberExpr))
+  result.add(newIdentNode(node.memberName))
+
+proc conv_xnkIndexExpr(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkBracketExpr)
+  result.add(convertToNimAST(node.indexExpr))
+  for arg in node.indexArgs:
+    result.add(convertToNimAST(arg))
+
+proc conv_xnkReturnStmt(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkReturnStmt)
+  if node.returnExpr.isSome:
+    result.add(convertToNimAST(node.returnExpr.get))
+  else:
+    result.add(newEmptyNode())
+
+proc conv_xnkYieldStmt(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkYieldStmt)
+  if node.yieldExpr.isSome:
+    result.add(convertToNimAST(node.yieldExpr.get))
+  else:
+    result.add(newEmptyNode())
+
+proc conv_xnkDiscardStmt(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkDiscardStmt)
+  if node.expr.isSome:
+    result.add(convertToNimAST(node.expr.get))
+  else:
+    result.add(newEmptyNode())
+
+proc conv_xnkCaseStmt(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkCaseStmt)
+  result.add(convertToNimAST(node.expr))
+  for branch in node.branches:
+    let ofBranch = newNimNode(nnkOfBranch)
+    for cond in branch.conditions:
+      ofBranch.add(convertToNimAST(cond))
+    ofBranch.add(convertToNimAST(branch.body))
+    result.add(ofBranch)
+  if node.elseBody.isSome:
+    let elseBranch = newNimNode(nnkElse)
+    elseBranch.add(convertToNimAST(node.elseBody.get))
+    result.add(elseBranch)
+
+proc conv_xnkTryStmt(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkTryStmt)
+  result.add(convertToNimAST(node.tryBody))
+  for exceptt in node.exceptBranches:
+    let exceptBranch = newNimNode(nnkExceptBranch)
+    if exceptt.exceptionType.isSome:
+      exceptBranch.add(convertToNimAST(exceptt.exceptionType.get))
+    exceptBranch.add(convertToNimAST(exceptt.body))
+    result.add(exceptBranch)
+  if node.finallyBody.isSome:
+    let finallyBranch = newNimNode(nnkFinally)
+    finallyBranch.add(convertToNimAST(node.finallyBody.get))
+    result.add(finallyBranch)
+
+proc conv_xnkRaiseStmt(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkRaiseStmt)
+  if node.expr.isSome:
+    result.add(convertToNimAST(node.expr.get))
+  else:
+    result.add(newEmptyNode())
+
+proc conv_xnkTypeDecl(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkTypeSection)
+  result.add(
+    newNimNode(nnkTypeDef).add(
+      newIdentNode(node.typeDefName),
+      newEmptyNode(),
+      convertToNimAST(node.typeDefBody)
+    )
+  )
+
+proc conv_xnkImportStmt(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkImportStmt)
+  for item in node.imports:
+    result.add(newIdentNode(item))
+
+proc conv_xnkImport(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkImportStmt)
+  result.add(newIdentNode(node.importPath))
+  if node.importAlias.isSome:
+    result.add(newIdentNode("as"))
+    result.add(newIdentNode(node.importAlias.get))
+
+proc conv_xnkExport(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkExportStmt)
+  result.add(convertToNimAST(node.exportedDecl))
+
+proc conv_xnkExportStmt(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkExportStmt)
+  for item in node.exports:
+    result.add(newIdentNode(item))
+
+proc conv_xnkFromImportStmt(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkFromStmt)
+  result.add(newIdentNode(node.module))
+  let importList = newNimNode(nnkImportStmt)
+  for item in node.imports:
+    importList.add(newIdentNode(item))
+  result.add(importList)
+
+proc conv_xnkGenericParam(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkGenericParams)
+  let identDefs = newNimNode(nnkIdentDefs)
+  identDefs.add(newIdentNode(node.name))
+  if node.bounds.len > 0:
+    for bound in node.bounds:
+      identDefs.add(convertToNimAST(bound))
+  else:
+    identDefs.add(newEmptyNode())
+  identDefs.add(newEmptyNode())
+  result.add(identDefs)
+
+proc conv_xnkIdentifier(node: XLangNode): MyNimNode =
+  result = newIdentNode(node.name)
+
+proc conv_xnkComment(node: XLangNode): MyNimNode =
+  if node.isDocComment:
+    result = newCommentStmtNode("## " & node.commentText)
+  else:
+    result = newCommentStmtNode("# " & node.commentText)
+
+proc conv_xnkIntLit(node: XLangNode): MyNimNode =
+  # Parse integer literal value and create integer literal node
+  result = newIntLitNode(parseInt(node.literalValue))
+
+proc conv_xnkFloatLit(node: XLangNode): MyNimNode =
+  result = newFloatLitNode(parseFloat(node.literalValue))
+
+proc conv_xnkStringLit(node: XLangNode): MyNimNode =
+  result = newStrLitNode(node.literalValue)
+
+proc conv_xnkCharLit(node: XLangNode): MyNimNode =
+  if node.literalValue.len > 0:
+    result = newCharNode(node.literalValue[0])
+  else:
+    result = newCharNode('\0')
+
+proc conv_xnkBoolLit(node: XLangNode): MyNimNode =
+  result = newIdentNode(if node.boolValue: "true" else: "false")
+
+proc conv_xnkNilLit(node: XLangNode): MyNimNode =
+  result = newNilLit()
+
+proc conv_xnkTemplateMacro(node: XLangNode): MyNimNode =
+  result = if node.kind == xnkTemplateDef: newNimNode(nnkTemplateDef) else: newNimNode(nnkMacroDef)
+  result.add(newIdentNode(node.name))
+  result.add(newEmptyNode())
+  result.add(newEmptyNode())
+  let formalParams = newNimNode(nnkFormalParams)
+  formalParams.add(newEmptyNode())
+  for param in node.params:
+    formalParams.add(convertToNimAST(param))
+  result.add(formalParams)
+  result.add(newEmptyNode())
+  result.add(newEmptyNode())
+  result.add(convertToNimAST(node.body))
+  if node.isExported:
+    result = newNimNode(nnkPostfix).add(newIdentNode("*"), result)
+
+proc conv_xnkPragma(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkPragma)
+  for pragma in node.pragmas:
+    result.add(convertToNimAST(pragma))
+
+proc conv_xnkStaticStmt(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkStaticStmt)
+  result.add(convertToNimAST(node.staticBody))
+
+proc conv_xnkDeferStmt(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkDeferStmt)
+  result.add(convertToNimAST(node.staticBody))
+
+proc conv_xnkAsmStmt(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkAsmStmt)
+  result.add(newStrLitNode(node.asmCode))
+
+proc conv_xnkDistinctTypeDef(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkTypeSection)
+  let typeDef = newNimNode(nnkTypeDef)
+  typeDef.add(newIdentNode(node.distinctName))
+  typeDef.add(newEmptyNode())
+  let distinctTy = newNimNode(nnkDistinctTy)
+  distinctTy.add(convertToNimAST(node.baseType))
+  typeDef.add(distinctTy)
+  result.add(typeDef)
+
+proc conv_xnkConceptDef(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkTypeSection)
+  let typeDef = newNimNode(nnkTypeDef)
+  typeDef.add(newIdentNode(node.conceptName))
+  typeDef.add(newEmptyNode())
+  let conceptTy = newNimNode(nnkObjectTy)
+  conceptTy.add(newEmptyNode())
+  conceptTy.add(convertToNimAST(node.conceptBody))
+  typeDef.add(conceptTy)
+  result.add(typeDef)
+
+proc conv_xnkMixinStmt(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkMixinStmt)
+  for name in node.mixinNames:
+    result.add(newIdentNode(name))
+
+proc conv_xnkBindStmt(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkBindStmt)
+  for name in node.bindNames:
+    result.add(newIdentNode(name))
+
+proc conv_xnkTupleConstr(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkTupleConstr)
+  for elem in node.tupleElements:
+    result.add(convertToNimAST(elem))
+
+proc conv_xnkTupleUnpacking(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkVarTuple)
+  for target in node.unpackTargets:
+    result.add(convertToNimAST(target))
+  result.add(newEmptyNode())
+  result.add(convertToNimAST(node.unpackExpr))
+
+proc conv_xnkUsingStmt(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkUsingStmt)
+  result.add(convertToNimAST(node.usingExpr))
+  result.add(convertToNimAST(node.usingBody))
+
 
 proc convertToNimAST*(node: XLangNode): MyNimNode =
   case node.kind
-  
   of xnkFile:
-    result = newStmtList()
-    
-    for decl in node.moduleDecls:
-      result.add(convertToNimAST(decl))
-
-  # of xnkModule:
-  #   result = newNimNode(nnkStmtList)
-  #   result.add(newNimNode(nnkModuleDecl).add(newIdentNode(node.moduleName)))
-  #   for stmt in node.moduleBody:
-  #     result.add(convertToNimAST(stmt))
+    result = conv_xnkFile(node)
   of xnkModule:
-    # Nim doesn't have a direct equivalent to Java's module system
-    # We'll create a comment node to preserve the information
-    result = newCommentStmtNode("Module: " & node.moduleName)
-    # result.moduleName = node.moduleName
-    for stmt in node.moduleBody:
-      result.add(convertToNimAST(stmt))
-  
-  of xnkFuncDecl, xnkMethodDecl:
-    # result = buildProcDef(node.funcName, node.params  )
-    
-    
-    result = newProc(
-      name = newIdentNode(node.funcName),
-      params = [newNimNode(nnkFormalParams)],
-      body = convertToNimAST(node.body),
-      procType = if node.kind == xnkFuncDecl: nnkProcDef else: nnkMethodDef
-    )
-    for param in node.params:
-      result.params.add(convertToNimAST(param))
-    if node.returnType.isSome:
-      result.params[0] = convertToNimAST(node.returnType.get)
-    else:
-      result.params[0] = newEmptyNode()
-
-  of xnkClassDecl:
-    result = newNimNode(nnkTypeSection)
-    let typeDef = newNimNode(nnkTypeDef)
-    typeDef.add(newIdentNode(node.typeName))
-    typeDef.add(newEmptyNode())  # No generic params for now
-    let objTy = newNimNode(nnkObjectTy)
-    objTy.add(newEmptyNode())  # No pragma
-    objTy.add(newEmptyNode())  # No parent object
-    let recList = newNimNode(nnkRecList)
-    for member in node.members:
-      recList.add(convertToNimAST(member))
-    objTy.add(recList)
-    typeDef.add(objTy)
-    result.add(typeDef)
-
-  of xnkVarDecl, xnkLetDecl, xnkConstDecl:
-    result = newNimNode(
-      case node.kind
-      of xnkVarDecl: nnkVarSection
-      of xnkLetDecl: nnkLetSection
-      of xnkConstDecl: nnkConstSection
-      else: nnkVarSection  # This should never happen
-    )
-    let identDefs = newNimNode(nnkIdentDefs)
-    identDefs.add(newIdentNode(node.name))
-    if node.typ.isSome:
-      identDefs.add(convertToNimAST(node.typ.get))
-    else:
-      identDefs.add(newEmptyNode())
-    if node.value.isSome:
-      identDefs.add(convertToNimAST(node.value.get))
-    else:
-      identDefs.add(newEmptyNode())
-    result.add(identDefs)
-
-  of xnkIfStmt:
-    result = newNimNode(nnkIfStmt)
-    for branch in node.branches:
-      let branchNode = newNimNode(nnkElifBranch)
-      branchNode.add(convertToNimAST(branch.condition))
-      branchNode.add(convertToNimAST(branch.body))
-      result.add(branchNode)
-    if node.elseBody.isSome:
-      let elseNode = newNimNode(nnkElse)
-      elseNode.add(convertToNimAST(node.elseBody.get))
-      result.add(elseNode)
-
-  of xnkWhileStmt:
-    result = newNimNode(nnkWhileStmt)
-    result.add(convertToNimAST(node.condition))
-    result.add(convertToNimAST(node.body))
-
-  of xnkForStmt:
-    result = newNimNode(nnkForStmt)
-    for v in node.vars:
-      result.add(newIdentNode(v))
-    result.add(convertToNimAST(node.iter))
-    result.add(convertToNimAST(node.body))
-
-  of xnkBlockStmt:
-    result = newNimNode(nnkBlockStmt)
-    if node.label.isSome:
-      result.add(newIdentNode(node.label.get))
-    else:
-      result.add(newEmptyNode())
-    result.add(convertToNimAST(node.body))
-
-  of xnkCallExpr:
-    result = newNimNode(nnkCall)
-    result.add(convertToNimAST(node.callee))
-    for arg in node.args:
-      result.add(convertToNimAST(arg))
-
-  of xnkDotExpr:
-    result = newNimNode(nnkDotExpr)
-    result.add(convertToNimAST(node.left))
-    result.add(convertToNimAST(node.right))
-
-  of xnkBracketExpr:
-    result = newNimNode(nnkBracketExpr)
-    result.add(convertToNimAST(node.expr))
-    for index in node.indices:
-      result.add(convertToNimAST(index))
-
-  of xnkBinaryExpr:
-    result = newNimNode(nnkInfix)
-    result.add(newIdentNode(node.op))
-    result.add(convertToNimAST(node.left))
-    result.add(convertToNimAST(node.right))
-
-  of xnkUnaryExpr:
-    if node.isPostfix:
-      result = newNimNode(nnkPostfix)
-    else:
-      result = newNimNode(nnkPrefix)
-    result.add(newIdentNode(node.op))
-    result.add(convertToNimAST(node.operand))
-
-  of xnkReturnStmt:
-    result = newNimNode(nnkReturnStmt)
-    if node.expr.isSome:
-      result.add(convertToNimAST(node.expr.get))
-    else:
-      result.add(newEmptyNode())
-
-  of xnkYieldStmt:
-    result = newNimNode(nnkYieldStmt)
-    if node.expr.isSome:
-      result.add(convertToNimAST(node.expr.get))
-    else:
-      result.add(newEmptyNode())
-
-  of xnkDiscardStmt:
-    result = newNimNode(nnkDiscardStmt)
-    if node.expr.isSome:
-      result.add(convertToNimAST(node.expr.get))
-    else:
-      result.add(newEmptyNode())
-
-  of xnkCaseStmt:
-    result = newNimNode(nnkCaseStmt)
-    result.add(convertToNimAST(node.expr))
-    for branch in node.branches:
-      let ofBranch = newNimNode(nnkOfBranch)
-      for cond in branch.conditions:
-        ofBranch.add(convertToNimAST(cond))
-      ofBranch.add(convertToNimAST(branch.body))
-      result.add(ofBranch)
-    if node.elseBody.isSome:
-      let elseBranch = newNimNode(nnkElse)
-      elseBranch.add(convertToNimAST(node.elseBody.get))
-      result.add(elseBranch)
-
-  of xnkTryStmt:
-    result = newNimNode(nnkTryStmt)
-    result.add(convertToNimAST(node.tryBody))
-    for exceptt in node.exceptBranches:
-      let exceptBranch = newNimNode(nnkExceptBranch)
-      if exceptt.exceptionType.isSome:
-        exceptBranch.add(convertToNimAST(exceptt.exceptionType.get))
-      exceptBranch.add(convertToNimAST(exceptt.body))
-      result.add(exceptBranch)
-    if node.finallyBody.isSome:
-      let finallyBranch = newNimNode(nnkFinally)
-      finallyBranch.add(convertToNimAST(node.finallyBody.get))
-      result.add(finallyBranch)
-
-
-  of xnkFile:
-    result = newStmtList()
-    for decl in node.moduleDecls:
-      result.add(convertToNimAST(decl))
-  
-  of xnkModule:
-    result = newStmtList()
-    for stmt in node.moduleBody:
-      result.add(convertToNimAST(stmt))
-  
-  of xnkFuncDecl, xnkMethodDecl:
-    let params = newNimNode(nnkFormalParams)
-    if node.returnType.isSome:
-      params.add(convertToNimAST(node.returnType.get))
-    else:
-      params.add(newEmptyNode())
-    for param in node.params:
-      params.add(convertToNimAST(param))
-
-    result = newProc(
-      name = newIdentNode(node.funcName),
-      params = params,
-      body = convertToNimAST(node.body),
-      procType = nnkProcDef
-    )
-    if node.isAsync:
-      result.addPragma(newIdentNode("async"))
-
-  of xnkClassDecl, xnkStructDecl:
-    result = newNimNode(nnkTypeSection)
-    let objType = newNimNode(nnkObjectTy)
-    objType.add(newEmptyNode())
-    
-    let inheritanceList = newNimNode(nnkOfInherit)
-    for baseType in node.baseTypes:
-      inheritanceList.add(convertToNimAST(baseType))
-    objType.add(inheritanceList)
-
-    let recList = newNimNode(nnkRecList)
-    for member in node.members:
-      recList.add(convertToNimAST(member))
-    objType.add(recList)
-
-    result.add(
-      newNimNode(nnkTypeDef).add(
-        newIdentNode(node.typeName),
-        newEmptyNode(),
-        newNimNode(nnkRefTy).add(objType)
-      )
-    )
-
-  of xnkInterfaceDecl:
-    # Nim doesn't have direct interface equivalent, we'll use concepts
-    result = newNimNode(nnkTypeSection)
-    let conceptDef = newNimNode(nnkTypeDef)
-    conceptDef.add(newIdentNode(node.typeName))
-    conceptDef.add(newEmptyNode())
-    let conceptTy = newNimNode(nnkConceptTy)
-    for meth in node.members:
-      conceptTy.add(convertToNimAST(meth))
-    conceptDef.add(conceptTy)
-    result.add(conceptDef)
-
-  of xnkEnumDecl:
-    result = newNimNode(nnkTypeSection)
-    let enumTy = newNimNode(nnkEnumTy)
-    enumTy.add(newEmptyNode())
-    for member in node.enumMembers:
-      if member.value.isSome:
-        enumTy.add(newNimNode(nnkEnumFieldDef).add(
-          newIdentNode(member.name),
-          convertToNimAST(member.value.get)
-        ))
-      else:
-        enumTy.add(newIdentNode(member.name))
-    result.add(
-      newNimNode(nnkTypeDef).add(
-        newIdentNode(node.enumName),
-        newEmptyNode(),
-        enumTy
-      )
-    )
-
-  of xnkVarDecl, xnkConstDecl:
-    result = newNimNode(if node.kind == xnkVarDecl: nnkVarSection else: nnkConstSection)
-    let identDefs = newNimNode(nnkIdentDefs)
-    identDefs.add(newIdentNode(node.declName))
-    if node.declType.isSome:
-      identDefs.add(convertToNimAST(node.declType.get))
-    else:
-      identDefs.add(newEmptyNode())
-    if node.initializer.isSome:
-      identDefs.add(convertToNimAST(node.initializer.get))
-    else:
-      identDefs.add(newEmptyNode())
-    result.add(identDefs)
-
-
-  of xnkRaiseStmt:
-    result = newNimNode(nnkRaiseStmt)
-    if node.expr.isSome:
-      result.add(convertToNimAST(node.expr.get))
-    else:
-      result.add(newEmptyNode())
-
-  of xnkTypeDecl:
-    result = newNimNode(nnkTypeSection)
-    result.add(
-      newNimNode(nnkTypeDef).add(
-        newIdentNode(node.typeDefName),
-        newEmptyNode(),
-        convertToNimAST(node.typeDefBody)
-      )
-    )
-
-  of xnkImportStmt:
-    result = newNimNode(nnkImportStmt)
-    for item in node.imports:
-      result.add(newIdentNode(item))
-
-  of xnkImport:
-    result = newNimNode(nnkImportStmt)
-    result.add(newIdentNode(node.importPath))
-    if node.importAlias.isSome:
-      result.add(newIdentNode("as"))
-      result.add(newIdentNode(node.importAlias.get))
-
-  of xnkExport:
-    result = newNimNode(nnkExportStmt)
-    result.add(convertToNimAST(node.exportedDecl))
-
-  of xnkExportStmt:
-    result = newNimNode(nnkExportStmt)
-    for item in node.exports:
-      result.add(newIdentNode(item))
-
-  of xnkFromImportStmt:
-    result = newNimNode(nnkFromStmt)
-    result.add(newIdentNode(node.module))
-    let importList = newNimNode(nnkImportStmt)
-    for item in node.imports:
-      importList.add(newIdentNode(item))
-    result.add(importList)
-
-  of xnkGenericParam:
-    result = newNimNode(nnkGenericParams)
-    let identDefs = newNimNode(nnkIdentDefs)
-    identDefs.add(newIdentNode(node.name))
-    if node.bounds.len > 0:
-      for bound in node.bounds:
-        identDefs.add(convertToNimAST(bound))
-    else:
-      identDefs.add(newEmptyNode())
-    identDefs.add(newEmptyNode())  # No default value
-    result.add(identDefs)
-
-  of xnkIdentifier:
-    result = newIdentNode(node.name)
-
-  of xnkComment:
-    if node.isDocComment:
-      result = newCommentStmt("## " & node.commentText)
-    else:
-      result = newCommentStmt("# " & node.commentText)
-
-  of xnkIntLit, xnkFloatLit, xnkStringLit, xnkCharLit:
-    result = newLit(parseExpr(node.literalValue))
-
-
-  of xnkBoolLit:
-    result = newLit(node.boolValue)
-
-  of xnkNilLit:
-    result = newNilLit()
-
-  of xnkTemplateDef, xnkMacroDef:
-    result = if node.kind == xnkTemplateDef: newNimNode(nnkTemplateDef) else: newNimNode(nnkMacroDef)
-    result.add(newIdentNode(node.name))
-    result.add(newEmptyNode())  # Pattern matching (not implemented here)
-    result.add(newEmptyNode())  # Generic params (not implemented here)
-    let formalParams = newNimNode(nnkFormalParams)
-    formalParams.add(newEmptyNode())  # Return type (templates/macros don't have explicit return types)
-    for param in node.params:
-      formalParams.add(convertToNimAST(param))
-    result.add(formalParams)
-    result.add(newEmptyNode())  # Pragmas (not implemented here)
-    result.add(newEmptyNode())  # Reserved slot for future use
-    result.add(convertToNimAST(node.body))
-    if node.isExported:
-      result = newNimNode(nnkPostfix).add(newIdentNode("*"), result)
-
-  of xnkPragma:
-    result = newNimNode(nnkPragma)
-    for pragma in node.pragmas:
-      result.add(convertToNimAST(pragma))
-
-  of xnkStaticStmt:
-    result = newNimNode(nnkStaticStmt)
-    result.add(convertToNimAST(node.staticBody))
-
-  of xnkDeferStmt:
-    result = newNimNode(nnkDeferStmt)
-    result.add(convertToNimAST(node.staticBody))
-
-  of xnkAsmStmt:
-    result = newNimNode(nnkAsmStmt)
-    result.add(newStrLitNode(node.asmCode))
-
-  of xnkDistinctTypeDef:
-    result = newNimNode(nnkTypeSection)
-    let typeDef = newNimNode(nnkTypeDef)
-    typeDef.add(newIdentNode(node.distinctName))
-    typeDef.add(newEmptyNode())  # No generic params
-    let distinctTy = newNimNode(nnkDistinctTy)
-    distinctTy.add(convertToNimAST(node.baseType))
-    typeDef.add(distinctTy)
-    result.add(typeDef)
-
-  of xnkConceptDef:
-    result = newNimNode(nnkTypeSection)
-    let typeDef = newNimNode(nnkTypeDef)
-    typeDef.add(newIdentNode(node.conceptName))
-    typeDef.add(newEmptyNode())  # No generic params
-    let conceptTy = newNimNode(nnkConceptTy)
-    conceptTy.add(newEmptyNode())  # No determinants
-    conceptTy.add(convertToNimAST(node.conceptBody))
-    typeDef.add(conceptTy)
-    result.add(typeDef)
-
-  of xnkMixinStmt:
-    result = newNimNode(nnkMixinStmt)
-    for name in node.mixinNames:
-      result.add(newIdentNode(name))
-
-  of xnkBindStmt:
-    result = newNimNode(nnkBindStmt)
-    for name in node.bindNames:
-      result.add(newIdentNode(name))
-
-  of xnkTupleConstr:
-    result = newNimNode(nnkTupleConstr)
-    for elem in node.tupleElements:
-      result.add(convertToNimAST(elem))
-
-  of xnkTupleUnpacking:
-    result = newNimNode(nnkVarTuple)
-    for target in node.unpackTargets:
-      result.add(convertToNimAST(target))
-    result.add(newEmptyNode())  # No type
-    result.add(convertToNimAST(node.unpackExpr))
-
-  of xnkClassDecl, xnkStructDecl:
-    result = newNimNode(nnkTypeSection)
-    let objType = newNimNode(nnkObjectTy)
-    objType.add(newEmptyNode())
-    
-    let inheritanceList = newNimNode(nnkOfInherit)
-    for baseType in node.baseTypes:
-      inheritanceList.add(convertToNimAST(baseType))
-    objType.add(inheritanceList)
-
-    let recList = newNimNode(nnkRecList)
-    for member in node.members:
-      recList.add(convertToNimAST(member))
-    objType.add(recList)
-
-    result.add(
-      newNimNode(nnkTypeDef).add(
-        newIdentNode(node.typeName),
-        newEmptyNode(),
-        newNimNode(nnkRefTy).add(objType)
-      )
-    )
-
-
-
-  of xnkFile:
-    result = newStmtList()
-    for decl in node.moduleDecls:
-      result.add(convertToNimAST(decl))
-  
-  of xnkModule:
-    # Nim doesn't have a direct equivalent to Java's module system
-    # We'll create a comment node to preserve the information
-    result = newCommentStmtNode("Module: " & node.moduleName)
-    for stmt in node.moduleBody:
-      result.add(convertToNimAST(stmt))
-  
+    result = conv_xnkModule(node)
   of xnkNamespace:
-    # Nim doesn't have namespaces, but we can use a comment to preserve the information
-    result = newCommentStmtNode("Namespace: " & node.namespaceName)
-    for stmt in node.namespaceBody:
-      result.add(convertToNimAST(stmt))
-
+    result = conv_xnkNamespace(node)
   of xnkFuncDecl, xnkMethodDecl:
-    let params = newNimNode(nnkFormalParams)
-    if node.returnType.isSome:
-      params.add(convertToNimAST(node.returnType.get))
-    else:
-      params.add(newEmptyNode())
-    for param in node.params:
-      params.add(convertToNimAST(param))
-
-    result = newProc(
-      name = newIdentNode(node.funcName),
-      params = params,
-      body = convertToNimAST(node.body),
-      procType = nnkProcDef
-    )
-    if node.isAsync:
-      result.addPragma(newIdentNode("async"))
-
-
-
-  of xnkEnumDecl:
-    result = newNimNode(nnkTypeSection)
-    let enumTy = newNimNode(nnkEnumTy)
-    enumTy.add(newEmptyNode())
-    for member in node.enumMembers:
-      if member.value.isSome:
-        enumTy.add(newNimNode(nnkEnumFieldDef).add(
-          newIdentNode(member.name),
-          convertToNimAST(member.value.get)
-        ))
-      else:
-        enumTy.add(newIdentNode(member.name))
-    result.add(
-      newNimNode(nnkTypeDef).add(
-        newIdentNode(node.enumName),
-        newEmptyNode(),
-        enumTy
-      )
-    )
-
+    result = conv_xnkFuncDecl_method(node)
+  of xnkClassDecl, xnkStructDecl:
+    result = conv_xnkClassDecl_structDecl(node)
   of xnkInterfaceDecl:
-    # Nim doesn't have interfaces, but we can use concepts
-    result = newNimNode(nnkTypeSection)
-    let conceptDef = newNimNode(nnkTypeDef)
-    conceptDef.add(newIdentNode(node.typeName))
-    conceptDef.add(newEmptyNode())
-    let conceptTy = newNimNode(nnkConceptTy)
-    for meth in node.members:
-      conceptTy.add(convertToNimAST(meth))
-    conceptDef.add(conceptTy)
-    result.add(conceptDef)
-
-  of xnkVarDecl:
-    result = newNimNode(nnkVarSection)
-    let identDefs = newNimNode(nnkIdentDefs)
-    identDefs.add(newIdentNode(node.declName))
-    if node.declType.isSome:
-      identDefs.add(convertToNimAST(node.declType.get))
-    else:
-      identDefs.add(newEmptyNode())
-    if node.initializer.isSome:
-      identDefs.add(convertToNimAST(node.initializer.get))
-    else:
-      identDefs.add(newEmptyNode())
-    result.add(identDefs)
-
-  of xnkLetDecl:
-    result = newNimNode(nnkLetSection)
-    let identDefs = newNimNode(nnkIdentDefs)
-    identDefs.add(newIdentNode(node.declName))
-    if node.declType.isSome:
-      identDefs.add(convertToNimAST(node.declType.get))
-    else:
-      identDefs.add(newEmptyNode())
-    if node.initializer.isSome:
-      identDefs.add(convertToNimAST(node.initializer.get))
-    else:
-      identDefs.add(newEmptyNode())
-    result.add(identDefs)
-
-  of xnkConstDecl:
-    result = newNimNode(nnkConstSection)
-    let identDefs = newNimNode(nnkIdentDefs)
-    identDefs.add(newIdentNode(node.declName))
-    if node.declType.isSome:
-      identDefs.add(convertToNimAST(node.declType.get))
-    else:
-      identDefs.add(newEmptyNode())
-    if node.initializer.isSome:
-      identDefs.add(convertToNimAST(node.initializer.get))
-    else:
-      identDefs.add(newEmptyNode())
-    result.add(identDefs)
-
+    result = conv_xnkInterfaceDecl(node)
+  of xnkEnumDecl:
+    result = conv_xnkEnumDecl(node)
+  of xnkVarDecl, xnkLetDecl, xnkConstDecl:
+    result = conv_xnkVarLetConst(node)
+  of xnkIfStmt:
+    result = conv_xnkIfStmt(node)
+  of xnkWhileStmt:
+    result = conv_xnkWhileStmt(node)
+  of xnkForStmt:
+    result = conv_xnkForStmt(node)
+  of xnkBlockStmt:
+    result = conv_xnkBlockStmt(node)
+  of xnkCallExpr:
+    result = conv_xnkCallExpr(node)
+  of xnkDotExpr:
+    result = conv_xnkDotExpr(node)
+  of xnkMemberAccessExpr:
+    result = conv_xnkMemberAccess(node)
+  of xnkBracketExpr:
+    result = conv_xnkBracketExpr(node)
+  of xnkIndexExpr:
+    result = conv_xnkIndexExpr(node)
+  of xnkBinaryExpr:
+    result = conv_xnkBinaryExpr(node)
+  of xnkUnaryExpr:
+    result = conv_xnkUnaryExpr(node)
+  of xnkReturnStmt:
+    result = conv_xnkReturnStmt(node)
+  of xnkYieldStmt:
+    result = conv_xnkYieldStmt(node)
+  of xnkDiscardStmt:
+    result = conv_xnkDiscardStmt(node)
+  of xnkCaseStmt:
+    result = conv_xnkCaseStmt(node)
+  of xnkTryStmt:
+    result = conv_xnkTryStmt(node)
+  of xnkRaiseStmt:
+    result = conv_xnkRaiseStmt(node)
+  of xnkTypeDecl:
+    result = conv_xnkTypeDecl(node)
+  of xnkImportStmt:
+    result = conv_xnkImportStmt(node)
+  of xnkImport:
+    result = conv_xnkImport(node)
+  of xnkExport:
+    result = conv_xnkExport(node)
+  of xnkExportStmt:
+    result = conv_xnkExportStmt(node)
+  of xnkFromImportStmt:
+    result = conv_xnkFromImportStmt(node)
+  of xnkGenericParam:
+    result = conv_xnkGenericParam(node)
+  of xnkIdentifier:
+    result = conv_xnkIdentifier(node)
+  of xnkComment:
+    result = conv_xnkComment(node)
+  of xnkIntLit:
+    result = conv_xnkIntLit(node)
+  of xnkFloatLit:
+    result = conv_xnkFloatLit(node)
+  of xnkStringLit:
+    result = conv_xnkStringLit(node)
+  of xnkCharLit:
+    result = conv_xnkCharLit(node)
+  of xnkBoolLit:
+    result = conv_xnkBoolLit(node)
+  of xnkNilLit:
+    result = conv_xnkNilLit(node)
+  of xnkTemplateDef, xnkMacroDef:
+    result = conv_xnkTemplateMacro(node)
+  of xnkPragma:
+    result = conv_xnkPragma(node)
+  of xnkStaticStmt:
+    result = conv_xnkStaticStmt(node)
+  of xnkDeferStmt:
+    result = conv_xnkDeferStmt(node)
+  of xnkAsmStmt:
+    result = conv_xnkAsmStmt(node)
+  of xnkDistinctTypeDef:
+    result = conv_xnkDistinctTypeDef(node)
+  of xnkConceptDef:
+    result = conv_xnkConceptDef(node)
+  of xnkMixinStmt:
+    result = conv_xnkMixinStmt(node)
+  of xnkBindStmt:
+    result = conv_xnkBindStmt(node)
+  of xnkTupleConstr:
+    result = conv_xnkTupleConstr(node)
+  of xnkTupleUnpacking:
+    result = conv_xnkTupleUnpacking(node)
   of xnkUsingStmt:
-    result = newNimNode(nnkUsingStmt)
-    result.add(convertToNimAST(node.usingExpr))
-    result.add(convertToNimAST(node.usingBody))
-
+    result = conv_xnkUsingStmt(node)
 
   else:
-    # For constructs that don't have a direct equivalent or haven't been implemented
     raise newException(ValueError, "Unsupported XLang node kind: " & $node.kind)
 
 
