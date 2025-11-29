@@ -2,7 +2,7 @@ import xlangtypes
 
 import options, strutils
 import src/my_nim_node
-
+import src/helpers
 
 
 proc convertToNimAST*(node: XLangNode): MyNimNode =
@@ -28,6 +28,9 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
       result.add(convertToNimAST(stmt))
   
   of xnkFuncDecl, xnkMethodDecl:
+    # result = buildProcDef(node.funcName, node.params  )
+    
+    
     result = newProc(
       name = newIdentNode(node.funcName),
       params = [newNimNode(nnkFormalParams)],
@@ -192,26 +195,26 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
   of xnkFile:
     result = newStmtList()
     for decl in node.moduleDecls:
-      result.add(convertXLangNodeToNim(decl))
+      result.add(convertToNimAST(decl))
   
   of xnkModule:
     result = newStmtList()
     for stmt in node.moduleBody:
-      result.add(convertXLangNodeToNim(stmt))
+      result.add(convertToNimAST(stmt))
   
   of xnkFuncDecl, xnkMethodDecl:
     let params = newNimNode(nnkFormalParams)
     if node.returnType.isSome:
-      params.add(convertXLangNodeToNim(node.returnType.get))
+      params.add(convertToNimAST(node.returnType.get))
     else:
       params.add(newEmptyNode())
     for param in node.params:
-      params.add(convertXLangNodeToNim(param))
+      params.add(convertToNimAST(param))
 
     result = newProc(
       name = newIdentNode(node.funcName),
       params = params,
-      body = convertXLangNodeToNim(node.body),
+      body = convertToNimAST(node.body),
       procType = nnkProcDef
     )
     if node.isAsync:
@@ -224,12 +227,12 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
     
     let inheritanceList = newNimNode(nnkOfInherit)
     for baseType in node.baseTypes:
-      inheritanceList.add(convertXLangNodeToNim(baseType))
+      inheritanceList.add(convertToNimAST(baseType))
     objType.add(inheritanceList)
 
     let recList = newNimNode(nnkRecList)
     for member in node.members:
-      recList.add(convertXLangNodeToNim(member))
+      recList.add(convertToNimAST(member))
     objType.add(recList)
 
     result.add(
@@ -248,7 +251,7 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
     conceptDef.add(newEmptyNode())
     let conceptTy = newNimNode(nnkConceptTy)
     for meth in node.members:
-      conceptTy.add(convertXLangNodeToNim(meth))
+      conceptTy.add(convertToNimAST(meth))
     conceptDef.add(conceptTy)
     result.add(conceptDef)
 
@@ -260,7 +263,7 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
       if member.value.isSome:
         enumTy.add(newNimNode(nnkEnumFieldDef).add(
           newIdentNode(member.name),
-          convertXLangNodeToNim(member.value.get)
+          convertToNimAST(member.value.get)
         ))
       else:
         enumTy.add(newIdentNode(member.name))
@@ -277,11 +280,11 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
     let identDefs = newNimNode(nnkIdentDefs)
     identDefs.add(newIdentNode(node.declName))
     if node.declType.isSome:
-      identDefs.add(convertXLangNodeToNim(node.declType.get))
+      identDefs.add(convertToNimAST(node.declType.get))
     else:
       identDefs.add(newEmptyNode())
     if node.initializer.isSome:
-      identDefs.add(convertXLangNodeToNim(node.initializer.get))
+      identDefs.add(convertToNimAST(node.initializer.get))
     else:
       identDefs.add(newEmptyNode())
     result.add(identDefs)
@@ -300,7 +303,7 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
       newNimNode(nnkTypeDef).add(
         newIdentNode(node.typeDefName),
         newEmptyNode(),
-        convertXLangToNim(node.typeDefBody)
+        convertToNimAST(node.typeDefBody)
       )
     )
 
@@ -318,7 +321,7 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
 
   of xnkExport:
     result = newNimNode(nnkExportStmt)
-    result.add(convertXLangToNim(node.exportedDecl))
+    result.add(convertToNimAST(node.exportedDecl))
 
   of xnkExportStmt:
     result = newNimNode(nnkExportStmt)
@@ -447,12 +450,12 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
     
     let inheritanceList = newNimNode(nnkOfInherit)
     for baseType in node.baseTypes:
-      inheritanceList.add(convertXLangToNim(baseType))
+      inheritanceList.add(convertToNimAST(baseType))
     objType.add(inheritanceList)
 
     let recList = newNimNode(nnkRecList)
     for member in node.members:
-      recList.add(convertXLangToNim(member))
+      recList.add(convertToNimAST(member))
     objType.add(recList)
 
     result.add(
@@ -468,34 +471,34 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
   of xnkFile:
     result = newStmtList()
     for decl in node.moduleDecls:
-      result.add(convertXLangToNim(decl))
+      result.add(convertToNimAST(decl))
   
   of xnkModule:
     # Nim doesn't have a direct equivalent to Java's module system
     # We'll create a comment node to preserve the information
     result = newCommentStmtNode("Module: " & node.moduleName)
     for stmt in node.moduleBody:
-      result.add(convertXLangToNim(stmt))
+      result.add(convertToNimAST(stmt))
   
   of xnkNamespace:
     # Nim doesn't have namespaces, but we can use a comment to preserve the information
     result = newCommentStmtNode("Namespace: " & node.namespaceName)
     for stmt in node.namespaceBody:
-      result.add(convertXLangToNim(stmt))
+      result.add(convertToNimAST(stmt))
 
   of xnkFuncDecl, xnkMethodDecl:
     let params = newNimNode(nnkFormalParams)
     if node.returnType.isSome:
-      params.add(convertXLangToNim(node.returnType.get))
+      params.add(convertToNimAST(node.returnType.get))
     else:
       params.add(newEmptyNode())
     for param in node.params:
-      params.add(convertXLangToNim(param))
+      params.add(convertToNimAST(param))
 
     result = newProc(
       name = newIdentNode(node.funcName),
       params = params,
-      body = convertXLangToNim(node.body),
+      body = convertToNimAST(node.body),
       procType = nnkProcDef
     )
     if node.isAsync:
@@ -511,7 +514,7 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
       if member.value.isSome:
         enumTy.add(newNimNode(nnkEnumFieldDef).add(
           newIdentNode(member.name),
-          convertXLangToNim(member.value.get)
+          convertToNimAST(member.value.get)
         ))
       else:
         enumTy.add(newIdentNode(member.name))
@@ -531,7 +534,7 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
     conceptDef.add(newEmptyNode())
     let conceptTy = newNimNode(nnkConceptTy)
     for meth in node.members:
-      conceptTy.add(convertXLangToNim(meth))
+      conceptTy.add(convertToNimAST(meth))
     conceptDef.add(conceptTy)
     result.add(conceptDef)
 
@@ -540,11 +543,11 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
     let identDefs = newNimNode(nnkIdentDefs)
     identDefs.add(newIdentNode(node.declName))
     if node.declType.isSome:
-      identDefs.add(convertXLangToNim(node.declType.get))
+      identDefs.add(convertToNimAST(node.declType.get))
     else:
       identDefs.add(newEmptyNode())
     if node.initializer.isSome:
-      identDefs.add(convertXLangToNim(node.initializer.get))
+      identDefs.add(convertToNimAST(node.initializer.get))
     else:
       identDefs.add(newEmptyNode())
     result.add(identDefs)
@@ -554,11 +557,11 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
     let identDefs = newNimNode(nnkIdentDefs)
     identDefs.add(newIdentNode(node.declName))
     if node.declType.isSome:
-      identDefs.add(convertXLangToNim(node.declType.get))
+      identDefs.add(convertToNimAST(node.declType.get))
     else:
       identDefs.add(newEmptyNode())
     if node.initializer.isSome:
-      identDefs.add(convertXLangToNim(node.initializer.get))
+      identDefs.add(convertToNimAST(node.initializer.get))
     else:
       identDefs.add(newEmptyNode())
     result.add(identDefs)
@@ -568,11 +571,11 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
     let identDefs = newNimNode(nnkIdentDefs)
     identDefs.add(newIdentNode(node.declName))
     if node.declType.isSome:
-      identDefs.add(convertXLangToNim(node.declType.get))
+      identDefs.add(convertToNimAST(node.declType.get))
     else:
       identDefs.add(newEmptyNode())
     if node.initializer.isSome:
-      identDefs.add(convertXLangToNim(node.initializer.get))
+      identDefs.add(convertToNimAST(node.initializer.get))
     else:
       identDefs.add(newEmptyNode())
     result.add(identDefs)
@@ -581,21 +584,22 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
     result = newNimNode(nnkUsingStmt)
     result.add(convertToNimAST(node.usingExpr))
     result.add(convertToNimAST(node.usingBody))
-  # else:
+
+
+  else:
     # For constructs that don't have a direct equivalent or haven't been implemented
-    # raise newException(ValueError, "Unsupported XLang node kind: " & $node.kind)
+    raise newException(ValueError, "Unsupported XLang node kind: " & $node.kind)
 
 
 
-proc convertXLangASTToNimAST*(xlangAST: XLangAST): MyNimNode =
-  result = newStmtList()
-  for node in xlangAST:
-    result.add(convertToNimAST(node))
+# proc convertXLangASTToNimAST*(xlangAST: XLangAST): MyNimNode =
+#   result = newStmtList()
+#   for node in xlangAST:
+#     result.add(convertToNimAST(node))
 
 # Example usage
 when isMainModule:
-  let xlangAST: XLangAST = @[
-    XLangNode(kind: xnkFile, fileName: "example.nim", declarations: @[
+  let xlangAST  = XLangNode(kind: xnkFile, fileName: "example.nim", declarations: @[
       XLangNode(kind: xnkFuncDecl, funcName: "main", params: @[], returnType: none(XLangNode),
         body: XLangNode(kind: xnkBlockStmt, body: @[
           XLangNode(kind: xnkCallExpr, callee: XLangNode(kind: xnkIdentifier, name: "echo"),
@@ -603,7 +607,7 @@ when isMainModule:
         ])
       )
     ])
-  ]
+  
 
   let nimAST = convertToNimAST(xlangAST)
   echo nimAST.repr

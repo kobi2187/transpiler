@@ -14,17 +14,18 @@ type
     xnkBlockStmt, xnkIfStmt, xnkSwitchStmt, xnkCaseClause, xnkDefaultClause, xnkForStmt, xnkWhileStmt
     xnkDoWhileStmt, xnkForeachStmt, xnkTryStmt, xnkCatchStmt, xnkFinallyStmt
     xnkReturnStmt, xnkYieldStmt, xnkBreakStmt, xnkContinueStmt
-    xnkThrowStmt, xnkAssertStmt, xnkWithStmt, xnkPassStmt
+    xnkThrowStmt, xnkAssertStmt, xnkWithStmt, xnkPassStmt,
+    xnkDiscardStmt, xnkCaseStmt, xnkRaiseStmt, xnkImportStmt, xnkExportStmt, xnkFromImportStmt
 
     # Expressions
     xnkBinaryExpr, xnkUnaryExpr, xnkTernaryExpr, xnkCallExpr, xnkIndexExpr
     xnkSliceExpr, xnkMemberAccessExpr, xnkSafeNavigationExpr, xnkNullCoalesceExpr
     xnkLambdaExpr, xnkListExpr, xnkDictExpr
     xnkSetExpr, xnkTupleExpr, xnkComprehensionExpr, xnkAwaitExpr, xnkYieldExpr,
-    xnkStringInterpolation
-
+    xnkStringInterpolation,
+    xnkDotExpr, xnkBracketExpr, 
     # Literals
-    xnkIntLit, xnkFloatLit, xnkStringLit, xnkCharLit, xnkBoolLit, xnkNoneLit
+    xnkIntLit, xnkFloatLit, xnkStringLit, xnkCharLit, xnkBoolLit, xnkNoneLit, xnkNilLit
 
     # Types
     xnkNamedType, xnkArrayType, xnkMapType, xnkFuncType, xnkPointerType
@@ -32,7 +33,7 @@ type
 
     # Other
     xnkIdentifier, xnkComment, xnkImport, xnkExport, xnkAttribute
-    xnkGenericParameter, xnkParameter, xnkArgument, xnkDecorator,
+    xnkGenericParam, xnkParameter, xnkArgument, xnkDecorator,
     # Comments
 
     xnkTemplateDef, xnkMacroDef, xnkPragma, xnkStaticStmt, xnkDeferStmt,

@@ -1,121 +1,111 @@
+when defined(nimCompilerApi):
+  # Use the real compiler AST
+  import compiler/ast
+  import compiler/renderer
+  import compiler/idents
+  import compiler/options as compileropts
+
+  type NimNode* = PNode
+
+  # We'll need to provide wrappers for construction functions
+  # that match the macros API but work with compiler internals
+
+
+
 import options, strutils
 import src/xlang/xlang_types
 
-# Runtime NimNode - our own copy that can be used at runtime
-type
-  NimNodeKind* = enum
-    nnkNone, nnkEmpty, nnkIdent, nnkSym, nnkType, nnkCharLit, nnkIntLit,
-    nnkInt8Lit, nnkInt16Lit, nnkInt32Lit, nnkInt64Lit, nnkUIntLit, nnkUInt8Lit,
-    nnkUInt16Lit, nnkUInt32Lit, nnkUInt64Lit, nnkFloatLit, nnkFloat32Lit,
-    nnkFloat64Lit, nnkFloat128Lit, nnkStrLit, nnkRStrLit, nnkTripleStrLit,
-    nnkNilLit, nnkComesFrom, nnkDotCall, nnkCommand, nnkCall, nnkCallStrLit,
-    nnkInfix, nnkPrefix, nnkPostfix, nnkHiddenCallConv, nnkExprEqExpr,
-    nnkExprColonExpr, nnkIdentDefs, nnkVarTuple, nnkPar, nnkObjConstr,
-    nnkCurly, nnkCurlyExpr, nnkBracket, nnkBracketExpr, nnkPragmaExpr,
-    nnkRange, nnkDotExpr, nnkCheckedFieldExpr, nnkDerefExpr, nnkIfExpr,
-    nnkElifExpr, nnkElseExpr, nnkLambda, nnkDo, nnkAccQuoted, nnkTableConstr,
-    nnkBind, nnkClosedSymChoice, nnkOpenSymChoice, nnkHiddenStdConv,
-    nnkHiddenSubConv, nnkConv, nnkCast, nnkStaticExpr, nnkAddr, nnkHiddenAddr,
-    nnkHiddenDeref, nnkObjDownConv, nnkObjUpConv, nnkChckRangeF, nnkChckRange64,
-    nnkChckRange, nnkStringToCString, nnkCStringToString, nnkAsgn, nnkFastAsgn,
-    nnkGenericParams, nnkFormalParams, nnkOfInherit, nnkImportAs, nnkProcDef,
-    nnkMethodDef, nnkConverterDef, nnkMacroDef, nnkTemplateDef, nnkIteratorDef,
-    nnkOfBranch, nnkElifBranch, nnkExceptBranch, nnkElse, nnkAsmStmt,
-    nnkPragma, nnkPragmaBlock, nnkIfStmt, nnkWhenStmt, nnkForStmt, nnkParForStmt,
-    nnkWhileStmt, nnkCaseStmt, nnkTypeSection, nnkVarSection, nnkLetSection,
-    nnkConstSection, nnkConstDef, nnkTypeDef, nnkYieldStmt, nnkDefer,
-    nnkTryStmt, nnkFinally, nnkRaiseStmt, nnkReturnStmt, nnkBreakStmt,
-    nnkContinueStmt, nnkBlockStmt, nnkStaticStmt, nnkDiscardStmt, nnkStmtList,
-    nnkImportStmt, nnkImportExceptStmt, nnkExportStmt, nnkExportExceptStmt,
-    nnkFromStmt, nnkIncludeStmt, nnkBindStmt, nnkMixinStmt, nnkUsingStmt,
-    nnkCommentStmt, nnkStmtListExpr, nnkBlockExpr, nnkStmtListType, nnkBlockType,
-    nnkWith, nnkWithout, nnkTypeOfExpr, nnkObjectTy, nnkTupleTy, nnkTupleClassTy,
-    nnkTypeClassTy, nnkStaticTy, nnkRecList, nnkRecCase, nnkRecWhen,
-    nnkRefTy, nnkPtrTy, nnkVarTy, nnkConstTy, nnkOutTy, nnkDistinctTy,
-    nnkProcTy, nnkIteratorTy, nnkSinkAsgn, nnkEnumTy, nnkEnumFieldDef,
-    nnkArgList, nnkPattern, nnkHiddenTryStmt, nnkClosure, nnkGotoState,
-    nnkState, nnkBreakState, nnkFuncDef, nnkTupleConstr, nnkError,
-    nnkModuleRef, nnkReplayAction, nnkNilRodNode
+when not defined(nimCompilerApi):
+  import nimnode2
+  type
+    NimNode* = PNode2
+    NimNodeKind* = TNodeKind
 
-  NimNode* = ref object
-    kind*: NimNodeKind
-    strVal*: string      # For ident, string literals
-    intVal*: BiggestInt  # For int literals
-    floatVal*: BiggestFloat  # For float literals
-    sons*: seq[NimNode]  # Child nodes
+  var gIdentCache* {.threadvar.}: IdentCache
+  when isMainModule:
+    gIdentCache = newIdentCache()
+
+  proc newIdent(s: string): PIdent =
+    gIdentCache.getIdent(s)
 
 # Helper constructors
-proc newNimNode*(kind: NimNodeKind): NimNode =
-  NimNode(kind: kind, sons: @[])
+proc newNimNode*(kind: NimNodeKind): NimNode2 =
+  result = NimNode2(kind: kind, info: unknownLineInfo)
 
-proc newIdentNode*(ident: string): NimNode =
-  NimNode(kind: nnkIdent, strVal: ident, sons: @[])
+proc newIdentNode*(ident: string): NimNode2 =
+  result = newNimNode(nkIdent)
+  result.ident = newIdent(ident)
 
-proc newIntLitNode*(val: BiggestInt): NimNode =
-  NimNode(kind: nnkIntLit, intVal: val, sons: @[])
+proc newIntLitNode*(val: BiggestInt): NimNode2 =
+  result = newNimNode(nkIntLit)
+  result.intVal = val
 
-proc newFloatLitNode*(val: BiggestFloat): NimNode =
-  NimNode(kind: nnkFloatLit, floatVal: val, sons: @[])
+proc newFloatLitNode*(val: BiggestFloat): NimNode2 =
+  result = newNimNode(nkFloatLit)
+  result.floatVal = val
 
-proc newStrLitNode*(val: string): NimNode =
-  NimNode(kind: nnkStrLit, strVal: val, sons: @[])
+proc newStrLitNode*(val: string): NimNode2 =
+  result = newNimNode(nkStrLit)
+  result.strVal = val
 
-proc newEmptyNode*(): NimNode =
-  NimNode(kind: nnkEmpty, sons: @[])
+proc newEmptyNode*(): NimNode2 =
+  newNimNode(nkEmpty)
 
-proc newStmtList*(): NimNode =
-  NimNode(kind: nnkStmtList, sons: @[])
+proc newStmtList*(): NimNode2 =
+  newNimNode(nkStmtList)
 
-proc newCommentStmtNode*(comment: string): NimNode =
-  NimNode(kind: nnkCommentStmt, strVal: comment, sons: @[])
+proc newCommentStmtNode*(comment: string): NimNode2 =
+  result = newNimNode(nkCommentStmt)
+  result.strVal = comment
 
-proc newLit*(val: int): NimNode =
+proc newLit*(val: int): NimNode2 =
   newIntLitNode(val)
 
-proc newLit*(val: string): NimNode =
+proc newLit*(val: string): NimNode2 =
   newStrLitNode(val)
 
-proc newLit*(val: float): NimNode =
+proc newLit*(val: float): NimNode2 =
   newFloatLitNode(val)
 
-proc newLit*(val: char): NimNode =
-  NimNode(kind: nnkCharLit, intVal: val.ord, sons: @[])
+proc newLit*(val: char): NimNode2 =
+  result = newNimNode(nkCharLit)
+  result.intVal = val.ord
 
-proc newLit*(val: bool): NimNode =
+proc newLit*(val: bool): NimNode2 =
   newIdentNode(if val: "true" else: "false")
 
-proc newNilLit*(): NimNode =
-  NimNode(kind: nnkNilLit, sons: @[])
+proc newNilLit*(): NimNode2 =
+  newNimNode(nkNilLit)
 
-proc add*(parent, child: NimNode): NimNode {.discardable.} =
+proc add*(parent, child: NimNode2): NimNode2 {.discardable.} =
   parent.sons.add(child)
   return parent
 
-proc add*(parent: NimNode, children: varargs[NimNode]): NimNode {.discardable.} =
+proc add*(parent: NimNode2, children: varargs[NimNode2]): NimNode2 {.discardable.} =
   for child in children:
     parent.sons.add(child)
   return parent
 
-proc `[]`*(node: NimNode, i: int): NimNode =
+proc `[]`*(node: NimNode2, i: int): NimNode2 =
   node.sons[i]
 
-proc `[]=`*(node: NimNode, i: int, child: NimNode) =
+proc `[]=`*(node: NimNode2, i: int, child: NimNode2) =
   node.sons[i] = child
 
-proc len*(node: NimNode): int =
+proc len*(node: NimNode2): int =
   node.sons.len
 
-proc params*(node: NimNode): NimNode =
+proc params*(node: NimNode2): NimNode2 =
   # For proc/func/method nodes, params are at index 3
-  if node.kind in {nnkProcDef, nnkMethodDef, nnkFuncDef, nnkIteratorDef,
-                   nnkTemplateDef, nnkMacroDef}:
+  if node.kind in {nkProcDef, nkMethodDef, nkFuncDef, nkIteratorDef,
+                   nkTemplateDef, nkMacroDef}:
     return node.sons[3]
   else:
     raise newException(ValueError, "params only valid for proc-like nodes")
 
-proc newProc*(name: NimNode = nil, params: openArray[NimNode] = [],
-              body: NimNode = nil, procType = nnkProcDef,
-              pragmas: NimNode = nil): NimNode =
+proc newProc*(name: NimNode2 = nil, params: openArray[NimNode2] = [],
+              body: NimNode2 = nil, procType = nkProcDef,
+              pragmas: NimNode2 = nil): NimNode2 =
   result = newNimNode(procType)
   result.add(if name != nil: name else: newEmptyNode())
   result.add(newEmptyNode())  # term rewriting macros
@@ -128,56 +118,51 @@ proc newProc*(name: NimNode = nil, params: openArray[NimNode] = [],
   result.add(newEmptyNode())  # reserved
   result.add(if body != nil: body else: newStmtList())
 
-proc addPragma*(procDef, pragma: NimNode) =
+proc addPragma*(procDef, pragma: NimNode2) =
   # pragmas are at index 4 in proc def
-  if procDef.sons[4].kind == nnkEmpty:
+  if procDef.sons[4].kind == nkEmpty:
     procDef.sons[4] = newNimNode(nnkPragma)
   procDef.sons[4].add(pragma)
 
-proc newIdentDefs*(name, typ: NimNode, default: NimNode = nil): NimNode =
+proc newIdentDefs*(name, typ: NimNode2, default: NimNode2 = nil): NimNode2 =
   result = newNimNode(nnkIdentDefs)
   result.add(name)
   result.add(typ)
   result.add(if default != nil: default else: newEmptyNode())
 
 # Simple repr - just for debugging/basic output
-proc repr*(node: NimNode, indent = 0): string =
-  let ind = "  ".repeat(indent)
-  case node.kind
-  of nnkIdent:
-    result = node.strVal
-  of nnkStrLit, nnkRStrLit, nnkTripleStrLit:
-    result = "\"" & node.strVal & "\""
-  of nnkIntLit:
-    result = $node.intVal
-  of nnkFloatLit:
-    result = $node.floatVal
-  of nnkCommentStmt:
-    result = "# " & node.strVal
-  of nnkEmpty:
-    result = ""
-  of nnkStmtList:
-    var stmts: seq[string]
-    for son in node.sons:
-      let s = repr(son, indent)
-      if s.len > 0:
-        stmts.add(s)
-    result = stmts.join("\n")
-  else:
-    # For complex nodes, just show kind and children
-    result = ind & $node.kind
-    for son in node.sons:
-      result &= "\n" & repr(son, indent + 1)
+proc `$`*(node: NimNode2): string =
+  proc `$`(node: NimNode2, indent: int): string =
+    if node == nil: return "nil"
+    result = "  ".repeat(indent) & $node.kind
+    case node.kind
+    of nkIdent:
+      result &= " " & node.ident.s
+    of nkSym:
+      result &= " " & node.sym.name.s
+    of nkStrLit..nkTripleStrLit:
+      result &= " \"" & node.strVal & "\""
+    of nkCharLit..nkUInt64Lit:
+      result &= " " & $node.intVal
+    of nkFloatLiterals:
+      result &= " " & $node.floatVal
+    else:
+      if node.sons.len > 0:
+        result &= "[\n"
+        for son in node.sons:
+          result &= $(son, indent + 1) & ",\n"
+        result &= "  ".repeat(indent) & "]"
+  return $(node, 0)
 
-proc treeRepr*(node: NimNode, indent = 0): string =
+proc treeRepr*(node: NimNode2, indent = 0): string =
   let ind = "  ".repeat(indent)
   result = ind & $node.kind
   case node.kind
-  of nnkIdent, nnkStrLit, nnkCommentStmt:
+  of nkIdent, nkStrLit, nkCommentStmt:
     result &= " \"" & node.strVal & "\""
-  of nnkIntLit:
+  of nkIntLit:
     result &= " " & $node.intVal
-  of nnkFloatLit:
+  of nkFloatLit:
     result &= " " & $node.floatVal
   else:
     discard
@@ -187,19 +172,19 @@ proc treeRepr*(node: NimNode, indent = 0): string =
 ## Complete XLang AST to Nim AST converter
 ## Handles all XLang node kinds defined in xlangtypes.nim
 
-proc convertXLangToNim*(node: XLangNode): NimNode
+proc convertXLangToNim*(node: XLangNode): NimNode2
 
 # Forward declarations for mutual recursion
-proc convertType(node: XLangNode): NimNode
-proc convertExpression(node: XLangNode): NimNode
-proc convertStatement(node: XLangNode): NimNode
-proc convertDeclaration(node: XLangNode): NimNode
+proc convertType(node: XLangNode): NimNode2
+proc convertExpression(node: XLangNode): NimNode2
+proc convertStatement(node: XLangNode): NimNode2
+proc convertDeclaration(node: XLangNode): NimNode2
 
 # =============================================================================
 # Type Conversions
 # =============================================================================
 
-proc convertType(node: XLangNode): NimNode =
+proc convertType(node: XLangNode): NimNode2 =
   case node.kind
   of xnkNamedType:
     result = newIdentNode(node.typeName)
@@ -258,7 +243,7 @@ proc convertType(node: XLangNode): NimNode =
 # Expression Conversions
 # =============================================================================
 
-proc convertExpression(node: XLangNode): NimNode =
+proc convertExpression(node: XLangNode): NimNode2 =
   case node.kind
   of xnkIntLit:
     result = newLit(node.literalValue.parseInt)
@@ -392,7 +377,7 @@ proc convertExpression(node: XLangNode): NimNode =
 # Statement Conversions
 # =============================================================================
 
-proc convertStatement(node: XLangNode): NimNode =
+proc convertStatement(node: XLangNode): NimNode2 =
   case node.kind
   of xnkBlockStmt:
     result = newStmtList()
@@ -567,10 +552,10 @@ proc convertStatement(node: XLangNode): NimNode =
 # Declaration Conversions
 # =============================================================================
 
-proc convertDeclaration(node: XLangNode): NimNode =
+proc convertDeclaration(node: XLangNode): NimNode2 =
   case node.kind
   of xnkFuncDecl, xnkMethodDecl:
-    var paramSeq: seq[NimNode] = @[]
+    var paramSeq: seq[NimNode2] = @[]
     if node.returnType.isSome:
       paramSeq.add(convertType(node.returnType.get))
     else:
@@ -810,7 +795,7 @@ proc convertDeclaration(node: XLangNode): NimNode =
 # Other Node Conversions
 # =============================================================================
 
-proc convertOther(node: XLangNode): NimNode =
+proc convertOther(node: XLangNode): NimNode2 =
   case node.kind
   of xnkImport:
     result = newNimNode(nnkImportStmt)
@@ -899,7 +884,7 @@ proc convertOther(node: XLangNode): NimNode =
 # Main Dispatcher
 # =============================================================================
 
-proc convertXLangToNim*(node: XLangNode): NimNode =
+proc convertXLangToNim*(node: XLangNode): NimNode2 =
   case node.kind
   # Top-level containers
   of xnkFile:
@@ -964,7 +949,7 @@ proc convertXLangToNim*(node: XLangNode): NimNode =
 # Batch Converter
 # =============================================================================
 
-proc convertXLangASTToNimAST*(xlangAST: XLangAST): NimNode =
+proc convertXLangASTToNimAST*(xlangAST: XLangAST): NimNode2 =
   ## Convert a complete XLang AST to Nim AST
   result = newStmtList()
   for node in xlangAST:
