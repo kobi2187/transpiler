@@ -5,7 +5,7 @@ import nimastToCode
 import xlangtonim
 import src/transforms/pass_manager
 import src/transforms/nim_passes
-import src/error_handling
+import src/xlang/error_handling
 
 
 
@@ -88,7 +88,7 @@ proc main() =
   # Step 3: Convert XLang AST to Nim AST
   var nimAst: NimNode
   try:
-    nimAst = convertXLangToNim(xlangAst)
+    nimAst = convertToNimAST(xlangAst)
     if verbose:
       echo "✓ Nim AST created successfully"
   except Exception as e:

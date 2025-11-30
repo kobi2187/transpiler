@@ -1,3 +1,5 @@
+import strutils
+
 ## Language Capabilities
 ##
 ## Defines what features each output language supports.

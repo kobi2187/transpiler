@@ -21,30 +21,23 @@ proc transformForToWhile*(node: XLangNode): XLangNode =
   if node.forInit.isSome:
     stmts.add(node.forInit.get)
 
-  # Create while loop
-  let whileBody = if node.forBody.kind == xnkBlockStmt:
-    # Add update to end of existing block
-    var bodyStmts = node.forBody.blockBody
-    if node.forUpdate.isSome:
-      bodyStmts.add(node.forUpdate.get)
-    XLangNode(
-      kind: xnkBlockStmt,
-      blockBody: bodyStmts
-    )
-  else:
-    # Create new block with body and update
-    var bodyStmts = @[node.forBody]
-    if node.forUpdate.isSome:
-      bodyStmts.add(node.forUpdate.get)
-    XLangNode(
-      kind: xnkBlockStmt,
-      blockBody: bodyStmts
-    )
+  # Create while loop body and append update increment if present
+  var bodyStmts: seq[XLangNode] = @[]
+  if node.forBody.isSome:
+    if node.forBody.get.kind == xnkBlockStmt:
+      bodyStmts = node.forBody.get.blockBody
+    else:
+      bodyStmts.add(node.forBody.get)
+  # forIncrement holds the update expression in our types
+  if node.forIncrement.isSome:
+    bodyStmts.add(node.forIncrement.get)
+
+  let whileBody = XLangNode(kind: xnkBlockStmt, blockBody: bodyStmts)
 
   let whileLoop = XLangNode(
     kind: xnkWhileStmt,
-    whileCondition: if node.forCondition.isSome:
-                      node.forCondition.get
+    whileCondition: if node.forCond.isSome:
+                      node.forCond.get
                     else:
                       # No condition means infinite loop
                       XLangNode(kind: xnkBoolLit, literalValue: "true"),

@@ -4,8 +4,8 @@
 ## to lower constructs and make code more idiomatic for the target language.
 
 import ../../xlangtypes
-import ../lang_capabilities
-import ../error_handling
+import ../xlang/lang_capabilities
+import ../xlang/error_handling
 import options
 import tables
 import strutils
@@ -134,11 +134,14 @@ proc applyPass(pass: TransformPass, node: XLangNode): XLangNode =
   # Recursively apply to children based on node kind
   case result.kind
   of xnkFile, xnkModule, xnkNamespace:
-    if result.children.len > 0:
-      var newChildren: seq[XLangNode] = @[]
-      for child in result.children:
-        newChildren.add(applyPass(pass, child))
-      result.children = newChildren
+    var newChildren: seq[XLangNode] = @[]
+    for child in result.getChildren():
+      newChildren.add(applyPass(pass, child))
+    case result.kind
+    of xnkFile: result.moduleDecls = newChildren
+    of xnkModule: result.moduleBody = newChildren
+    of xnkNamespace: result.namespaceBody = newChildren
+    else: discard
 
   of xnkBlockStmt:
     if result.blockBody.len > 0:
@@ -169,7 +172,8 @@ proc applyPass(pass: TransformPass, node: XLangNode): XLangNode =
       result.forCond = some(applyPass(pass, result.forCond.get))
     if result.forIncrement.isSome:
       result.forIncrement = some(applyPass(pass, result.forIncrement.get))
-    result.forBody = applyPass(pass, result.forBody)
+    if result.forBody.isSome:
+      result.forBody = some(applyPass(pass, result.forBody.get))
 
   of xnkSwitchStmt:
     result.switchExpr = applyPass(pass, result.switchExpr)
@@ -239,7 +243,7 @@ proc detectCircularDependencies*(pm: PassManager): seq[string] =
   var visited = initTable[TransformPassID, bool]()
   var recStack = initTable[TransformPassID, bool]()
 
-  proc hasCycle(passID: TransformPassID, path: seq[TransformPassID]): bool =
+  proc hasCycle(passID: TransformPassID, path: seq[TransformPassID], cycleErrors: var seq[string]): bool =
     # Mark current node as visited and add to recursion stack
     visited[passID] = true
     recStack[passID] = true
@@ -249,7 +253,7 @@ proc detectCircularDependencies*(pm: PassManager): seq[string] =
       for dep in depMap[passID]:
         if not visited.getOrDefault(dep, false):
           # Recurse on unvisited dependency
-          if hasCycle(dep, path & @[passID]):
+          if hasCycle(dep, path & @[passID], cycleErrors):
             return true
         elif recStack.getOrDefault(dep, false):
           # Found a cycle!
@@ -259,7 +263,7 @@ proc detectCircularDependencies*(pm: PassManager): seq[string] =
             if i > 0:
               cycleStr &= " → "
             cycleStr &= $id
-          result.add("Circular dependency detected: " & cycleStr)
+          cycleErrors.add("Circular dependency detected: " & cycleStr)
           return true
 
     # Remove from recursion stack
@@ -269,7 +273,7 @@ proc detectCircularDependencies*(pm: PassManager): seq[string] =
   # Check each pass as potential cycle start
   for pass in pm.passes:
     if pass.enabled and not visited.getOrDefault(pass.id, false):
-      discard hasCycle(pass.id, @[])
+      discard hasCycle(pass.id, @[], result)
 
 proc getPassExecutionOrder*(pm: PassManager): seq[TransformPass] =
   ## Determine pass execution order based on dependencies

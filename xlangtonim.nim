@@ -37,7 +37,7 @@ proc conv_xnkFuncDecl_method(node: XLangNode): MyNimNode =
   result.add(newEmptyNode())
   # 3: formal params
   let formalParams = newNimNode(nnkFormalParams)
-  if node.returnType.isSome:
+  if node.returnType.isSome():
     formalParams.add(convertToNimAST(node.returnType.get))
   else:
     formalParams.add(newEmptyNode())
@@ -91,7 +91,7 @@ proc conv_xnkEnumDecl(node: XLangNode): MyNimNode =
   let enumTy = newNimNode(nnkEnumTy)
   enumTy.add(newEmptyNode())
   for member in node.enumMembers:
-    if member.value.isSome:
+    if member.value.isSome():
       let field = newNimNode(nnkEnumFieldDef)
       field.add(newIdentNode(member.name))
       field.add(convertToNimAST(member.value.get))
@@ -109,11 +109,11 @@ proc conv_xnkVarLetConst(node: XLangNode): MyNimNode =
   result = newNimNode(kind)
   let identDefs = newNimNode(nnkIdentDefs)
   identDefs.add(newIdentNode(node.declName))
-  if node.declType.isSome:
+  if node.declType.isSome():
     identDefs.add(convertToNimAST(node.declType.get))
   else:
     identDefs.add(newEmptyNode())
-  if node.initializer.isSome:
+  if node.initializer.isSome():
     identDefs.add(convertToNimAST(node.initializer.get))
   else:
     identDefs.add(newEmptyNode())
@@ -124,8 +124,7 @@ proc conv_xnkIfStmt(node: XLangNode): MyNimNode =
   let branchNode = newNimNode(nnkElifBranch)
   branchNode.add(convertToNimAST(node.ifCondition))
   branchNode.add(convertToNimAST(node.ifBody))
-  result.add(branchNode)
-  if node.elseBody.isSome:
+  if node.elseBody.isSome():
     let elseNode = newNimNode(nnkElse)
     elseNode.add(convertToNimAST(node.elseBody.get))
     result.add(elseNode)
@@ -137,21 +136,21 @@ proc conv_xnkWhileStmt(node: XLangNode): MyNimNode =
 
 proc conv_xnkForStmt(node: XLangNode): MyNimNode =
   # Handle C-style or for-in style
-  if node.forInit.isSome and node.forCond.isSome and node.forIncrement.isSome:
+  if node.forInit.isSome() and node.forCond.isSome() and node.forIncrement.isSome():
     result = newStmtList()
     result.add(convertToNimAST(node.forInit.get))
     let whileStmt = newNimNode(nnkWhileStmt)
     whileStmt.add(convertToNimAST(node.forCond.get))
     let body = newStmtList()
-    body.add(convertToNimAST(node.forBody))
+    body.add(convertToNimAST(node.forBody.get))
     body.add(convertToNimAST(node.forIncrement.get))
     whileStmt.add(body)
     result.add(whileStmt)
   else:
     # fallback: map to a simple for stmt if a foreach-like structure exists
     result = newNimNode(nnkForStmt)
-    if node.forBody.isSome:
-      result.add(convertToNimAST(node.forBody))
+    if node.forBody.isSome():
+      result.add(convertToNimAST(node.forBody.get))
     else:
       result.add(newEmptyNode())
 
@@ -190,19 +189,22 @@ proc conv_xnkYieldStmt(node: XLangNode): MyNimNode =
 
 proc conv_xnkDiscardStmt(node: XLangNode): MyNimNode =
   result = newNimNode(nnkDiscardStmt)
-  if node.expr.isSome:
-    result.add(convertToNimAST(node.expr.get))
+  if node.discardExpr.isSome:
+    result.add(convertToNimAST(node.discardExpr.get))
   else:
     result.add(newEmptyNode())
 
 proc conv_xnkCaseStmt(node: XLangNode): MyNimNode =
   result = newNimNode(nnkCaseStmt)
-  result.add(convertToNimAST(node.expr))
+  if node.expr.isSome():
+    result.add(convertToNimAST(node.expr.get))
+  else:
+    result.add(newEmptyNode())
   for branch in node.branches:
     let ofBranch = newNimNode(nnkOfBranch)
-    for cond in branch.conditions:
+    for cond in branch.caseValues:
       ofBranch.add(convertToNimAST(cond))
-    ofBranch.add(convertToNimAST(branch.body))
+    ofBranch.add(convertToNimAST(branch.caseBody))
     result.add(ofBranch)
   if node.elseBody.isSome:
     let elseBranch = newNimNode(nnkElse)
@@ -212,33 +214,31 @@ proc conv_xnkCaseStmt(node: XLangNode): MyNimNode =
 proc conv_xnkTryStmt(node: XLangNode): MyNimNode =
   result = newNimNode(nnkTryStmt)
   result.add(convertToNimAST(node.tryBody))
-  for exceptt in node.exceptBranches:
+  for exceptt in node.catchClauses:
     let exceptBranch = newNimNode(nnkExceptBranch)
-    if exceptt.exceptionType.isSome:
-      exceptBranch.add(convertToNimAST(exceptt.exceptionType.get))
-    exceptBranch.add(convertToNimAST(exceptt.body))
+    if exceptt.catchType.isSome:
+      exceptBranch.add(convertToNimAST(exceptt.catchType.get))
+    exceptBranch.add(convertToNimAST(exceptt.catchBody))
     result.add(exceptBranch)
-  if node.finallyBody.isSome:
+  if node.finallyClause.isSome:
     let finallyBranch = newNimNode(nnkFinally)
-    finallyBranch.add(convertToNimAST(node.finallyBody.get))
+    finallyBranch.add(convertToNimAST(node.finallyClause.get))
     result.add(finallyBranch)
 
 proc conv_xnkRaiseStmt(node: XLangNode): MyNimNode =
   result = newNimNode(nnkRaiseStmt)
-  if node.expr.isSome:
-    result.add(convertToNimAST(node.expr.get))
+  if node.raiseExpr.isSome:
+    result.add(convertToNimAST(node.raiseExpr.get))
   else:
     result.add(newEmptyNode())
 
 proc conv_xnkTypeDecl(node: XLangNode): MyNimNode =
   result = newNimNode(nnkTypeSection)
-  result.add(
-    newNimNode(nnkTypeDef).add(
-      newIdentNode(node.typeDefName),
-      newEmptyNode(),
-      convertToNimAST(node.typeDefBody)
-    )
-  )
+  let typeDef = newNimNode(nnkTypeDef)
+  typeDef.add(newIdentNode(node.typeDefName))
+  typeDef.add(newEmptyNode())
+  typeDef.add(convertToNimAST(node.typeDefBody))
+  result.add(typeDef)
 
 proc conv_xnkImportStmt(node: XLangNode): MyNimNode =
   result = newNimNode(nnkImportStmt)
@@ -265,14 +265,14 @@ proc conv_xnkFromImportStmt(node: XLangNode): MyNimNode =
   result = newNimNode(nnkFromStmt)
   result.add(newIdentNode(node.module))
   let importList = newNimNode(nnkImportStmt)
-  for item in node.imports:
+  for item in node.fromImports:
     importList.add(newIdentNode(item))
   result.add(importList)
 
-proc conv_xnkGenericParam(node: XLangNode): MyNimNode =
+proc conv_xnkGenericParameter(node: XLangNode): MyNimNode =
   result = newNimNode(nnkGenericParams)
   let identDefs = newNimNode(nnkIdentDefs)
-  identDefs.add(newIdentNode(node.name))
+  identDefs.add(newIdentNode(node.genericParamName))
   if node.bounds.len > 0:
     for bound in node.bounds:
       identDefs.add(convertToNimAST(bound))
@@ -282,7 +282,7 @@ proc conv_xnkGenericParam(node: XLangNode): MyNimNode =
   result.add(identDefs)
 
 proc conv_xnkIdentifier(node: XLangNode): MyNimNode =
-  result = newIdentNode(node.name)
+  result = newIdentNode(node.identName)
 
 proc conv_xnkComment(node: XLangNode): MyNimNode =
   if node.isDocComment:
@@ -319,14 +319,17 @@ proc conv_xnkTemplateMacro(node: XLangNode): MyNimNode =
   result.add(newEmptyNode())
   let formalParams = newNimNode(nnkFormalParams)
   formalParams.add(newEmptyNode())
-  for param in node.params:
+  for param in node.tplparams:
     formalParams.add(convertToNimAST(param))
   result.add(formalParams)
   result.add(newEmptyNode())
   result.add(newEmptyNode())
-  result.add(convertToNimAST(node.body))
+  result.add(convertToNimAST(node.tmplbody))
   if node.isExported:
-    result = newNimNode(nnkPostfix).add(newIdentNode("*"), result)
+    let postfix = newNimNode(nnkPostfix)
+    postfix.add(newIdentNode("*"))
+    postfix.add(result)
+    result = postfix
 
 proc conv_xnkPragma(node: XLangNode): MyNimNode =
   result = newNimNode(nnkPragma)
@@ -338,7 +341,7 @@ proc conv_xnkStaticStmt(node: XLangNode): MyNimNode =
   result.add(convertToNimAST(node.staticBody))
 
 proc conv_xnkDeferStmt(node: XLangNode): MyNimNode =
-  result = newNimNode(nnkDeferStmt)
+  result = newNimNode(nnkDefer)
   result.add(convertToNimAST(node.staticBody))
 
 proc conv_xnkAsmStmt(node: XLangNode): MyNimNode =
@@ -392,6 +395,35 @@ proc conv_xnkUsingStmt(node: XLangNode): MyNimNode =
   result = newNimNode(nnkUsingStmt)
   result.add(convertToNimAST(node.usingExpr))
   result.add(convertToNimAST(node.usingBody))
+
+
+proc conv_xnkCallExpr(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkCall)
+  result.add(convertToNimAST(node.callee))
+  for arg in node.args:
+    result.add(convertToNimAST(arg))
+
+proc conv_xnkDotExpr(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkDotExpr)
+  result.add(convertToNimAST(node.dotBase))
+  result.add(convertToNimAST(node.member))
+
+proc conv_xnkBracketExpr(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkBracketExpr)
+  result.add(convertToNimAST(node.base))
+  result.add(convertToNimAST(node.index))
+
+
+proc conv_xnkBinaryExpr(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkInfix)
+  result.add(convertToNimAST(node.binaryLeft))
+  result.add(newIdentNode(node.binaryOp))
+  result.add(convertToNimAST(node.binaryRight))
+
+proc conv_xnkUnaryExpr(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkPrefix)
+  result.add(newIdentNode(node.unaryOp))
+  result.add(convertToNimAST(node.unaryOperand))
 
 
 proc convertToNimAST*(node: XLangNode): MyNimNode =
@@ -458,8 +490,8 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
     result = conv_xnkExportStmt(node)
   of xnkFromImportStmt:
     result = conv_xnkFromImportStmt(node)
-  of xnkGenericParam:
-    result = conv_xnkGenericParam(node)
+  of xnkGenericParameter:
+    result = conv_xnkGenericParameter(node)
   of xnkIdentifier:
     result = conv_xnkIdentifier(node)
   of xnkComment:
@@ -513,15 +545,14 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
 
 # Example usage
 when isMainModule:
-  let xlangAST  = XLangNode(kind: xnkFile, fileName: "example.nim", declarations: @[
-      XLangNode(kind: xnkFuncDecl, funcName: "main", params: @[], returnType: none(XLangNode),
-        body: XLangNode(kind: xnkBlockStmt, body: @[
-          XLangNode(kind: xnkCallExpr, callee: XLangNode(kind: xnkIdentifier, name: "echo"),
-            args: @[XLangNode(kind: xnkStringLit, value: "Hello, World!")])
-        ])
-      )
-    ])
-  
+  let xlangAST = XLangNode(kind: xnkFile, fileName: "example.nim", declarations: @[
+    XLangNode(kind: xnkFuncDecl, funcName: "main", params: @[], returnType: none(XLangNode),
+      body: XLangNode(kind: xnkBlockStmt, body: @[
+        XLangNode(kind: xnkCallExpr, callee: XLangNode(kind: xnkIdentifier, identName: "echo"),
+                 args: @[XLangNode(kind: xnkStringLit, literalValue: "Hello, World!")])
+      ])
+    )
+  ])
 
   let nimAST = convertToNimAST(xlangAST)
   echo nimAST.repr

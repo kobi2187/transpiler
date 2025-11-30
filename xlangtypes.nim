@@ -1,4 +1,24 @@
 import options
+import strutils
+
+type
+  XLangVersion = tuple[major, minor, patch: int]
+
+const SUPPORTED_XLANG_VERSION: XLangVersion = (1, 0, 0)
+proc parseVersion(v: string): XLangVersion =
+  let parts: seq[string] = v.split(".")
+  if parts.len != 3:
+    raise newException(ValueError, "Invalid version string")
+  result = (parseInt(parts[0]), parseInt(parts[1]), parseInt(parts[2]))
+
+proc isVersionCompatible(ast_version, supported_version: XLangVersion): bool =
+  if ast_version.major != supported_version.major:
+    return false
+  if ast_version.major == supported_version.major and ast_version.minor > supported_version.minor:
+    return false
+  return true
+
+
 
 type
   XLangNodeKind* = enum
@@ -33,7 +53,7 @@ type
 
     # Other
     xnkIdentifier, xnkComment, xnkImport, xnkExport, xnkAttribute
-    xnkGenericParam, xnkParameter, xnkArgument, xnkDecorator,
+    xnkGenericParameter, xnkParameter, xnkArgument, xnkDecorator,
     # Comments
 
     xnkTemplateDef, xnkMacroDef, xnkPragma, xnkStaticStmt, xnkDeferStmt,
@@ -65,11 +85,6 @@ type
       typeNameDecl*: string
       baseTypes*: seq[XLangNode]
       members*: seq[XLangNode]
-    # of xnkLetDecl, xnkConstDecl:
-    #   declName: string
-    #   declType: Option[XLangNode]
-    #   initializer: Option[XLangNode]
-
     of xnkEnumDecl:
       enumName*: string
       enumMembers*: seq[tuple[name: string, value: Option[XLangNode]]]
@@ -118,7 +133,7 @@ type
       forInit*: Option[XLangNode]
       forCond*: Option[XLangNode]
       forIncrement*: Option[XLangNode]
-      forBody*: XLangNode
+      forBody*: Option[XLangNode]
     of xnkWhileStmt, xnkDoWhileStmt:
       whileCondition*: XLangNode
       whileBody*: XLangNode
@@ -138,8 +153,8 @@ type
       finallyBody*: XLangNode
     of xnkReturnStmt:
       returnExpr*: Option[XLangNode]
-    of xnkYieldStmt:
-      yieldStmt*: XLangNode
+    of xnkYieldStmt, xnkYieldExpr:
+      yieldExpr*: Option[XLangNode]
     of xnkBreakStmt, xnkContinueStmt:
       label*: Option[string]
     of xnkThrowStmt:
@@ -197,8 +212,7 @@ type
       compIf*: seq[XLangNode]
     of xnkAwaitExpr:
       awaitExpr*: XLangNode
-    of xnkYieldExpr:
-      yieldExpr*: Option[XLangNode]
+    # xnkYieldExpr handled above grouped with xnkYieldStmt
     of xnkStringInterpolation:
       interpParts*: seq[XLangNode]  # Mix of string literals and expressions
       interpIsExpr*: seq[bool]       # True if corresponding part is expression
@@ -228,6 +242,7 @@ type
       typeMembers*: seq[XLangNode]
     of xnkIdentifier:
       identName*: string
+
     of xnkComment:
       commentText*: string
       isDocComment*: bool
@@ -243,6 +258,7 @@ type
     of xnkGenericParameter:
       genericParamName*: string
       genericParamConstraints*: seq[XLangNode]
+      bounds*: seq[XLangNode]
     of xnkParameter:
       paramName*: string
       paramType*: XLangNode
@@ -288,32 +304,50 @@ type
       destructArrayVars*: seq[string]   # Variable names for elements
       destructArrayRest*: Option[string] # Rest/spread variable name
       destructArraySource*: XLangNode    # Source array
+    of xnkDotExpr:
+      dotBase*: XLangNode
+      member*: XLangNode
+      # dot expr used for dot-style member access; memberExpr/memberName handled via xnkMemberAccessExpr
+    of xnkBracketExpr:
+      base*: XLangNode
+      index*: XLangNode
+    of xnkCaseStmt:
+      expr*: Option[XLangNode]
+      branches*: seq[XLangNode]
+      caseElseBody*: Option[XLangNode]
+    of xnkRaiseStmt:
+      raiseExpr*: Option[XLangNode]
+    of xnkImportStmt:
+      imports*: seq[string]
+    of xnkExportStmt:
+      exports*: seq[string]
+    of xnkFromImportStmt:
+      module*: string
+      fromImports*: seq[string]
+      # imports handled by xnkImportStmt; keep canonical 'fromImports*'
+    of xnkNilLit:
+      discard
+    of xnkDiscardStmt:
+      discardExpr*: Option[XLangNode]
     # else: discard
 
 
-  XLangAST* = seq[XLangNode]
+type XLangAST = object
+  version: XLangVersion
+  root: XLangNode
 
 
+proc `$`*(node: XLangNode): string =
+  if node == nil: return "nil"
+  result = $node.kind
 
-type
-  XLangVersion = tuple[major, minor, patch: int]
+proc getChildren*(node: XLangNode) : seq[XLangNode] =
+  case node.kind:
+  of xnkFile:
+    return node.moduleDecls
+  of xnkModule:
+    return node.moduleBody
+  of xnkNamespace:
+    return node.namespaceBody
 
-  # XLangAST2 = object
-  #   version: XLangVersion
-  #   root: XLangNode
-
-
-const SUPPORTED_XLANG_VERSION: XLangVersion = (1, 0, 0)
-import strutils
-proc parseVersion(v: string): XLangVersion =
-  let parts: seq[string] = v.split(".")
-  if parts.len != 3:
-    raise newException(ValueError, "Invalid version string")
-  result = (parseInt(parts[0]), parseInt(parts[1]), parseInt(parts[2]))
-
-proc isVersionCompatible(ast_version, supported_version: XLangVersion): bool =
-  if ast_version.major != supported_version.major:
-    return false
-  if ast_version.major == supported_version.major and ast_version.minor > supported_version.minor:
-    return false
-  return true
+  else: return @[]
