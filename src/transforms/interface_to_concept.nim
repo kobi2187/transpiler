@@ -33,19 +33,19 @@ proc transformInterfaceToConcept*(node: XLangNode): XLangNode =
 
       let methodCall = XLangNode(
         kind: xnkCallExpr,
-        callFunc: XLangNode(
+        callee: XLangNode(
           kind: xnkMemberAccessExpr,
-          memberObject: XLangNode(kind: xnkIdentifier, identName: "x"),
+          memberExpr: XLangNode(kind: xnkIdentifier, identName: "x"),
           memberName: member.funcName
         ),
-        callArgs: callArgs
+        args: callArgs
       )
 
       conceptBody.add(methodCall)
 
   result = XLangNode(
     kind: xnkConceptDef,
-    conceptName: node.interfaceName,
+    conceptName: node.typeNameDecl,
     conceptBody: XLangNode(
       kind: xnkBlockStmt,
       blockBody: conceptBody

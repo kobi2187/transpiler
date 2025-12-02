@@ -40,7 +40,7 @@ proc transformForToWhile*(node: XLangNode): XLangNode =
                       node.forCond.get
                     else:
                       # No condition means infinite loop
-                      XLangNode(kind: xnkBoolLit, literalValue: "true"),
+                      XLangNode(kind: xnkBoolLit, boolValue: true),
     whileBody: whileBody
   )
 

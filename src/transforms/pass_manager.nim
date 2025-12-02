@@ -66,6 +66,7 @@ type
     enabled*: bool
     dependencies*: seq[TransformPassID]  ## Passes that must run before this one
     transform*: proc(node: XLangNode): XLangNode
+    targetKinds*: seq[XLangNodeKind]         ## Optional node kinds this pass operates on; empty = all
 
   PassManager* = ref object
     ## Manages and executes transformation passes
@@ -81,7 +82,8 @@ proc newTransformPass*(
   kind: TransformPassKind,
   description: string,
   transform: proc(node: XLangNode): XLangNode,
-  dependencies: seq[TransformPassID] = @[]
+  dependencies: seq[TransformPassID] = @[],
+  targetKinds: seq[XLangNodeKind] = @[]
 ): TransformPass =
   ## Create a new transformation pass with dependency tracking
   TransformPass(
@@ -91,7 +93,8 @@ proc newTransformPass*(
     description: description,
     enabled: true,
     dependencies: dependencies,
-    transform: transform
+    transform: transform,
+    targetKinds: targetKinds
   )
 
 proc newPassManager*(targetLang: string = "nim", maxIterations: int = 10,
@@ -128,8 +131,11 @@ proc applyPass(pass: TransformPass, node: XLangNode): XLangNode =
   if not pass.enabled:
     return node
 
-  # Apply transformation to current node
-  result = pass.transform(node)
+  # Apply transformation to current node, only if it targets this node kind
+  if pass.targetKinds.len == 0 or node.kind in pass.targetKinds:
+    result = pass.transform(node)
+  else:
+    result = node
 
   # Recursively apply to children based on node kind
   case result.kind

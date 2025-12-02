@@ -56,7 +56,8 @@ proc registerNimPasses*(pm: PassManager) =
       kind: tpkLowering,
       description: "Lower C-style for loops to while loops",
       transform: transformForToWhile,
-      dependencies: @[]  # No dependencies
+      dependencies: @[],  # No dependencies
+      targetKinds: @[xnkForStmt]
     ))
 
   # 2. Do-while → while true + break
@@ -68,7 +69,8 @@ proc registerNimPasses*(pm: PassManager) =
       kind: tpkLowering,
       description: "Lower do-while loops to while loops with break",
       transform: transformDoWhileToWhile,
-      dependencies: @[]  # No dependencies
+      dependencies: @[],  # No dependencies
+      targetKinds: @[xnkDoWhileStmt]
     ))
 
   # 3. Ternary → if expression
@@ -80,7 +82,8 @@ proc registerNimPasses*(pm: PassManager) =
       kind: tpkLowering,
       description: "Transform ternary operators to if expressions",
       transform: transformTernaryToIf,
-      dependencies: @[]  # No dependencies
+      dependencies: @[],  # No dependencies
+      targetKinds: @[xnkTernaryExpr]
     ))
 
   # 4. Interface → concept
@@ -92,7 +95,8 @@ proc registerNimPasses*(pm: PassManager) =
       kind: tpkLowering,
       description: "Transform interface declarations to concepts",
       transform: transformInterfaceToConcept,
-      dependencies: @[]  # No dependencies
+      dependencies: @[],  # No dependencies
+      targetKinds: @[xnkInterfaceDecl]
     ))
 
   # 5. Property → getter/setter procs
@@ -105,7 +109,8 @@ proc registerNimPasses*(pm: PassManager) =
       kind: tpkLowering,
       description: "Transform properties to getter/setter procedures",
       transform: transformPropertyToProcs,
-      dependencies: @[]  # No dependencies
+      dependencies: @[],  # No dependencies
+      targetKinds: @[xnkPropertyDecl]
     ))
 
   # 6. Switch with fallthrough → if-elif chain
@@ -116,7 +121,8 @@ proc registerNimPasses*(pm: PassManager) =
     kind: tpkLowering,
     description: "Transform switch with fallthrough to if-elif chain",
     transform: transformSwitchFallthrough,
-    dependencies: @[]  # No dependencies
+    dependencies: @[],  # No dependencies
+    targetKinds: @[xnkSwitchStmt, xnkCaseClause]
   ))
 
   # 7. Null coalescing and safe navigation
@@ -127,7 +133,8 @@ proc registerNimPasses*(pm: PassManager) =
     kind: tpkLowering,
     description: "Transform null coalescing (??) and safe navigation (?.) operators",
     transform: transformNullCoalesce,
-    dependencies: @[]  # No dependencies
+    dependencies: @[],  # No dependencies
+    targetKinds: @[xnkNullCoalesceExpr, xnkSafeNavigationExpr]
   ))
 
   # 8. Multiple catch blocks → single catch with type checking
@@ -138,7 +145,8 @@ proc registerNimPasses*(pm: PassManager) =
     kind: tpkLowering,
     description: "Transform multiple catch blocks to single catch with type checking",
     transform: transformMultipleCatch,
-    dependencies: @[]  # No dependencies
+    dependencies: @[],  # No dependencies
+    targetKinds: @[xnkTryStmt]
   ))
 
   # 9. Destructuring assignment (JS/Python)
@@ -149,7 +157,8 @@ proc registerNimPasses*(pm: PassManager) =
     kind: tpkLowering,
     description: "Transform object and array destructuring to explicit assignments",
     transform: transformDestructuring,
-    dependencies: @[]  # No dependencies
+    dependencies: @[],  # No dependencies
+    targetKinds: @[xnkDestructureObj, xnkDestructureArray, xnkTupleUnpacking]
   ))
 
   # 10. List comprehensions (Python)
@@ -160,7 +169,8 @@ proc registerNimPasses*(pm: PassManager) =
     kind: tpkLowering,
     description: "Transform list comprehensions to for loops",
     transform: transformListComprehension,
-    dependencies: @[]  # No dependencies
+    dependencies: @[],  # No dependencies
+    targetKinds: @[xnkComprehensionExpr]
   ))
 
   # 11. String interpolation (Python f-strings, JS template literals, C#)
@@ -171,7 +181,8 @@ proc registerNimPasses*(pm: PassManager) =
     kind: tpkNormalization,
     description: "Transform string interpolation to concatenation",
     transform: transformStringInterpolation,
-    dependencies: @[]  # No dependencies
+    dependencies: @[],  # No dependencies
+    targetKinds: @[xnkStringInterpolation]
   ))
 
   # 12. Simple normalizations (pass → discard, empty blocks)
@@ -193,7 +204,8 @@ proc registerNimPasses*(pm: PassManager) =
     kind: tpkLowering,
     description: "Transform with statements to defer pattern for resource cleanup",
     transform: transformWithToDefer,
-    dependencies: @[]  # No dependencies
+    dependencies: @[],  # No dependencies
+    targetKinds: @[xnkWithStmt]
   ))
 
   # 14. Async/await normalization
@@ -204,7 +216,8 @@ proc registerNimPasses*(pm: PassManager) =
     kind: tpkNormalization,
     description: "Normalize async/await patterns to Nim conventions",
     transform: transformAsyncNormalization,
-    dependencies: @[]  # No dependencies
+    dependencies: @[],  # No dependencies
+    targetKinds: @[xnkAwaitExpr, xnkYieldExpr]
   ))
 
   # 15. Union types → variant objects (TypeScript/Python)
@@ -215,7 +228,8 @@ proc registerNimPasses*(pm: PassManager) =
     kind: tpkLowering,
     description: "Transform union types to Nim variant objects (sum types)",
     transform: transformUnionToVariant,
-    dependencies: @[]  # No dependencies
+    dependencies: @[],  # No dependencies
+    targetKinds: @[xnkUnionType]
   ))
 
   # 16. LINQ queries → sequtils/zero-functional (C#)
@@ -227,7 +241,8 @@ proc registerNimPasses*(pm: PassManager) =
     kind: tpkLowering,
     description: "Transform LINQ queries to Nim sequtils/algorithm operations",
     transform: transformLinqToSequtils,
-    dependencies: @[]  # No dependencies
+    dependencies: @[],  # No dependencies
+    targetKinds: @[xnkCallExpr]
   ))
 
   # 17. Operator overloading normalization (Python, C++, C#)
@@ -260,7 +275,8 @@ proc registerNimPasses*(pm: PassManager) =
     kind: tpkNormalization,
     description: "Transform decorators and attributes to Nim pragmas",
     transform: transformDecoratorAttribute,
-    dependencies: @[]  # No dependencies
+    dependencies: @[],  # No dependencies
+    targetKinds: @[xnkDecorator, xnkAttribute]
   ))
 
   # 20. Extension methods → regular procs (C#)
@@ -271,7 +287,8 @@ proc registerNimPasses*(pm: PassManager) =
     kind: tpkNormalization,
     description: "Transform C# extension methods to regular Nim procedures",
     transform: transformExtensionMethods,
-    dependencies: @[]  # No dependencies
+    dependencies: @[],  # No dependencies
+    targetKinds: @[xnkMethodDecl, xnkFuncDecl]
   ))
 
   # 21. Go error handling pattern (if err != nil)
@@ -293,7 +310,8 @@ proc registerNimPasses*(pm: PassManager) =
     kind: tpkNormalization,
     description: "Normalize Go defer to Nim defer (handles scope differences)",
     transform: transformGoDefer,
-    dependencies: @[]  # No dependencies
+    dependencies: @[],  # No dependencies
+    targetKinds: @[xnkDeferStmt]
   ))
 
   # 23. C# using statement (IDisposable pattern)
@@ -304,7 +322,8 @@ proc registerNimPasses*(pm: PassManager) =
     kind: tpkLowering,
     description: "Transform C# using statements to Nim defer pattern",
     transform: transformCSharpUsing,
-    dependencies: @[]  # No dependencies
+    dependencies: @[],  # No dependencies
+    targetKinds: @[xnkUsingStmt]
   ))
 
   # 24. Go concurrency (goroutines and channels)
@@ -326,7 +345,8 @@ proc registerNimPasses*(pm: PassManager) =
     kind: tpkLowering,
     description: "Transform Python generator functions to Nim iterators",
     transform: transformPythonGenerator,
-    dependencies: @[]  # No dependencies
+    dependencies: @[],  # No dependencies
+    targetKinds: @[xnkYieldStmt, xnkFuncDecl]
   ))
 
   # 26. Python type hints → Nim types
@@ -403,7 +423,8 @@ proc registerNimPasses*(pm: PassManager) =
     kind: tpkNormalization,
     description: "Normalize enum declarations to Nim enum syntax",
     transform: transformEnumNormalization,
-    dependencies: @[]  # No dependencies
+    dependencies: @[],  # No dependencies
+    targetKinds: @[xnkEnumDecl]
   ))
 
   # 33. Python multiple inheritance → composition
@@ -414,7 +435,8 @@ proc registerNimPasses*(pm: PassManager) =
     kind: tpkLowering,
     description: "Transform Python multiple inheritance to composition pattern",
     transform: transformPythonMultipleInheritance,
-    dependencies: @[]  # No dependencies
+    dependencies: @[],  # No dependencies
+    targetKinds: @[xnkClassDecl]
   ))
 
   # TODO: Additional passes for even more completeness:

@@ -13,10 +13,12 @@ proc transformDoWhileToWhile*(node: XLangNode): XLangNode =
     return node
 
   # Get the body statements
-  var bodyStmts = if node.doWhileBody.kind == xnkBlockStmt:
-    node.doWhileBody.blockBody
+  var bodyStmts: seq[XLangNode] = @[]
+  if node.whileBody.kind == xnkBlockStmt:
+    for s in node.whileBody.blockBody:
+      bodyStmts.add(s)
   else:
-    @[node.doWhileBody]
+    bodyStmts.add(node.whileBody)
 
   # Create: if not condition: break
   let breakStmt = XLangNode(
@@ -24,7 +26,7 @@ proc transformDoWhileToWhile*(node: XLangNode): XLangNode =
     ifCondition: XLangNode(
       kind: xnkUnaryExpr,
       unaryOp: "not",
-      unaryOperand: node.doWhileCondition
+      unaryOperand: node.whileCondition
     ),
     ifBody: XLangNode(
       kind: xnkBlockStmt,
@@ -39,7 +41,7 @@ proc transformDoWhileToWhile*(node: XLangNode): XLangNode =
   # Create while true loop
   result = XLangNode(
     kind: xnkWhileStmt,
-    whileCondition: XLangNode(kind: xnkBoolLit, literalValue: "true"),
+    whileCondition: XLangNode(kind: xnkBoolLit, boolValue: true),
     whileBody: XLangNode(
       kind: xnkBlockStmt,
       blockBody: bodyStmts

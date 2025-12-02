@@ -10,59 +10,51 @@ import options
 proc transformPropertyToProcs*(node: XLangNode): XLangNode =
   ## Transform property declarations into getter/setter procedures
   ## Returns a block containing both the getter and setter procs
-  if node.kind != xnkPropertyDecl:
-    return node
+  case node.kind
+  of xnkPropertyDecl:
+    let prop = node
+    var procs: seq[XLangNode] = @[]
 
-  var procs: seq[XLangNode] = @[]
+    # Create getter proc
+    if prop.getter != none(XLangNode):
+      let getter = XLangNode(
+        kind: xnkFuncDecl,
+        funcName: node.propName,
+        params: @[],  # No parameters for getter
+        returnType: some(node.propType),
+        body: prop.getter.get
+      )
+      procs.add(getter)
 
-  # Create getter proc
-  if node.propGetter.isSome:
-    let getter = XLangNode(
-      kind: xnkFuncDecl,
-      funcName: node.propName,
-      params: @[],  # No parameters for getter
-      returnType: if node.propType.isSome:
-                    some(node.propType.get)
-                  else:
-                    none(XLangNode),
-      body: node.propGetter.get,
-      isPublic: node.isPublic,
-      isExported: node.isExported
-    )
-    procs.add(getter)
+    # Create setter proc
+    if prop.setter != none(XLangNode):
+      # Nim uses `Name=` for setter procs
+      let setterName = "`" & node.propName & "=`"
 
-  # Create setter proc
-  if node.propSetter.isSome:
-    # Nim uses `Name=` for setter procs
-    let setterName = "`" & node.propName & "=`"
+      # Setter takes a value parameter
+      let valueParam = XLangNode(
+        kind: xnkParameter,
+        paramName: "value",
+        paramType: prop.propType
+      )
 
-    # Setter takes a value parameter
-    let valueParam = XLangNode(
-      kind: xnkParameter,
-      paramName: "value",
-      paramType: if node.propType.isSome:
-                   some(node.propType.get)
-                 else:
-                   none(XLangNode)
-    )
+      let setter = XLangNode(
+        kind: xnkFuncDecl,
+        funcName: setterName,
+        params: @[valueParam],
+        returnType: none(XLangNode),  # Setters return void
+        body: prop.setter.get
+      )
+      procs.add(setter)
 
-    let setter = XLangNode(
-      kind: xnkFuncDecl,
-      funcName: setterName,
-      params: @[valueParam],
-      returnType: none(XLangNode),  # Setters return void
-      body: node.propSetter.get,
-      isPublic: node.isPublic,
-      isExported: node.isExported
-    )
-    procs.add(setter)
-
-  # If we have both getter and setter, wrap in block
-  # If only one, return just that proc
-  if procs.len == 1:
-    result = procs[0]
+    # If we have both getter and setter, wrap in block
+    # If only one, return just that proc
+    if procs.len == 1:
+      result = procs[0]
+    else:
+      result = XLangNode(
+        kind: xnkBlockStmt,
+        blockBody: procs
+      )
   else:
-    result = XLangNode(
-      kind: xnkBlockStmt,
-      blockBody: procs
-    )
+    return node
