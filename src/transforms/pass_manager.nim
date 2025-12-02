@@ -78,19 +78,16 @@ type
 
 proc newTransformPass*(
   id: TransformPassID,
-  name: string,
-  kind: TransformPassKind,
-  description: string,
   transform: proc(node: XLangNode): XLangNode,
   dependencies: seq[TransformPassID] = @[],
   targetKinds: seq[XLangNodeKind] = @[]
 ): TransformPass =
-  ## Create a new transformation pass with dependency tracking
+  ## Create a new transformation pass with lightweight fields; name and kind are defaulted
   TransformPass(
     id: id,
-    name: name,
-    kind: kind,
-    description: description,
+    name: $id,
+    kind: tpkLowering,
+    description: "",
     enabled: true,
     dependencies: dependencies,
     transform: transform,

@@ -21,7 +21,7 @@ proc transformPropertyToProcs*(node: XLangNode): XLangNode =
         kind: xnkFuncDecl,
         funcName: node.propName,
         params: @[],  # No parameters for getter
-        returnType: some(node.propType),
+        returnType: node.propType,
         body: prop.getter.get
       )
       procs.add(getter)

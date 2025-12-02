@@ -83,28 +83,30 @@ proc collectDefers(node: XLangNode): seq[XLangNode] =
 
   of xnkBlockStmt:
     for stmt in node.blockBody:
-      result.add(collectDefers(stmt))
+      for d in collectDefers(stmt):
+        result.add(d)
 
   of xnkIfStmt:
-    result.add(collectDefers(node.ifBody))
+    for d in collectDefers(node.ifBody): result.add(d)
     if node.elseBody.isSome:
-      result.add(collectDefers(node.elseBody.get))
+      for d in collectDefers(node.elseBody.get): result.add(d)
 
   of xnkWhileStmt, xnkDoWhileStmt:
-    result.add(collectDefers(node.whileBody))
+    for d in collectDefers(node.whileBody): result.add(d)
 
   of xnkForStmt:
-    result.add(collectDefers(node.forBody))
+    if node.forBody.isSome:
+      for d in collectDefers(node.forBody.get): result.add(d)
 
   of xnkForeachStmt:
-    result.add(collectDefers(node.foreachBody))
+    for d in collectDefers(node.foreachBody): result.add(d)
 
   of xnkSwitchStmt:
     for caseNode in node.switchCases:
       if caseNode.kind == xnkCaseClause:
-        result.add(collectDefers(caseNode.caseBody))
+        for d in collectDefers(caseNode.caseBody): result.add(d)
       elif caseNode.kind == xnkDefaultClause:
-        result.add(collectDefers(caseNode.defaultBody))
+        for d in collectDefers(caseNode.defaultBody): result.add(d)
 
   else:
     discard

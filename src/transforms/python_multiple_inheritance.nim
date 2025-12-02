@@ -43,7 +43,7 @@ proc transformMultipleInheritance*(node: XLangNode): XLangNode =
   if not hasMultipleInheritance(node):
     return node
 
-  let className = node.classNameDecl
+  let className = node.typeNameDecl
   let baseTypes = node.baseTypes
   let members = node.members
 
@@ -76,7 +76,7 @@ proc transformMultipleInheritance*(node: XLangNode): XLangNode =
   # Create class with single inheritance + mixin fields
   result = XLangNode(
     kind: xnkClassDecl,
-    classNameDecl: className,
+    typeNameDecl: className,
     baseTypes: @[primaryBase],  # Only first base
     members: mixinFields & members  # Add mixin fields + original members
   )
@@ -107,7 +107,7 @@ proc generateForwardingMethods*(
     var forwardingParams = method.params
 
     # Change self parameter to className type
-    if forwardingParams.len > 0 and forwardingParams[0].kind == xnkParamDecl:
+    if forwardingParams.len > 0 and forwardingParams[0].kind == xnkParameter:
       if forwardingParams[0].paramName == "self":
         forwardingParams[0].paramType = some(XLangNode(
           kind: xnkNamedType,
@@ -130,7 +130,7 @@ proc generateForwardingMethods*(
     # Get args (skip self)
     var callArgs: seq[XLangNode] = @[]
     for i in 1..<forwardingParams.len:
-      if forwardingParams[i].kind == xnkParamDecl:
+      if forwardingParams[i].kind == xnkParameter:
         callArgs.add(XLangNode(
           kind: xnkIdentifier,
           identName: forwardingParams[i].paramName

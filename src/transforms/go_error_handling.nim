@@ -74,7 +74,7 @@ proc transformGoErrorHandling*(node: XLangNode): XLangNode =
   let cond = node.ifCondition
   let isNotNil = cond.binaryOp == "!="
 
-  if not node.ifBody.kind == xnkBlockStmt:
+  if node.ifBody.kind != xnkBlockStmt:
     return node
 
   let bodyStmts = if node.ifBody.kind == xnkBlockStmt:
@@ -200,11 +200,25 @@ proc transformErrorReturnType*(node: XLangNode): XLangNode =
     # Multiple return values (still a tuple)
     XLangNode(kind: xnkTupleExpr, elements: newElements)
 
-  result = XLangNode(
-    kind: node.kind,
-    funcName: node.funcName,
-    params: node.params,
-    returnType: some(newRetType),
-    body: node.body,
-    isAsync: node.isAsync
-  )
+  case node.kind
+  of xnkFuncDecl:
+    result = XLangNode(
+      kind: xnkFuncDecl,
+      funcName: node.funcName,
+      params: node.params,
+      returnType: some(newRetType),
+      body: node.body,
+      isAsync: node.isAsync
+    )
+  of xnkMethodDecl:
+    result = XLangNode(
+      kind: xnkMethodDecl,
+      receiver: node.receiver,
+      methodName: node.methodName,
+      mparams: node.mparams,
+      mreturnType: some(newRetType),
+      mbody: node.mbody,
+      methodIsAsync: node.methodIsAsync
+    )
+  else:
+    result = node

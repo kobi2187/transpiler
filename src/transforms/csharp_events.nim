@@ -40,9 +40,9 @@ proc transformDelegate*(node: XLangNode): XLangNode =
     kind: xnkTypeDecl,
     typeDefName: delegateName,
     typeDefBody: XLangNode(
-      kind: xnkProcType,
-      procTypeParams: params,
-      procTypeReturn: returnType
+      kind: xnkFuncType,
+      funcParams: params,
+      funcReturnType: returnType
     )
   )
 
@@ -66,7 +66,7 @@ proc transformEventDeclaration*(node: XLangNode): XLangNode =
     declName: handlerListName,
     declType: some(XLangNode(
       kind: xnkGenericType,
-      genericBase: XLangNode(kind: xnkNamedType, typeName: "seq"),
+      genericBase: some(XLangNode(kind: xnkNamedType, typeName: "seq")),
       genericArgs: @[eventType]
     )),
     initializer: some(XLangNode(
@@ -254,26 +254,27 @@ proc transformActionFunc*(node: XLangNode): XLangNode =
   if node.kind != xnkGenericType:
     return node
 
-  let baseName = if node.genericBase.kind == xnkNamedType:
-                   node.genericBase.typeName
-                 else:
-                   ""
+  var baseName = ""
+  if node.genericBase != none(XLangNode) and node.genericBase.get.kind == xnkNamedType:
+    baseName = node.genericBase.get.typeName
+  elif node.genericTypeName != "":
+    baseName = node.genericTypeName
 
   if baseName == "Action":
     # Action<T1, T2, ...> → proc(a1: T1, a2: T2, ...)
     var params: seq[XLangNode] = @[]
     for i, argType in node.genericArgs:
       params.add(XLangNode(
-        kind: xnkParamDecl,
+        kind: xnkParameter,
         paramName: "arg" & $i,
         paramType: some(argType),
-        paramDefault: none(XLangNode)
+        defaultValue: none(XLangNode)
       ))
 
     return XLangNode(
-      kind: xnkProcType,
-      procTypeParams: params,
-      procTypeReturn: none(XLangNode)  # void
+      kind: xnkFuncType,
+      funcParams: params,
+      funcReturnType: none(XLangNode)  # void
     )
 
   elif baseName == "Func":
@@ -287,16 +288,16 @@ proc transformActionFunc*(node: XLangNode): XLangNode =
 
     for i in 0..<(node.genericArgs.len - 1):
       params.add(XLangNode(
-        kind: xnkParamDecl,
+        kind: xnkParameter,
         paramName: "arg" & $i,
         paramType: some(node.genericArgs[i]),
-        paramDefault: none(XLangNode)
+        defaultValue: none(XLangNode)
       ))
 
     return XLangNode(
-      kind: xnkProcType,
-      procTypeParams: params,
-      procTypeReturn: some(returnType)
+      kind: xnkFuncType,
+      funcParams: params,
+      funcReturnType: some(returnType)
     )
 
   return node

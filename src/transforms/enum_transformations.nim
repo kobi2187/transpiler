@@ -84,7 +84,7 @@ proc transformPythonEnum*(node: XLangNode): XLangNode =
 
   result = XLangNode(
     kind: xnkEnumDecl,
-    enumName: node.classNameDecl,
+    enumName: node.typeNameDecl,
     enumMembers: enumMembers
   )
 

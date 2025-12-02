@@ -44,7 +44,10 @@ proc isGeneratorFunction(node: XLangNode): bool =
     of xnkWhileStmt, xnkDoWhileStmt:
       return hasYield(n.whileBody)
     of xnkForStmt:
-      return hasYield(n.forBody)
+      if n.forBody.isSome:
+        return hasYield(n.forBody.get)
+      else:
+        return false
     of xnkForeachStmt:
       return hasYield(n.foreachBody)
     else:
@@ -72,11 +75,11 @@ proc transformPythonGenerator*(node: XLangNode): XLangNode =
   # For now, we'll keep the declared return type or infer from first yield
 
   result = XLangNode(
-    kind: xnkIteratorDecl,  # New node kind for iterators
+    kind: xnkIteratorDecl,
     iteratorName: node.funcName,
-    params: node.params,
-    returnType: node.returnType,  # Type of yielded values
-    body: node.body
+    iteratorParams: node.params,
+    iteratorReturnType: node.returnType,
+    iteratorBody: node.body
   )
 
   # Note: Python generators can:
@@ -158,7 +161,7 @@ proc transformYieldFrom*(node: XLangNode): XLangNode =
       blockBody: @[
         XLangNode(
           kind: xnkYieldStmt,
-          yieldValue: some(XLangNode(kind: xnkIdentifier, identName: "item"))
+          yieldExpr: some(XLangNode(kind: xnkIdentifier, identName: "item"))
         )
       ]
     )

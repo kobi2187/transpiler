@@ -82,17 +82,18 @@ proc transformPythonType(typeNode: XLangNode): XLangNode =
 
   of xnkGenericType:
     # Handle generic types like List[int], Dict[str, int]
-    let baseName = if typeNode.genericBase.kind == xnkNamedType:
-                     typeNode.genericBase.typeName
-                   else:
-                     ""
+    var baseName = ""
+    if typeNode.genericBase != none(XLangNode) and typeNode.genericBase.get.kind == xnkNamedType:
+      baseName = typeNode.genericBase.get.typeName
+    elif typeNode.genericTypeName != "":
+      baseName = typeNode.genericTypeName
 
     if baseName == "Optional":
       # Optional[T] → Option[T]
       if typeNode.genericArgs.len > 0:
         return XLangNode(
           kind: xnkGenericType,
-          genericBase: XLangNode(kind: xnkNamedType, typeName: "Option"),
+          genericBase: some(XLangNode(kind: xnkNamedType, typeName: "Option")),
           genericArgs: @[transformPythonType(typeNode.genericArgs[0])]
         )
 
@@ -104,7 +105,7 @@ proc transformPythonType(typeNode: XLangNode): XLangNode =
         transformedArgs.add(transformPythonType(arg))
       return XLangNode(
         kind: xnkUnionType,
-        typeMembers: transformedArgs
+        unionTypes: transformedArgs
       )
 
     elif baseName in ["List", "list"]:
@@ -112,7 +113,7 @@ proc transformPythonType(typeNode: XLangNode): XLangNode =
       if typeNode.genericArgs.len > 0:
         return XLangNode(
           kind: xnkGenericType,
-          genericBase: XLangNode(kind: xnkNamedType, typeName: "seq"),
+          genericBase: some(XLangNode(kind: xnkNamedType, typeName: "seq")),
           genericArgs: @[transformPythonType(typeNode.genericArgs[0])]
         )
 
@@ -121,7 +122,7 @@ proc transformPythonType(typeNode: XLangNode): XLangNode =
       if typeNode.genericArgs.len == 2:
         return XLangNode(
           kind: xnkGenericType,
-          genericBase: XLangNode(kind: xnkNamedType, typeName: "Table"),
+          genericBase: some(XLangNode(kind: xnkNamedType, typeName: "Table")),
           genericArgs: @[
             transformPythonType(typeNode.genericArgs[0]),
             transformPythonType(typeNode.genericArgs[1])
@@ -133,7 +134,7 @@ proc transformPythonType(typeNode: XLangNode): XLangNode =
       if typeNode.genericArgs.len > 0:
         return XLangNode(
           kind: xnkGenericType,
-          genericBase: XLangNode(kind: xnkNamedType, typeName: "HashSet"),
+          genericBase: some(XLangNode(kind: xnkNamedType, typeName: "HashSet")),
           genericArgs: @[transformPythonType(typeNode.genericArgs[0])]
         )
 
@@ -149,7 +150,7 @@ proc transformPythonType(typeNode: XLangNode): XLangNode =
 
     return XLangNode(
       kind: xnkGenericType,
-      genericBase: transformPythonType(typeNode.genericBase),
+      genericBase: if typeNode.genericBase != none(XLangNode): some(transformPythonType(typeNode.genericBase.get)) else: none(XLangNode),
       genericArgs: transformedArgs
     )
 
@@ -185,7 +186,7 @@ proc transformPythonTypeHints*(node: XLangNode): XLangNode =
     var newParams: seq[XLangNode] = @[]
 
     for param in node.params:
-      if param.kind == xnkParamDecl:
+      if param.kind == xnkParameter:
         var newParam = param
         if param.paramType.isSome:
           newParam.paramType = some(transformPythonType(param.paramType.get))
@@ -197,14 +198,28 @@ proc transformPythonTypeHints*(node: XLangNode): XLangNode =
     if newReturnType.isSome:
       newReturnType = some(transformPythonType(newReturnType.get))
 
-    result = XLangNode(
-      kind: node.kind,
-      funcName: node.funcName,
-      params: newParams,
-      returnType: newReturnType,
-      body: node.body,
-      isAsync: node.isAsync
-    )
+    case node.kind:
+    of xnkFuncDecl:
+      result = XLangNode(
+        kind: xnkFuncDecl,
+        funcName: node.funcName,
+        params: newParams,
+        returnType: newReturnType,
+        body: node.body,
+        isAsync: node.isAsync
+      )
+    of xnkMethodDecl:
+      result = XLangNode(
+        kind: xnkMethodDecl,
+        receiver: node.receiver,
+        methodName: node.methodName,
+        mparams: newParams,
+        mreturnType: newReturnType,
+        mbody: node.mbody,
+        methodIsAsync: node.methodIsAsync
+      )
+    else:
+      result = node
 
   of xnkVarDecl, xnkLetDecl, xnkConstDecl:
     # Transform variable type annotations
@@ -212,12 +227,15 @@ proc transformPythonTypeHints*(node: XLangNode): XLangNode =
     if node.declType.isSome:
       newDeclType = some(transformPythonType(node.declType.get))
 
-    result = XLangNode(
-      kind: node.kind,
-      declName: node.declName,
-      declType: newDeclType,
-      initializer: node.initializer
-    )
+    case node.kind:
+    of xnkVarDecl:
+      result = XLangNode(kind: xnkVarDecl, declName: node.declName, declType: newDeclType, initializer: node.initializer)
+    of xnkLetDecl:
+      result = XLangNode(kind: xnkLetDecl, declName: node.declName, declType: newDeclType, initializer: node.initializer)
+    of xnkConstDecl:
+      result = XLangNode(kind: xnkConstDecl, declName: node.declName, declType: newDeclType, initializer: node.initializer)
+    else:
+      result = node
 
   of xnkClassDecl:
     # Transform class member type annotations
@@ -226,8 +244,8 @@ proc transformPythonTypeHints*(node: XLangNode): XLangNode =
       newMembers.add(transformPythonTypeHints(member))
 
     result = XLangNode(
-      kind: node.kind,
-      classNameDecl: node.classNameDecl,
+      kind: xnkClassDecl,
+      typeNameDecl: node.typeNameDecl,
       baseTypes: node.baseTypes,
       members: newMembers
     )
@@ -250,7 +268,7 @@ proc transformPythonUnionSyntax*(node: XLangNode): XLangNode =
 
     result = XLangNode(
       kind: xnkUnionType,
-      typeMembers: @[node.binaryLeft, node.binaryRight]
+      unionTypes: @[node.binaryLeft, node.binaryRight]
     )
   else:
     result = node

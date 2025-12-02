@@ -173,8 +173,8 @@ proc wrapWithTryExcept*(funcNode: XLangNode): XLangNode =
     tryBody: tryBody,
     catchClauses: @[
       XLangNode(
-        kind: xnkCatchClause,
-        catchVar: "e",
+        kind: xnkCatchStmt,
+        catchVar: some("e"),
         catchType: some(XLangNode(kind: xnkNamedType, typeName: "Exception")),
         catchBody: exceptClause
       )
@@ -182,14 +182,28 @@ proc wrapWithTryExcept*(funcNode: XLangNode): XLangNode =
     finallyClause: none(XLangNode)
   )
 
-  result = XLangNode(
-    kind: funcNode.kind,
-    funcName: funcNode.funcName,
-    params: funcNode.params,
-    returnType: funcNode.returnType,
-    body: wrappedBody,
-    isAsync: funcNode.isAsync
-  )
+  case funcNode.kind:
+  of xnkFuncDecl:
+    result = XLangNode(
+      kind: xnkFuncDecl,
+      funcName: funcNode.funcName,
+      params: funcNode.params,
+      returnType: funcNode.returnType,
+      body: wrappedBody,
+      isAsync: funcNode.isAsync
+    )
+  of xnkMethodDecl:
+    result = XLangNode(
+      kind: xnkMethodDecl,
+      receiver: funcNode.receiver,
+      methodName: funcNode.methodName,
+      mparams: funcNode.mparams,
+      mreturnType: funcNode.mreturnType,
+      mbody: wrappedBody,
+      methodIsAsync: funcNode.methodIsAsync
+    )
+  else:
+    result = funcNode
 
 # Alternative approach: use Nim's defects
 # Go panic for programming errors can map to Nim defects

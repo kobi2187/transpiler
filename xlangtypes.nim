@@ -26,24 +26,22 @@ type
     xnkFile, xnkModule, xnkNamespace
 
     # Declarations
-    xnkFuncDecl, xnkMethodDecl, xnkClassDecl, xnkStructDecl, xnkInterfaceDecl
+    xnkFuncDecl, xnkMethodDecl, xnkIteratorDecl, xnkClassDecl, xnkStructDecl, xnkInterfaceDecl
     xnkEnumDecl, xnkVarDecl, xnkConstDecl, xnkTypeDecl, xnkPropertyDecl, xnkLetDecl
-    xnkFieldDecl, xnkConstructorDecl, xnkDestructorDecl, xnkDelegateDecl
+    xnkFieldDecl, xnkConstructorDecl, xnkDestructorDecl, xnkDelegateDecl, xnkEventDecl
 
     # Statements
     xnkBlockStmt, xnkIfStmt, xnkSwitchStmt, xnkCaseClause, xnkDefaultClause, xnkForStmt, xnkWhileStmt
     xnkDoWhileStmt, xnkForeachStmt, xnkTryStmt, xnkCatchStmt, xnkFinallyStmt
-    xnkReturnStmt, xnkYieldStmt, xnkBreakStmt, xnkContinueStmt
+    xnkReturnStmt, xnkYieldStmt, xnkYieldExpr, xnkYieldFromStmt, xnkBreakStmt, xnkContinueStmt
     xnkThrowStmt, xnkAssertStmt, xnkWithStmt, xnkPassStmt,
     xnkDiscardStmt, xnkCaseStmt, xnkRaiseStmt, xnkImportStmt, xnkExportStmt, xnkFromImportStmt
 
     # Expressions
-    xnkBinaryExpr, xnkUnaryExpr, xnkTernaryExpr, xnkCallExpr, xnkIndexExpr
-    xnkSliceExpr, xnkMemberAccessExpr, xnkSafeNavigationExpr, xnkNullCoalesceExpr
-    xnkLambdaExpr, xnkListExpr, xnkDictExpr
-    xnkSetExpr, xnkTupleExpr, xnkComprehensionExpr, xnkAwaitExpr, xnkYieldExpr,
-    xnkStringInterpolation,
-    xnkDotExpr, xnkBracketExpr, 
+    xnkBinaryExpr, xnkUnaryExpr, xnkTernaryExpr, xnkCallExpr, xnkIndexExpr,
+     xnkSliceExpr, xnkMemberAccessExpr, xnkSafeNavigationExpr, xnkNullCoalesceExpr
+     xnkLambdaExpr,
+     xnkGeneratorExpr, xnkAwaitExpr, xnkStringInterpolation, xnkDotExpr, xnkBracketExpr
     # Literals
     xnkIntLit, xnkFloatLit, xnkStringLit, xnkCharLit, xnkBoolLit, xnkNoneLit, xnkNilLit
 
@@ -53,7 +51,7 @@ type
 
     # Other
     xnkIdentifier, xnkComment, xnkImport, xnkExport, xnkAttribute
-    xnkGenericParameter, xnkParameter, xnkArgument, xnkDecorator,
+    xnkGenericParameter, xnkParameter, xnkArgument, xnkDecorator, xnkLambdaProc, xnkArrowFunc
     # Comments
 
     xnkTemplateDef, xnkMacroDef, xnkPragma, xnkStaticStmt, xnkDeferStmt,
@@ -61,6 +59,8 @@ type
     xnkBindStmt, xnkTupleConstr, xnkTupleUnpacking, xnkUsingStmt,
     xnkDestructureObj, xnkDestructureArray
 
+    xnkMethodReference
+    xnkListExpr, xnkSetExpr, xnkTupleExpr, xnkDictExpr, xnkComprehensionExpr
 
 
 
@@ -89,6 +89,11 @@ type
       mreturnType*: Option[XLangNode]
       mbody*: XLangNode
       methodIsAsync*: bool
+    of xnkIteratorDecl:
+      iteratorName*: string
+      iteratorParams*: seq[XLangNode]
+      iteratorReturnType*: Option[XLangNode]
+      iteratorBody*: XLangNode
     of xnkClassDecl, xnkStructDecl, xnkInterfaceDecl:
       typeNameDecl*: string
       baseTypes*: seq[XLangNode]
@@ -105,7 +110,7 @@ type
       typeDefBody*: XLangNode
     of xnkPropertyDecl:
       propName*: string
-      propType*: XLangNode
+      propType*: Option[XLangNode]
       getter*: Option[XLangNode]
       setter*: Option[XLangNode]
     of xnkFieldDecl:
@@ -122,6 +127,9 @@ type
       delegateName*: string
       delegateParams*: seq[XLangNode]
       delegateReturnType*: Option[XLangNode]
+    of xnkEventDecl:
+      eventName*: string
+      eventType*: XLangNode
     of xnkBlockStmt:
       blockBody*: seq[XLangNode]
     of xnkIfStmt:
@@ -161,8 +169,12 @@ type
       finallyBody*: XLangNode
     of xnkReturnStmt:
       returnExpr*: Option[XLangNode]
-    of xnkYieldStmt, xnkYieldExpr:
+    of xnkYieldStmt:
+      yieldStmt*: Option[XLangNode]
+    of xnkYieldExpr:
       yieldExpr*: Option[XLangNode]
+    of xnkYieldFromStmt:
+      yieldFromExpr*: XLangNode
     of xnkBreakStmt, xnkContinueStmt:
       label*: Option[string]
     of xnkThrowStmt:
@@ -208,7 +220,19 @@ type
       nullCoalesceRight*: XLangNode  # Right side of ??
     of xnkLambdaExpr:
       lambdaParams*: seq[XLangNode]
+      lambdaReturnType*: Option[XLangNode]
       lambdaBody*: XLangNode
+    of xnkLambdaProc:
+      lambdaProcParams*: seq[XLangNode]
+      lambdaProcReturn*: Option[XLangNode]
+      lambdaProcBody*: XLangNode
+    of xnkArrowFunc:
+      arrowParams*: seq[XLangNode]
+      arrowBody*: XLangNode
+      arrowReturnType*: Option[XLangNode]
+    of xnkMethodReference:
+      refObject*: XLangNode
+      refMethod*: string
     of xnkListExpr, xnkSetExpr, xnkTupleExpr:
       elements*: seq[XLangNode]
     of xnkDictExpr:
@@ -218,6 +242,10 @@ type
       compExpr*: XLangNode
       compFor*: seq[tuple[vars: seq[XLangNode], iter: XLangNode]]
       compIf*: seq[XLangNode]
+    of xnkGeneratorExpr:
+      genExpr*: XLangNode
+      genFor*: seq[tuple[vars: seq[XLangNode], iter: XLangNode]]
+      genIf*: seq[XLangNode]
     of xnkAwaitExpr:
       awaitExpr*: XLangNode
     # xnkYieldExpr handled above grouped with xnkYieldStmt
@@ -245,6 +273,7 @@ type
       referentType*: XLangNode
     of xnkGenericType:
       genericTypeName*: string
+      genericBase*: Option[XLangNode]
       genericArgs*: seq[XLangNode]
     of xnkUnionType:
       unionTypes*: seq[XLangNode]
@@ -271,7 +300,7 @@ type
       bounds*: seq[XLangNode]
     of xnkParameter:
       paramName*: string
-      paramType*: XLangNode
+      paramType*: Option[XLangNode]
       defaultValue*: Option[XLangNode]
     of xnkArgument:
       argName*: Option[string]
@@ -368,10 +397,44 @@ proc getChildren*(node: XLangNode) : seq[XLangNode] =
   of xnkMethodDecl:
     var mchildren: seq[XLangNode] = @[]
     if node.receiver != none(XLangNode): mchildren.add(node.receiver.get)
-    if node.returnType != none(XLangNode): mchildren.add(node.returnType.get)
-    for p in node.params: mchildren.add(p)
-    mchildren.add(node.body)
+    if node.mreturnType != none(XLangNode): mchildren.add(node.mreturnType.get)
+    for p in node.mparams: mchildren.add(p)
+    mchildren.add(node.mbody)
     return mchildren
-  of xnkUnionType:
-    return node.unionTypes
+  of xnkIteratorDecl:
+    var itchildren: seq[XLangNode] = @[]
+    for p in node.iteratorParams: itchildren.add(p)
+    if node.iteratorReturnType != none(XLangNode): itchildren.add(node.iteratorReturnType.get)
+    itchildren.add(node.iteratorBody)
+    return itchildren
+  of xnkGenericType:
+    var gchildren: seq[XLangNode] = @[]
+    if node.genericBase != none(XLangNode): gchildren.add(node.genericBase.get)
+    for ga in node.genericArgs: gchildren.add(ga)
+    return gchildren
+  of xnkGeneratorExpr:
+    var genChildren: seq[XLangNode] = @[]
+    genChildren.add(node.genExpr)
+    for f in node.genFor:
+      for v in f.vars: genChildren.add(v)
+      genChildren.add(f.iter)
+    for ifn in node.genIf: genChildren.add(ifn)
+    return genChildren
+  of xnkYieldFromStmt:
+    return @[node.yieldFromExpr]
+  of xnkLambdaProc:
+    var lpChildren: seq[XLangNode] = @[]
+    for p in node.lambdaProcParams: lpChildren.add(p)
+    if node.lambdaProcReturn != none(XLangNode): lpChildren.add(node.lambdaProcReturn.get)
+    lpChildren.add(node.lambdaProcBody)
+    return lpChildren
+  of xnkArrowFunc:
+    var afChildren: seq[XLangNode] = @[]
+    for p in node.arrowParams: afChildren.add(p)
+    afChildren.add(node.arrowBody)
+    return afChildren
+  of xnkMethodReference:
+    return @[node.refObject]
+  of xnkEventDecl:
+    return @[node.eventType]
   else: return @[]

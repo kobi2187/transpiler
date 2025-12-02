@@ -91,7 +91,7 @@ proc transformPattern(pattern: XLangNode, matchExpr: XLangNode): tuple[condition
       # For each element, recursively transform the pattern
       # Access tuple element: matchExpr[i]
       let elemAccess = XLangNode(
-        kind: xnkIndexExpr,
+        kind: xnkBracketExpr, # bracket has base/index fields
         base: matchExpr,
         index: XLangNode(kind: xnkIntLit, literalValue: $i)
       )
@@ -99,7 +99,8 @@ proc transformPattern(pattern: XLangNode, matchExpr: XLangNode): tuple[condition
       let (cond, binds) = transformPattern(elem, elemAccess)
       if cond.kind != xnkBoolLit or not cond.boolValue:
         conditions.add(cond)
-      bindings.addAll(binds)
+      for bb in binds:
+        bindings.add(bb)
 
     # Combine all conditions with 'and'
     if conditions.len == 0:
@@ -184,10 +185,12 @@ proc transformPatternMatching*(node: XLangNode): XLangNode =
       # Build case body with bindings
       var bodyStmts: seq[XLangNode] = @[]
       if allBindings.len > 0:
-        bodyStmts.addAll(allBindings[0])  # copy the first pattern's bindings
+        for bbb in allBindings[0]:
+          bodyStmts.add(bbb)  # copy the first pattern's bindings
 
       if caseNode.caseBody.kind == xnkBlockStmt:
-        bodyStmts.addAll(caseNode.caseBody.blockBody)
+        for cbb in caseNode.caseBody.blockBody:
+          bodyStmts.add(cbb)
       else:
         bodyStmts.add(caseNode.caseBody)
 
