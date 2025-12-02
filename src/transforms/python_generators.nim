@@ -161,7 +161,7 @@ proc transformYieldFrom*(node: XLangNode): XLangNode =
       blockBody: @[
         XLangNode(
           kind: xnkYieldStmt,
-          yieldExpr: some(XLangNode(kind: xnkIdentifier, identName: "item"))
+          yieldStmt: some(XLangNode(kind: xnkIdentifier, identName: "item"))
         )
       ]
     )
