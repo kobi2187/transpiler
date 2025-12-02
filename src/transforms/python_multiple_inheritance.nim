@@ -99,12 +99,12 @@ proc generateForwardingMethods*(
 
   result = @[]
 
-  for method in mixinMethods:
-    if method.kind notin {xnkFuncDecl, xnkMethodDecl}:
+  for mixinMethod in mixinMethods:
+    if mixinMethod.kind != xnkFuncDecl and mixinMethod.kind != xnkMethodDecl:
       continue
 
     # Create forwarding method
-    var forwardingParams = method.params
+    var forwardingParams = mixinMethod.mparams
 
     # Change self parameter to className type
     if forwardingParams.len > 0 and forwardingParams[0].kind == xnkParameter:
@@ -124,7 +124,7 @@ proc generateForwardingMethods*(
     let mixinMethodAccess = XLangNode(
       kind: xnkMemberAccessExpr,
       memberExpr: selfMixinAccess,
-      memberName: method.funcName
+      memberName: mixinMethod.methodName
     )
 
     # Get args (skip self)
@@ -145,14 +145,14 @@ proc generateForwardingMethods*(
     # Create forwarding method
     let forwardingMethod = XLangNode(
       kind: xnkMethodDecl,
-      funcName: method.funcName,
-      params: forwardingParams,
-      returnType: method.returnType,
-      body: XLangNode(
+      methodName: mixinMethod.methodName,
+      mparams: forwardingParams,
+      mreturnType: mixinMethod.mreturnType,
+      mbody: XLangNode(
         kind: xnkBlockStmt,
         blockBody: @[forwardingCall]
       ),
-      isAsync: method.isAsync
+      methodIsAsync: mixinMethod.methodIsAsync
     )
 
     result.add(forwardingMethod)

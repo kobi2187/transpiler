@@ -158,7 +158,7 @@ proc transformStringEnum*(node: XLangNode): XLangNode =
     typeDefName: enumName,
     typeDefBody: XLangNode(
       kind: xnkDistinctType,
-      distinctBase: XLangNode(kind: xnkNamedType, typeName: "string")
+      distinctBaseType: XLangNode(kind: xnkNamedType, typeName: "string")
     )
   )
 

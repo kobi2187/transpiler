@@ -34,28 +34,28 @@ type
     xnkBlockStmt, xnkIfStmt, xnkSwitchStmt, xnkCaseClause, xnkDefaultClause, xnkForStmt, xnkWhileStmt
     xnkDoWhileStmt, xnkForeachStmt, xnkTryStmt, xnkCatchStmt, xnkFinallyStmt
     xnkReturnStmt, xnkYieldStmt, xnkYieldExpr, xnkYieldFromStmt, xnkBreakStmt, xnkContinueStmt
-    xnkThrowStmt, xnkAssertStmt, xnkWithStmt, xnkPassStmt,
-    xnkDiscardStmt, xnkCaseStmt, xnkRaiseStmt, xnkImportStmt, xnkExportStmt, xnkFromImportStmt
+    xnkThrowStmt, xnkAssertStmt, xnkWithStmt, xnkPassStmt, xnkTypeSwitchStmt,
+    xnkDiscardStmt, xnkCaseStmt, xnkRaiseStmt, xnkImportStmt, xnkExportStmt, xnkFromImportStmt, xnkTypeCaseClause
 
     # Expressions
     xnkBinaryExpr, xnkUnaryExpr, xnkTernaryExpr, xnkCallExpr, xnkIndexExpr,
      xnkSliceExpr, xnkMemberAccessExpr, xnkSafeNavigationExpr, xnkNullCoalesceExpr
-     xnkLambdaExpr,
+     xnkLambdaExpr, xnkTypeAssertion,
      xnkGeneratorExpr, xnkAwaitExpr, xnkStringInterpolation, xnkDotExpr, xnkBracketExpr
     # Literals
     xnkIntLit, xnkFloatLit, xnkStringLit, xnkCharLit, xnkBoolLit, xnkNoneLit, xnkNilLit
 
     # Types
     xnkNamedType, xnkArrayType, xnkMapType, xnkFuncType, xnkPointerType
-    xnkReferenceType, xnkGenericType, xnkUnionType, xnkIntersectionType
+    xnkReferenceType, xnkGenericType, xnkUnionType, xnkIntersectionType, xnkDistinctType
 
     # Other
     xnkIdentifier, xnkComment, xnkImport, xnkExport, xnkAttribute
-    xnkGenericParameter, xnkParameter, xnkArgument, xnkDecorator, xnkLambdaProc, xnkArrowFunc
+    xnkGenericParameter, xnkParameter, xnkArgument, xnkDecorator, xnkLambdaProc, xnkArrowFunc, xnkConceptRequirement
     # Comments
 
     xnkTemplateDef, xnkMacroDef, xnkPragma, xnkStaticStmt, xnkDeferStmt,
-    xnkAsmStmt, xnkDistinctTypeDef, xnkConceptDef, xnkMixinStmt,
+    xnkAsmStmt, xnkDistinctTypeDef, xnkConceptDef, xnkMixinStmt, xnkConceptDecl,
     xnkBindStmt, xnkTupleConstr, xnkTupleUnpacking, xnkUsingStmt,
     xnkDestructureObj, xnkDestructureArray
 
@@ -187,6 +187,10 @@ type
       withBody*: XLangNode
     of xnkPassStmt:
       discard
+    of xnkTypeSwitchStmt:
+      typeSwitchExpr*: XLangNode
+      typeSwitchVar*: Option[XLangNode]
+      typeSwitchCases*: seq[XLangNode]  # Contains xnkTypeCaseClause and xnkDefaultClause nodes
     of xnkBinaryExpr:
       binaryLeft*: XLangNode
       binaryOp*: string
@@ -222,6 +226,9 @@ type
       lambdaParams*: seq[XLangNode]
       lambdaReturnType*: Option[XLangNode]
       lambdaBody*: XLangNode
+    of xnkTypeAssertion:
+      assertExpr*: XLangNode
+      assertType*: XLangNode
     of xnkLambdaProc:
       lambdaProcParams*: seq[XLangNode]
       lambdaProcReturn*: Option[XLangNode]
@@ -230,6 +237,10 @@ type
       arrowParams*: seq[XLangNode]
       arrowBody*: XLangNode
       arrowReturnType*: Option[XLangNode]
+    of xnkConceptRequirement:
+      reqName*: string
+      reqParams*: seq[XLangNode]
+      reqReturn*: Option[XLangNode]
     of xnkMethodReference:
       refObject*: XLangNode
       refMethod*: string
@@ -279,6 +290,8 @@ type
       unionTypes*: seq[XLangNode]
     of xnkIntersectionType:
       typeMembers*: seq[XLangNode]
+    of xnkDistinctType:
+      distinctBaseType*: XLangNode
     of xnkIdentifier:
       identName*: string
 
@@ -324,6 +337,9 @@ type
     of xnkConceptDef:
       conceptName*: string
       conceptBody*: XLangNode
+    of xnkConceptDecl:
+      conceptDeclName*: string
+      conceptRequirements*: seq[XLangNode]
     of xnkMixinStmt:
       mixinNames*: seq[string]
     of xnkBindStmt:
@@ -368,6 +384,9 @@ type
       discard
     of xnkDiscardStmt:
       discardExpr*: Option[XLangNode]
+    of xnkTypeCaseClause:
+      caseType*: XLangNode
+      typeCaseBody*: XLangNode
     # else: discard
 
 

@@ -30,8 +30,8 @@ proc transformGoInterface*(node: XLangNode): XLangNode =
   if node.kind != xnkInterfaceDecl:
     return node
 
-  let interfaceName = node.interfaceName
-  let methods = node.interfaceMethods
+  let interfaceName = node.typeNameDecl
+  let methods = node.members
 
   # Transform to Nim concept
   # concept TypeName =
@@ -41,27 +41,26 @@ proc transformGoInterface*(node: XLangNode): XLangNode =
 
   var conceptRequirements: seq[XLangNode] = @[]
 
-  for method in methods:
-    # Each method becomes a concept requirement
-    # Transform method signature to concept requirement
+  for member in methods:
+    # Each member becomes a concept requirement
+    # Transform member signature to concept requirement
 
-    if method.kind in {xnkFuncDecl, xnkMethodDecl}:
+    if member.kind in {xnkFuncDecl, xnkMethodDecl}:
       # Create concept requirement: x.methodName(params): RetType
       let requirement = XLangNode(
         kind: xnkConceptRequirement,
-        reqName: method.funcName,
-        reqParams: method.params,
-        reqReturn: method.returnType
+        reqName: member.funcName,
+        reqParams: member.params,
+        reqReturn: member.returnType
       )
 
       conceptRequirements.add(requirement)
 
-  result = XLangNode(
-    kind: xnkConceptDecl,
-    conceptName: interfaceName,
-    conceptRequirements: conceptRequirements
-  )
-
+      result = XLangNode(
+        kind: xnkConceptDecl,
+        conceptDeclName: interfaceName,
+        conceptRequirements: conceptRequirements
+      )
 # Empty interface transformation
 # Go: interface{} means "any type"
 # Nim: use generics or RootRef
@@ -76,13 +75,13 @@ proc transformEmptyInterfaceDecl*(node: XLangNode): XLangNode =
   if node.kind != xnkInterfaceDecl:
     return node
 
-  if node.interfaceMethods.len == 0:
+  if node.members.len == 0:
     # Empty interface - matches any type
 
     # Option 1: Use concept that always matches
     result = XLangNode(
       kind: xnkConceptDecl,
-      conceptName: node.interfaceName,
+      conceptDeclName: node.typeNameDecl,
       conceptRequirements: @[
         XLangNode(
           kind: xnkConceptRequirement,
@@ -127,7 +126,7 @@ proc transformEmbeddedInterface*(node: XLangNode): XLangNode =
   var requirements: seq[XLangNode] = @[]
   var embeddedInterfaces: seq[XLangNode] = @[]
 
-  for item in node.interfaceMethods:
+  for item in node.members:
     if item.kind == xnkNamedType:
       # This is an embedded interface
       embeddedInterfaces.add(item)
@@ -149,7 +148,7 @@ proc transformEmbeddedInterface*(node: XLangNode): XLangNode =
 
   result = XLangNode(
     kind: xnkConceptDecl,
-    conceptName: node.interfaceName,
+    conceptDeclName: node.typeNameDecl,
     conceptRequirements: requirements
   )
 
