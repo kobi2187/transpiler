@@ -75,12 +75,20 @@ type
     of xnkNamespace:
       namespaceName*: string
       namespaceBody*: seq[XLangNode]
-    of xnkFuncDecl, xnkMethodDecl:
+    of xnkFuncDecl:
       funcName*: string
       params*: seq[XLangNode]
       returnType*: Option[XLangNode]
       body*: XLangNode
       isAsync*: bool
+
+    of xnkMethodDecl:
+      receiver*: Option[XLangNode]     # <- method-specific field
+      methodName*: string
+      mparams*: seq[XLangNode]
+      mreturnType*: Option[XLangNode]
+      mbody*: XLangNode
+      methodIsAsync*: bool
     of xnkClassDecl, xnkStructDecl, xnkInterfaceDecl:
       typeNameDecl*: string
       baseTypes*: seq[XLangNode]
@@ -238,7 +246,9 @@ type
     of xnkGenericType:
       genericTypeName*: string
       genericArgs*: seq[XLangNode]
-    of xnkUnionType, xnkIntersectionType:
+    of xnkUnionType:
+      unionTypes*: seq[XLangNode]
+    of xnkIntersectionType:
       typeMembers*: seq[XLangNode]
     of xnkIdentifier:
       identName*: string
@@ -349,5 +359,19 @@ proc getChildren*(node: XLangNode) : seq[XLangNode] =
     return node.moduleBody
   of xnkNamespace:
     return node.namespaceBody
-
+  of xnkFuncDecl:
+    var fchildren: seq[XLangNode] = @[]
+    if node.returnType != none(XLangNode): fchildren.add(node.returnType.get)
+    for p in node.params: fchildren.add(p)
+    fchildren.add(node.body)
+    return fchildren
+  of xnkMethodDecl:
+    var mchildren: seq[XLangNode] = @[]
+    if node.receiver != none(XLangNode): mchildren.add(node.receiver.get)
+    if node.returnType != none(XLangNode): mchildren.add(node.returnType.get)
+    for p in node.params: mchildren.add(p)
+    mchildren.add(node.body)
+    return mchildren
+  of xnkUnionType:
+    return node.unionTypes
   else: return @[]

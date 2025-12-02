@@ -77,6 +77,30 @@ proc getOperatorSymbol(funcName: string): string =
 
   return funcName
 
+# Helper: construct a function/method node with operator name in backticks
+proc buildOperatorNode*(k: XLangNodeKind, src: XLangNode, opSymbol: string): XLangNode =
+  case k
+  of xnkFuncDecl:
+    result = XLangNode(kind: xnkFuncDecl)
+    result.funcName = "`" & opSymbol & "`"
+    result.params = src.params
+    result.returnType = src.returnType
+    result.body = src.body
+    result.isAsync = src.isAsync
+  of xnkMethodDecl:
+    result = XLangNode(kind: xnkMethodDecl)
+    result.funcName = "`" & opSymbol & "`"
+    result.params = src.params
+    result.returnType = src.returnType
+    result.body = src.body
+    result.isAsync = src.isAsync
+    if src.kind == xnkMethodDecl:
+      # copy receiver if present
+      if src.receiver != none(XLangNode):
+        result.receiver = src.receiver
+  else:
+    result = src
+
 proc transformOperatorOverload*(node: XLangNode): XLangNode =
   ## Normalize operator overload definitions to Nim syntax
   case node.kind
@@ -85,21 +109,10 @@ proc transformOperatorOverload*(node: XLangNode): XLangNode =
     if not isOperatorOverload(node.funcName):
       return node
 
-    # Transform operator overload to Nim syntax
-    # In Nim: proc `+`(a, b: Type): Type
-    # The backticks allow using operators as identifiers
-
     let opSymbol = getOperatorSymbol(node.funcName)
 
-    # Create new function with operator name in backticks
-    result = XLangNode(
-      kind: node.kind,
-      funcName: "`" & opSymbol & "`",
-      params: node.params,
-      returnType: node.returnType,
-      body: node.body,
-      isAsync: node.isAsync
-    )
+    # Create new function with operator name in backticks using helper
+    result = buildOperatorNode(node.kind, node, opSymbol)
 
     # Special handling for Python's __getitem__ and __setitem__
     # These need special signatures in Nim
@@ -113,8 +126,8 @@ proc transformOperatorOverload*(node: XLangNode): XLangNode =
       # Need to ensure first param is var (mutable)
       if result.params.len > 0:
         var newParams = result.params
-        # Make first parameter mutable (var)
-        # This is a simplified approach - proper implementation would modify the type
+        # TODO: add and populate mutability field to xnkParameter in xlangtypes,
+        # then mark newParams[0].isMutable = true
         result.params = newParams
 
   else:

@@ -92,14 +92,14 @@ proc transformPattern(pattern: XLangNode, matchExpr: XLangNode): tuple[condition
       # Access tuple element: matchExpr[i]
       let elemAccess = XLangNode(
         kind: xnkIndexExpr,
-        indexExpr: matchExpr,
-        indexArgs: @[XLangNode(kind: xnkIntLit, literalValue: $i)]
+        base: matchExpr,
+        index: XLangNode(kind: xnkIntLit, literalValue: $i)
       )
 
       let (cond, binds) = transformPattern(elem, elemAccess)
       if cond.kind != xnkBoolLit or not cond.boolValue:
         conditions.add(cond)
-      bindings.add(binds)
+      bindings.addAll(binds)
 
     # Combine all conditions with 'and'
     if conditions.len == 0:
@@ -164,7 +164,7 @@ proc transformPatternMatching*(node: XLangNode): XLangNode =
       # Pattern case
       # Can have multiple patterns with OR semantics
       var caseConditions: seq[XLangNode] = @[]
-      var allBindings: seq[XLangNode] = @[]
+      var allBindings: seq[seq[XLangNode]] = @[]
 
       for pattern in caseNode.caseValues:
         let (condition, bindings) = transformPattern(pattern, matchExpr)
@@ -182,9 +182,12 @@ proc transformPatternMatching*(node: XLangNode): XLangNode =
         )
 
       # Build case body with bindings
-      var bodyStmts = allBindings[0]  # First pattern's bindings
+      var bodyStmts: seq[XLangNode] = @[]
+      if allBindings.len > 0:
+        bodyStmts.addAll(allBindings[0])  # copy the first pattern's bindings
+
       if caseNode.caseBody.kind == xnkBlockStmt:
-        bodyStmts.add(caseNode.caseBody.blockBody)
+        bodyStmts.addAll(caseNode.caseBody.blockBody)
       else:
         bodyStmts.add(caseNode.caseBody)
 

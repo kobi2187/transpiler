@@ -8,6 +8,8 @@
 
 import ../../xlangtypes
 import options
+import sequtils
+import strutils
 
 proc transformDestructuring*(node: XLangNode): XLangNode =
   ## Transform destructuring assignments into explicit assignments

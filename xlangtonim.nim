@@ -1,8 +1,87 @@
 import xlangtypes
+import strutils
+import src/helpers
+import options
+
+
+# Serialize node to a deterministic string representation for structural comparison.
+proc serializeXLangNode*(node: XLangNode): string =
+  if node == nil:
+    return "nil"
+  var sbParts: seq[string] = @[]
+  sbParts.add($node.kind)
+  case node.kind
+  of xnkIdentifier:
+    sbParts.add(":" & node.identName)
+  of xnkStringLit:
+    sbParts.add(":" & node.literalValue)
+  of xnkIntLit:
+    sbParts.add(":" & node.literalValue)
+  of xnkFloatLit:
+    sbParts.add(":" & node.literalValue)
+  of xnkBoolLit:
+    sbParts.add(":" & $node.boolValue)
+  of xnkCharLit:
+    sbParts.add(":" & node.literalValue)
+  of xnkNamedType:
+    sbParts.add(":" & node.typeName)
+  of xnkUnionType:
+    sbParts.add(":[")
+    var unionParts: seq[string] = @[]
+    for t in node.unionTypes:
+      unionParts.add(serializeXLangNode(t))
+    sbParts.add(unionParts.join(","))
+    sbParts.add("]")
+  of xnkMemberAccessExpr:
+    sbParts.add(":(base=" & serializeXLangNode(node.memberExpr) & ",mem=" & node.memberName & ")")
+  of xnkBlockStmt:
+    sbParts.add(":{")
+    var stmtParts: seq[string] = @[]
+    for s in node.blockBody:
+      stmtParts.add(serializeXLangNode(s))
+    sbParts.add(stmtParts.join(","))
+    sbParts.add("}")
+  of xnkIfStmt:
+    sbParts.add(":(cond=" & serializeXLangNode(node.ifCondition) & ",then=" & serializeXLangNode(node.ifBody))
+    if node.elseBody.isSome:
+      sbParts.add(",else=" & serializeXLangNode(node.elseBody.get))
+    sbParts.add(")")
+  of xnkCallExpr:
+    sbParts.add(":(callee=" & serializeXLangNode(node.callee) & ",args=[")
+    var argsOut: seq[string] = @[]
+    for a in node.args:
+      argsOut.add(serializeXLangNode(a))
+    sbParts.add(argsOut.join(","))
+    sbParts.add("])")
+  of xnkVarDecl:
+    sbParts.add(":name=" & node.declName)
+    if node.initializer.isSome:
+      sbParts.add(":init=" & serializeXLangNode(node.initializer.get))
+  of xnkReturnStmt:
+    if node.returnExpr.isSome:
+      sbParts.add(":ret=" & serializeXLangNode(node.returnExpr.get))
+  else:
+    # fallback: serialize child nodes obtained via getChildren
+    var children = getChildren(node)
+    if children.len > 0:
+      sbParts.add(":[")
+      var childParts: seq[string] = @[]
+      for c in children:
+        childParts.add(serializeXLangNode(c))
+      sbParts.add(childParts.join(","))
+      sbParts.add("]")
+  return sbParts.join("")
+
+# Public structural equality function using the deterministic serializer.
+proc nodesEqual*(a, b: XLangNode): bool =
+  if a.isNil and b.isNil:
+    return true
+  if a == nil or b == nil:
+    return false
+  return serializeXLangNode(a) == serializeXLangNode(b)
 
 import options, strutils
 import src/my_nim_node
-import src/helpers
 
 # Forward declaration for mutual recursion (helpers call this)
 proc convertToNimAST*(node: XLangNode): MyNimNode
@@ -124,6 +203,7 @@ proc conv_xnkIfStmt(node: XLangNode): MyNimNode =
   let branchNode = newNimNode(nnkElifBranch)
   branchNode.add(convertToNimAST(node.ifCondition))
   branchNode.add(convertToNimAST(node.ifBody))
+  result.add(branchNode)
   if node.elseBody.isSome():
     let elseNode = newNimNode(nnkElse)
     elseNode.add(convertToNimAST(node.elseBody.get))

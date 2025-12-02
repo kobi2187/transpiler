@@ -52,42 +52,43 @@ proc transformMultipleCatch*(node: XLangNode): XLangNode =
   # Build if-elif chain for type checking
   var ifChain: seq[XLangNode] = @[]
 
+  let unifiedVarName = "e"
   for catchClause in node.catchClauses:
     if catchClause.kind != xnkCatchStmt:
       continue
 
-    # Get exception variable name (use 'e' as default)
-    let varName = if catchClause.catchVar.isSome:
-                    catchClause.catchVar.get
-                  else:
-                    "e"
+    # Get exception variable name from original clause (if any)
+    let originalVarName = if catchClause.catchVar != none(string): catchClause.catchVar.get else: unifiedVarName
 
     # Build type check: e is ExceptionType
     let typeCheck = XLangNode(
       kind: xnkCallExpr,
-      callFunc: XLangNode(kind: xnkIdentifier, identName: "is"),
-      callArgs: @[
-        XLangNode(kind: xnkIdentifier, identName: varName),
-        if catchClause.catchType.isSome:
+      callee: XLangNode(kind: xnkIdentifier, identName: "is"),
+      args: @[
+        XLangNode(kind: xnkIdentifier, identName: unifiedVarName),
+        if catchClause.catchType != none(XLangNode):
           catchClause.catchType.get
         else:
           XLangNode(kind: xnkNamedType, typeName: "Exception")
       ]
     )
 
-    # Create if statement for this catch
-    ifChain.add(XLangNode(
-      kind: xnkIfStmt,
-      ifCondition: typeCheck,
-      ifBody: catchClause.catchBody,
-      elseBody: none(XLangNode)
-    ))
+    # Ensure the catch body references the unified var name by binding if needed
+    var adjustedBody = catchClause.catchBody
+    if originalVarName != unifiedVarName:
+      # Build a block that declares originalVarName = unifiedVarName and then executes the original body
+      let binder = XLangNode(kind: xnkVarDecl, declName: originalVarName,
+                            declType: none(XLangNode),
+                            initializer: some(XLangNode(kind: xnkIdentifier, identName: unifiedVarName)))
+      adjustedBody = XLangNode(kind: xnkBlockStmt, blockBody: @[binder, catchClause.catchBody])
+
+    ifChain.add(XLangNode(kind: xnkIfStmt, ifCondition: typeCheck, ifBody: adjustedBody, elseBody: none(XLangNode)))
 
   # Create single catch block with if-elif chain
   let singleCatch = XLangNode(
     kind: xnkCatchStmt,
     catchType: some(XLangNode(kind: xnkNamedType, typeName: "Exception")),
-    catchVar: some("e"),
+    catchVar: some(unifiedVarName),
     catchBody: buildIfElifChain(ifChain)
   )
 
