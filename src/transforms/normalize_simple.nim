@@ -8,7 +8,7 @@
 import ../../xlangtypes
 import options
 
-proc transformNormalizeSimple*(node: XLangNode): XLangNode =
+proc transformNormalizeSimple*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Perform simple normalizations
   case node.kind
   of xnkPassStmt:

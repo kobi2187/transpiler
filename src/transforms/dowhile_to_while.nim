@@ -6,7 +6,7 @@
 import ../../xlangtypes
 import options
 
-proc transformDoWhileToWhile*(node: XLangNode): XLangNode =
+proc transformDoWhileToWhile*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform do-while loops into while-true loops with break
   ## This is needed because Nim doesn't have do-while loops
   if node.kind != xnkDoWhileStmt:

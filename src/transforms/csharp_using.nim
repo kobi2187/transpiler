@@ -16,7 +16,7 @@
 import ../../xlangtypes
 import options
 
-proc transformCSharpUsing*(node: XLangNode): XLangNode =
+proc transformCSharpUsing*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform C# using statements to Nim defer pattern
   ##
   ## C# using ensures Dispose() is called on IDisposable objects

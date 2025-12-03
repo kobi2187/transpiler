@@ -253,7 +253,7 @@ proc transformIIFE*(node: XLangNode): XLangNode =
     result = node
 
 # Main transformation
-proc transformLambdaNormalization*(node: XLangNode): XLangNode =
+proc transformLambdaNormalization*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Main lambda normalization transformation
 
   case node.kind

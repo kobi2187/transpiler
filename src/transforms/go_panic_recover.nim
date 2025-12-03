@@ -243,7 +243,7 @@ proc transformPanicToDefect*(node: XLangNode): XLangNode =
   )
 
 # Main transformation function
-proc transformGoPanicRecover*(node: XLangNode): XLangNode =
+proc transformGoPanicRecover*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Main transformation for panic/recover
 
   case node.kind

@@ -218,7 +218,7 @@ proc transformCommaOkTypeAssertion*(assignNode: XLangNode): XLangNode =
   result = assignNode  # Placeholder
 
 # Main transformation
-proc transformGoTypeAssertions*(node: XLangNode): XLangNode =
+proc transformGoTypeAssertions*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Main type assertion transformation
 
   case node.kind

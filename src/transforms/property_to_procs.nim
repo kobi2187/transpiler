@@ -7,7 +7,7 @@
 import ../../xlangtypes
 import options
 
-proc transformPropertyToProcs*(node: XLangNode): XLangNode =
+proc transformPropertyToProcs*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform property declarations into getter/setter procedures
   ## Returns a block containing both the getter and setter procs
   case node.kind

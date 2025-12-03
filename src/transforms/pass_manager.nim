@@ -65,7 +65,7 @@ type
     description*: string
     enabled*: bool
     dependencies*: seq[TransformPassID]  ## Passes that must run before this one
-    transform*: proc(node: XLangNode): XLangNode
+    transform*: proc(node: XLangNode): XLangNode {.closure, gcsafe.}
     targetKinds*: seq[XLangNodeKind]         ## Optional node kinds this pass operates on; empty = all
 
   PassManager* = ref object
@@ -78,7 +78,7 @@ type
 
 proc newTransformPass*(
   id: TransformPassID,
-  transform: proc(node: XLangNode): XLangNode,
+  transform: proc(node: XLangNode): XLangNode {.closure, gcsafe.},
   dependencies: seq[TransformPassID] = @[],
   targetKinds: seq[XLangNodeKind] = @[]
 ): TransformPass =

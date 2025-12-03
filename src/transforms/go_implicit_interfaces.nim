@@ -192,7 +192,7 @@ proc transformMethodSet*(node: XLangNode): XLangNode =
 # Nim concepts don't support this directly
 
 # Main transformation
-proc transformGoImplicitInterfaces*(node: XLangNode): XLangNode =
+proc transformGoImplicitInterfaces*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Main interface-to-concept transformation
 
   case node.kind

@@ -14,7 +14,7 @@
 import ../../xlangtypes
 import options
 
-proc transformStringInterpolation*(node: XLangNode): XLangNode =
+proc transformStringInterpolation*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform string interpolation into Nim string concatenation or strformat
   if node.kind != xnkStringInterpolation:
     return node

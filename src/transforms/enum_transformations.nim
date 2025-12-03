@@ -238,7 +238,7 @@ proc transformFlagsEnum*(node: XLangNode): XLangNode =
 # Nim: for value in Color: echo value
 
 # Main transformation
-proc transformEnumNormalization*(node: XLangNode): XLangNode =
+proc transformEnumNormalization*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Main enum normalization transformation
 
   case node.kind

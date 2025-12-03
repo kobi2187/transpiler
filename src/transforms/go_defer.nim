@@ -27,7 +27,7 @@
 import ../../xlangtypes
 import options
 
-proc transformGoDefer*(node: XLangNode): XLangNode =
+proc transformGoDefer*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform Go defer statements to Nim defer
   ##
   ## Go and Nim defer are very similar, main differences:

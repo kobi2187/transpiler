@@ -1,3 +1,3 @@
 
-proc generateNimCode*(node: NimNode): string =
+proc generateNimCode*(node: MyNimNode): string =
   result = repr(node)

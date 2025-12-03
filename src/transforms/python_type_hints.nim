@@ -177,7 +177,7 @@ proc transformPythonType(typeNode: XLangNode): XLangNode =
   else:
     return typeNode
 
-proc transformPythonTypeHints*(node: XLangNode): XLangNode =
+proc transformPythonTypeHints*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform Python type hints in function signatures and variables
 
   case node.kind

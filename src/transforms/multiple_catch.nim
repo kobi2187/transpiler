@@ -40,7 +40,7 @@ proc buildIfElifChain(clauses: seq[XLangNode]): XLangNode =
     current.elseBody = some(clauses[i])
     current = clauses[i]
 
-proc transformMultipleCatch*(node: XLangNode): XLangNode =
+proc transformMultipleCatch*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform try statements with multiple catch blocks into single catch with type checking
   if node.kind != xnkTryStmt:
     return node

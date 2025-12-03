@@ -6,7 +6,7 @@
 import ../../xlangtypes
 import options
 
-proc transformTernaryToIf*(node: XLangNode): XLangNode =
+proc transformTernaryToIf*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform ternary expressions into if expressions
   ## This is needed for languages that don't have ternary operators
   ## but do have if expressions (like Nim)

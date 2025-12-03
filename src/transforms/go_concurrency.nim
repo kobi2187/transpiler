@@ -41,7 +41,7 @@ proc isChannelOperation(node: XLangNode): bool =
   ## Go: ch <- val or val := <-ch
   false  # Placeholder - would need metadata
 
-proc transformGoStatement*(node: XLangNode, model: ConcurrencyModel = DEFAULT_MODEL): XLangNode =
+proc transformGoStatement*(node: XLangNode, model: ConcurrencyModel = DEFAULT_MODEL): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform Go's 'go' statement to Nim's concurrency
   ##
   ## go functionCall() → spawn functionCall() or asyncCheck functionCall()

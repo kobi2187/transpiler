@@ -101,7 +101,7 @@ proc buildOperatorNode*(k: XLangNodeKind, src: XLangNode, opSymbol: string): XLa
   else:
     result = src
 
-proc transformOperatorOverload*(node: XLangNode): XLangNode =
+proc transformOperatorOverload*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Normalize operator overload definitions to Nim syntax
   case node.kind
   of xnkFuncDecl, xnkMethodDecl:

@@ -6,6 +6,7 @@ import xlangtonim
 import src/transforms/pass_manager
 import src/transforms/nim_passes
 import src/xlang/error_handling
+import src/my_nim_node
 
 
 
@@ -63,7 +64,8 @@ proc main() =
       echo "Running transformation passes..."
 
     try:
-      let pm = createNimPassManager()
+      let pm = newPassManager()
+      registerNimPasses(pm)
       # Use the same error collector
       pm.errorCollector = errorCollector
 
@@ -86,7 +88,7 @@ proc main() =
       errorCollector.reportAndExit()
 
   # Step 3: Convert XLang AST to Nim AST
-  var nimAst: NimNode
+  var nimAst: MyNimNode
   try:
     nimAst = convertToNimAST(xlangAst)
     if verbose:

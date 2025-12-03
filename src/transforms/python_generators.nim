@@ -56,7 +56,7 @@ proc isGeneratorFunction(node: XLangNode): bool =
 
   return hasYield(node.body)
 
-proc transformPythonGenerator*(node: XLangNode): XLangNode =
+proc transformPythonGenerator*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform Python generator functions to Nim iterators
   ##
   ## Key differences:

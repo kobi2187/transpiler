@@ -252,7 +252,7 @@ proc transformSuperCallWithMI*(node: XLangNode): XLangNode =
   result = node  # Placeholder
 
 # Main transformation
-proc transformPythonMultipleInheritance*(node: XLangNode): XLangNode =
+proc transformPythonMultipleInheritance*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Main multiple inheritance transformation
 
   case node.kind

@@ -15,7 +15,7 @@ import ../../xlangtypes
 import options
 import strutils
 
-proc transformWithToDefer*(node: XLangNode): XLangNode =
+proc transformWithToDefer*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform with statements to defer pattern
   if node.kind != xnkWithStmt:
     return node

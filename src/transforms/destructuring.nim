@@ -11,7 +11,7 @@ import options
 import sequtils
 import strutils
 
-proc transformDestructuring*(node: XLangNode): XLangNode =
+proc transformDestructuring*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform destructuring assignments into explicit assignments
   case node.kind
   of xnkDestructureObj:

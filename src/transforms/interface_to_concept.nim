@@ -6,7 +6,7 @@
 import ../../xlangtypes
 import options
 
-proc transformInterfaceToConcept*(node: XLangNode): XLangNode =
+proc transformInterfaceToConcept*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform interface declarations into Nim concepts
   ## This is needed because Nim doesn't have interfaces
   if node.kind != xnkInterfaceDecl:

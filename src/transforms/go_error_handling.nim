@@ -60,7 +60,7 @@ proc isErrorReturn(node: XLangNode): bool =
   let retVal = node.returnExpr.get
   return retVal.kind == xnkIdentifier and retVal.identName == "err"
 
-proc transformGoErrorHandling*(node: XLangNode): XLangNode =
+proc transformGoErrorHandling*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform Go error handling patterns to Nim exception handling
   if not isErrorCheckPattern(node):
     return node

@@ -142,7 +142,7 @@ proc transformPattern(pattern: XLangNode, matchExpr: XLangNode): tuple[condition
     result.condition = XLangNode(kind: xnkBoolLit, boolValue: true)
     result.bindings = @[]
 
-proc transformPatternMatching*(node: XLangNode): XLangNode =
+proc transformPatternMatching*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform pattern matching to case statements or if-elif chains
   if node.kind != xnkSwitchStmt:
     return node

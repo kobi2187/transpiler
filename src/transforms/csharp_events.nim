@@ -303,7 +303,7 @@ proc transformActionFunc*(node: XLangNode): XLangNode =
   return node
 
 # Main transformation
-proc transformCSharpEvents*(node: XLangNode): XLangNode =
+proc transformCSharpEvents*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Main event/delegate transformation
 
   case node.kind

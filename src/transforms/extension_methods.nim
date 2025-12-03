@@ -32,7 +32,7 @@ proc isExtensionMethod(node: XLangNode): bool =
   # Placeholder check - would need metadata
   return false
 
-proc transformExtensionMethods*(node: XLangNode): XLangNode =
+proc transformExtensionMethods*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform C# extension methods to regular Nim procedures
   case node.kind
   of xnkFuncDecl, xnkMethodDecl:

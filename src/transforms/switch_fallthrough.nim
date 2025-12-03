@@ -63,7 +63,7 @@ proc buildOrCondition(switchExpr: XLangNode, values: seq[XLangNode]): XLangNode 
 
   result = condition
 
-proc transformSwitchFallthrough*(node: XLangNode): XLangNode =
+proc transformSwitchFallthrough*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform switch statements with fallthrough into if-elif chains
   if node.kind != xnkSwitchStmt:
     return node

@@ -67,7 +67,7 @@ proc isLinqMethodCall(node: XLangNode): bool =
   let methodName = node.callee.memberName
   return identifyLinqMethod(methodName) != lmUnknown
 
-proc transformLinqToSequtils*(node: XLangNode): XLangNode =
+proc transformLinqToSequtils*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform LINQ method chains to Nim sequtils/algorithm operations
   if not isLinqMethodCall(node):
     return node

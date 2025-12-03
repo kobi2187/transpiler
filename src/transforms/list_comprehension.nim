@@ -24,7 +24,7 @@ proc genUniqueName(prefix: string): string =
   comprehensionCounter += 1
   result = prefix & $comprehensionCounter
 
-proc transformListComprehension*(node: XLangNode): XLangNode =
+proc transformListComprehension*(node: XLangNode): XLangNode {.gcsafe.} =
   ## Transform list comprehensions into for loops with collection
   if node.kind != xnkComprehensionExpr:
     return node

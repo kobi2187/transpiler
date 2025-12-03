@@ -64,7 +64,7 @@ proc generateEnumPrefix(unionTypeName: string): string =
 
   result.add("k")  # Add 'k' for Kind
 
-proc transformUnionToVariant*(node: XLangNode): XLangNode =
+proc transformUnionToVariant*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform union type declarations to variant objects
   if node.kind != xnkTypeDecl:
     return node

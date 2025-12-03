@@ -9,7 +9,7 @@
 import ../../xlangtypes
 import options
 
-proc transformNullCoalesce*(node: XLangNode): XLangNode =
+proc transformNullCoalesce*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform null coalescing and safe navigation operators
   case node.kind
   of xnkNullCoalesceExpr:
