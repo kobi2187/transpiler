@@ -308,11 +308,11 @@ proc getPassExecutionOrder*(pm: PassManager): seq[TransformPass] =
       addPassWithDeps(dep)
 
     # Then add this pass
-    result.add(pass)
+    result.add(pass.copy())
     added[passID] = true
 
   # Add all enabled passes in dependency order
-  for pass in pm.passes:
+  for pass in pm.passes.items:
     if pass.enabled:
       addPassWithDeps(pass.id)
 

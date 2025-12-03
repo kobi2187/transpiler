@@ -1,14 +1,12 @@
 import os, parseopt
 import xlangtypes
 import jsontoxlangtypes
-import nimastToCode
 import xlangtonim
 import src/transforms/pass_manager
 import src/transforms/nim_passes
 import src/xlang/error_handling
 import src/my_nim_node
-
-
+import src/astprinter
 
 
 proc main() =
@@ -105,14 +103,14 @@ proc main() =
   # Step 4: Generate Nim code from AST
   var nimCode: string
   try:
-    nimCode = generateNimCode(nimAst)
+    nimCode = nimAst.toNimCode()
     if verbose:
       echo "✓ Nim code generated successfully"
   except Exception as e:
     errorCollector.addError(
       tekCodegenError,
       "Failed to generate Nim code: " & e.msg,
-      location = "nimastToCode",
+      location = "astprinter",
       details = e.getStackTrace()
     )
     errorCollector.reportAndExit()
