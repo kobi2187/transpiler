@@ -65,8 +65,9 @@ type
     description*: string
     enabled*: bool
     dependencies*: seq[TransformPassID]  ## Passes that must run before this one
-    transform*: proc(node: XLangNode): XLangNode {.closure, gcsafe.}
+    transform*: proc(node: XLangNode): XLangNode
     targetKinds*: seq[XLangNodeKind]         ## Optional node kinds this pass operates on; empty = all
+
 
   PassManager* = ref object
     ## Manages and executes transformation passes
@@ -76,23 +77,36 @@ type
     targetLang*: LangCapabilities  ## Target language capabilities
     errorCollector*: ErrorCollector  ## Collect errors during transformation
 
+proc copy*(p: TransformPass): TransformPass =
+  ## Creates a shallow copy of a TransformPass object.
+  result = TransformPass(
+    id: p.id,
+    name: p.name,
+    kind: p.kind,
+    description: p.description,
+    enabled: p.enabled,
+    dependencies: p.dependencies, # seq is copied by value (shallow copy of elements)
+    transform: p.transform,       # closure is copied by value (shallow copy)
+    targetKinds: p.targetKinds    # seq is copied by value (shallow copy of elements)
+  )
+
 proc newTransformPass*(
   id: TransformPassID,
-  transform: proc(node: XLangNode): XLangNode {.closure, gcsafe.},
+  transform: proc(node: XLangNode): XLangNode,
   dependencies: seq[TransformPassID] = @[],
   targetKinds: seq[XLangNodeKind] = @[]
 ): TransformPass =
   ## Create a new transformation pass with lightweight fields; name and kind are defaulted
-  TransformPass(
-    id: id,
-    name: $id,
-    kind: tpkLowering,
-    description: "",
-    enabled: true,
-    dependencies: dependencies,
-    transform: transform,
-    targetKinds: targetKinds
-  )
+  result = TransformPass()
+  result.id = id
+  result.name = $id
+  result.kind = tpkLowering
+  result.description = ""
+  result.enabled = true
+  result.dependencies = dependencies
+  let transformProc = transform
+  result.transform = transformProc
+  result.targetKinds = targetKinds
 
 proc newPassManager*(targetLang: string = "nim", maxIterations: int = 10,
                      errorCollector: ErrorCollector = nil): PassManager =
@@ -278,43 +292,45 @@ proc detectCircularDependencies*(pm: PassManager): seq[string] =
     if pass.enabled and not visited.getOrDefault(pass.id, false):
       discard hasCycle(pass.id, @[], result)
 
+
+
+
+proc addPassWithDeps(
+  passID: TransformPassID,
+  passTable: Table[TransformPassID, TransformPass],
+  added: var Table[TransformPassID, bool],
+  result: var seq[TransformPass]
+) =
+  if added.getOrDefault(passID, false):
+    return
+  if not passTable.hasKey(passID):
+    return
+
+  let pass = passTable[passID]
+  for dep in pass.dependencies:
+    addPassWithDeps(dep, passTable, added, result)
+
+  result.add(pass.copy())
+  added[passID] = true
+
+
 proc getPassExecutionOrder*(pm: PassManager): seq[TransformPass] =
-  ## Determine pass execution order based on dependencies
-  ## Returns passes ordered bottom-up from dependency tree (leaves first)
   result = @[]
 
-  # Build pass lookup table
   var passTable = initTable[TransformPassID, TransformPass]()
   for pass in pm.passes:
     if pass.enabled:
       passTable[pass.id] = pass
 
-  # Track which passes have been added
   var added = initTable[TransformPassID, bool]()
 
-  proc addPassWithDeps(passID: TransformPassID) =
-    # Skip if already added
-    if added.getOrDefault(passID, false):
-      return
-
-    # Skip if pass not found (could be disabled)
-    if not passTable.hasKey(passID):
-      return
-
-    let pass = passTable[passID]
-
-    # First add all dependencies
-    for dep in pass.dependencies:
-      addPassWithDeps(dep)
-
-    # Then add this pass
-    result.add(pass.copy())
-    added[passID] = true
-
-  # Add all enabled passes in dependency order
   for pass in pm.passes.items:
     if pass.enabled:
-      addPassWithDeps(pass.id)
+      addPassWithDeps(pass.id, passTable, added, result)
+
+
+
+
 
 proc runPassUntilConvergence(pm: PassManager, pass: TransformPass, ast: XLangNode): XLangNode =
   ## Run a single pass repeatedly until it no longer makes changes

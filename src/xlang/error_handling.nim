@@ -2,7 +2,7 @@
 ##
 ## Centralized error collection and reporting for the transpiler
 
-import strutils
+# import strutils
 
 type
   TranspilerErrorKind* = enum

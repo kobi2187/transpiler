@@ -1,8 +1,7 @@
 import xlangtypes
-import strutils
 import src/helpers
-import options
-
+import options, strutils
+import src/my_nim_node
 
 # Serialize node to a deterministic string representation for structural comparison.
 proc serializeXLangNode*(node: XLangNode): string =
@@ -80,8 +79,7 @@ proc nodesEqual*(a, b: XLangNode): bool =
     return false
   return serializeXLangNode(a) == serializeXLangNode(b)
 
-import options, strutils
-import src/my_nim_node
+
 
 # Forward declaration for mutual recursion (helpers call this)
 proc convertToNimAST*(node: XLangNode): MyNimNode
