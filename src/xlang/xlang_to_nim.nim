@@ -6,7 +6,7 @@
 ## Handles all XLang node kinds and converts them to idiomatic Nim constructs.
 
 import macros, options, strutils
-import xlang_types
+import xlang_types #TODO: replace with xlangtypes.nim
 
 proc convertXLangToNim*(node: XLangNode): NimNode
 

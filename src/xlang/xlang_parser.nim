@@ -6,7 +6,7 @@
 ## XLang JSON is produced by language-specific parsers (Python, Go, C#, etc.)
 
 import jsony, json, options
-import xlang_types
+import xlang_types #TODO: replace with xlangtypes.nim
 
 proc parseXLangJson*(filePath: string): XLangNode =
   ## Parse XLang AST from a JSON file

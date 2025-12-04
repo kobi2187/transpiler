@@ -44,7 +44,7 @@ proc main() =
   # Step 1: Parse JSON to XLang AST
   var xlangAst: XLangNode
   try:
-    xlangAst = parseXLangJson(inputFile)
+    xlangAst = parseXLangJson(inputFile) # TODO: assumes input is xlangjson. that's ok, if we search for *.xljs or sth like that.
     if verbose:
       echo "✓ XLang AST created successfully"
   except Exception as e:

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Microsoft.CodeAnalysis;
@@ -7,41 +8,155 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
-class Program
+partial class Program
 {
+    // Global dictionary to track missing/unknown constructs
+    private static Dictionary<string, int> constructStats = new Dictionary<string, int>();
+    private static List<string> errorLog = new List<string>();
+
     static void Main(string[] args)
     {
         if (args.Length < 1)
         {
-            Console.WriteLine("Usage: csharp-to-xlang <file.cs>");
+            Console.WriteLine("Usage:");
+            Console.WriteLine("  Single file: csharp-to-xlang <file.cs>");
+            Console.WriteLine("  Batch mode:  csharp-to-xlang --batch <directory>");
             Environment.Exit(1);
         }
 
-        string sourceCode = File.ReadAllText(args[0]);
+        if (args[0] == "--batch" && args.Length >= 2)
+        {
+            BatchProcessDirectory(args[1]);
+        }
+        else
+        {
+            ProcessSingleFile(args[0], outputToConsole: true);
+        }
+    }
+
+    static void BatchProcessDirectory(string directoryPath)
+    {
+        if (!Directory.Exists(directoryPath))
+        {
+            Console.Error.WriteLine($"Error: Directory not found: {directoryPath}");
+            Environment.Exit(1);
+        }
+
+        var csFiles = Directory.GetFiles(directoryPath, "*.cs", SearchOption.AllDirectories);
+        Console.WriteLine($"Found {csFiles.Length} C# files to process in: {directoryPath}");
+        Console.WriteLine();
+
+        int successCount = 0;
+        int errorCount = 0;
+
+        foreach (var csFile in csFiles)
+        {
+            try
+            {
+                Console.WriteLine($"Processing: {csFile}");
+                ProcessSingleFile(csFile, outputToConsole: false);
+                successCount++;
+            }
+            catch (Exception ex)
+            {
+                errorCount++;
+                string errorMsg = $"Error processing {csFile}: {ex.Message}";
+                errorLog.Add(errorMsg);
+                Console.Error.WriteLine(errorMsg);
+            }
+        }
+
+        // Print summary report
+        Console.WriteLine();
+        Console.WriteLine("=== BATCH PROCESSING SUMMARY ===");
+        Console.WriteLine($"Total files: {csFiles.Length}");
+        Console.WriteLine($"Successfully processed: {successCount}");
+        Console.WriteLine($"Errors: {errorCount}");
+        Console.WriteLine();
+
+        if (constructStats.Count > 0)
+        {
+            Console.WriteLine("=== MISSING/UNKNOWN CONSTRUCTS ===");
+            var sortedStats = constructStats.OrderByDescending(kvp => kvp.Value);
+            foreach (var stat in sortedStats)
+            {
+                Console.WriteLine($"{stat.Key}: {stat.Value} occurrences");
+            }
+            Console.WriteLine();
+        }
+
+        if (errorLog.Count > 0)
+        {
+            Console.WriteLine("=== ERROR LOG ===");
+            foreach (var error in errorLog)
+            {
+                Console.WriteLine(error);
+            }
+        }
+    }
+
+    static void ProcessSingleFile(string filePath, bool outputToConsole)
+    {
+        string sourceCode = File.ReadAllText(filePath);
         var tree = CSharpSyntaxTree.ParseText(sourceCode);
         var root = tree.GetRoot();
 
-        var xlangNode = ConvertToXLang(root);
+        var xlangNode = ConvertToXLang(root, filePath);
         var json = JsonConvert.SerializeObject(xlangNode, Formatting.Indented);
-        Console.WriteLine(json);
+
+        if (outputToConsole)
+        {
+            Console.WriteLine(json);
+        }
+        else
+        {
+            // Output to .csjs file with same basename in same directory
+            string outputPath = Path.ChangeExtension(filePath, ".csjs");
+            // Use UTF-8 with BOM to handle Unicode surrogate pairs properly
+            File.WriteAllText(outputPath, json, System.Text.Encoding.UTF8);
+            Console.WriteLine($"  -> Written to: {outputPath}");
+        }
     }
 
-    static JObject ConvertToXLang(SyntaxNode node)
+    static JObject ConvertToXLang(SyntaxNode node, string fileName)
     {
         return node switch
         {
-            CompilationUnitSyntax cu => ConvertCompilationUnit(cu),
-            _ => new JObject { ["kind"] = "xnkUnknown", ["text"] = node.ToString() }
+            CompilationUnitSyntax cu => ConvertCompilationUnit(cu, fileName),
+            _ => CreateUnknownNode(node, "root")
         };
     }
 
-    static JObject ConvertCompilationUnit(CompilationUnitSyntax cu)
+    static JObject CreateUnknownNode(SyntaxNode node, string context)
+    {
+        string nodeType = node.GetType().Name;
+        string key = $"{context}:{nodeType}";
+
+        if (constructStats.ContainsKey(key))
+        {
+            constructStats[key]++;
+        }
+        else
+        {
+            constructStats[key] = 1;
+        }
+
+        return new JObject
+        {
+            ["kind"] = "xnkUnknown",
+            ["syntaxKind"] = node.Kind().ToString(),
+            ["nodeType"] = nodeType,
+            ["text"] = node.ToString().Length > 100 ? node.ToString().Substring(0, 100) + "..." : node.ToString()
+        };
+    }
+
+    static JObject ConvertCompilationUnit(CompilationUnitSyntax cu, string fileName)
     {
         var result = new JObject
         {
             ["kind"] = "xnkFile",
-            ["fileName"] = "unknown",
-            ["declarations"] = new JArray(cu.Members.Select(ConvertMember))
+            ["fileName"] = Path.GetFileName(fileName),
+            ["moduleDecls"] = new JArray(cu.Members.Select(ConvertMember))
         };
         return result;
     }
@@ -52,7 +167,11 @@ class Program
         {
             NamespaceDeclarationSyntax ns => ConvertNamespace(ns),
             ClassDeclarationSyntax cls => ConvertClass(cls),
-            _ => new JObject { ["kind"] = "xnkUnknown" }
+            EnumDeclarationSyntax enumDecl => ConvertEnum(enumDecl),
+            InterfaceDeclarationSyntax interfaceDecl => ConvertInterface(interfaceDecl),
+            StructDeclarationSyntax structDecl => ConvertStruct(structDecl),
+            DelegateDeclarationSyntax delegateDecl => ConvertDelegate(delegateDecl),
+            _ => CreateUnknownNode(member, "member")
         };
     }
 
@@ -61,8 +180,8 @@ class Program
         return new JObject
         {
             ["kind"] = "xnkNamespace",
-            ["name"] = ns.Name.ToString(),
-            ["declarations"] = new JArray(ns.Members.Select(ConvertMember))
+            ["namespaceName"] = ns.Name.ToString(),
+            ["namespaceBody"] = new JArray(ns.Members.Select(ConvertMember))
         };
     }
 
@@ -71,7 +190,7 @@ class Program
         return new JObject
         {
             ["kind"] = "xnkClassDecl",
-            ["className"] = cls.Identifier.Text,
+            ["typeNameDecl"] = cls.Identifier.Text,
             ["members"] = new JArray(cls.Members.Select(ConvertClassMember))
         };
     }
@@ -81,7 +200,19 @@ class Program
         return member switch
         {
             MethodDeclarationSyntax method => ConvertMethod(method),
-            _ => new JObject { ["kind"] = "xnkUnknown" }
+            FieldDeclarationSyntax field => ConvertField(field),
+            PropertyDeclarationSyntax property => ConvertProperty(property),
+            ConstructorDeclarationSyntax constructor => ConvertConstructor(constructor),
+            ClassDeclarationSyntax cls => ConvertClass(cls),
+            EnumDeclarationSyntax enumDecl => ConvertEnum(enumDecl),
+            InterfaceDeclarationSyntax interfaceDecl => ConvertInterface(interfaceDecl),
+            StructDeclarationSyntax structDecl => ConvertStruct(structDecl),
+            OperatorDeclarationSyntax operatorDecl => ConvertOperator(operatorDecl),
+            ConversionOperatorDeclarationSyntax conversionOp => ConvertConversionOperator(conversionOp),
+            IndexerDeclarationSyntax indexer => ConvertIndexer(indexer),
+            DelegateDeclarationSyntax delegateDecl => ConvertDelegate(delegateDecl),
+            DestructorDeclarationSyntax destructor => ConvertDestructor(destructor),
+            _ => CreateUnknownNode(member, "class_member")
         };
     }
 
@@ -90,8 +221,8 @@ class Program
         return new JObject
         {
             ["kind"] = "xnkFuncDecl",
-            ["name"] = method.Identifier.Text,
-            ["parameters"] = new JArray(),
+            ["funcName"] = method.Identifier.Text,
+            ["params"] = new JArray(),
             ["returnType"] = new JObject { ["kind"] = "xnkNamedType", ["name"] = method.ReturnType.ToString() },
             ["body"] = method.Body != null ? ConvertBlock(method.Body) : JValue.CreateNull()
         };
@@ -102,7 +233,7 @@ class Program
         return new JObject
         {
             ["kind"] = "xnkBlockStmt",
-            ["statements"] = new JArray(block.Statements.Select(ConvertStatement))
+            ["blockBody"] = new JArray(block.Statements.Select(ConvertStatement))
         };
     }
 
@@ -110,8 +241,31 @@ class Program
     {
         return stmt switch
         {
+            BlockSyntax block => ConvertBlock(block),
             ExpressionStatementSyntax exprStmt => ConvertExpressionStatement(exprStmt),
-            _ => new JObject { ["kind"] = "xnkUnknown", ["text"] = stmt.ToString() }
+            LocalDeclarationStatementSyntax localDecl => ConvertLocalDeclaration(localDecl),
+            ReturnStatementSyntax returnStmt => ConvertReturn(returnStmt),
+            IfStatementSyntax ifStmt => ConvertIf(ifStmt),
+            ForStatementSyntax forStmt => ConvertFor(forStmt),
+            TryStatementSyntax tryStmt => ConvertTry(tryStmt),
+            WhileStatementSyntax whileStmt => ConvertWhile(whileStmt),
+            ForEachStatementSyntax forEachStmt => ConvertForEach(forEachStmt),
+            ThrowStatementSyntax throwStmt => ConvertThrow(throwStmt),
+            SwitchStatementSyntax switchStmt => ConvertSwitch(switchStmt),
+            UsingStatementSyntax usingStmt => ConvertUsing(usingStmt),
+            LockStatementSyntax lockStmt => ConvertLock(lockStmt),
+            DoStatementSyntax doStmt => ConvertDo(doStmt),
+            YieldStatementSyntax yieldStmt => ConvertYield(yieldStmt),
+            BreakStatementSyntax breakStmt => ConvertBreak(breakStmt),
+            ContinueStatementSyntax continueStmt => ConvertContinue(continueStmt),
+            GotoStatementSyntax gotoStmt => ConvertGoto(gotoStmt),
+            LabeledStatementSyntax labeled => ConvertLabeledStatement(labeled),
+            EmptyStatementSyntax empty => ConvertEmptyStatement(empty),
+            FixedStatementSyntax fixedStmt => ConvertFixedStatement(fixedStmt),
+            LocalFunctionStatementSyntax localFunc => ConvertLocalFunctionStatement(localFunc),
+            UnsafeStatementSyntax unsafeStmt => ConvertUnsafeStatement(unsafeStmt),
+            CheckedStatementSyntax checkedStmt => ConvertCheckedStatement(checkedStmt),
+            _ => CreateUnknownNode(stmt, "statement")
         };
     }
 
@@ -124,8 +278,44 @@ class Program
     {
         return expr switch
         {
+            LiteralExpressionSyntax literal => ConvertLiteral(literal),
+            ParenthesizedExpressionSyntax paren => ConvertExpression(paren.Expression),
+            CheckedExpressionSyntax checkedExpr => ConvertCheckedExpression(checkedExpr),
+            ConditionalExpressionSyntax conditional => ConvertConditional(conditional),
+            PredefinedTypeSyntax predefinedType => ConvertPredefinedType(predefinedType),
+            IsPatternExpressionSyntax isPattern => ConvertIsPattern(isPattern),
+            DeclarationExpressionSyntax declExpr => ConvertDeclarationExpression(declExpr),
+            InterpolatedStringExpressionSyntax interpolated => ConvertInterpolatedString(interpolated),
+            GenericNameSyntax genericName => ConvertGenericName(genericName),
+            TypeOfExpressionSyntax typeOf => ConvertTypeOf(typeOf),
+            BaseExpressionSyntax baseExpr => ConvertBase(baseExpr),
+            ConditionalAccessExpressionSyntax condAccess => ConvertConditionalAccess(condAccess),
+            ThrowExpressionSyntax throwExpr => ConvertThrowExpression(throwExpr),
+            ParenthesizedLambdaExpressionSyntax parenLambda => ConvertLambda(parenLambda),
+            SimpleLambdaExpressionSyntax simpleLambda => ConvertLambda(simpleLambda),
+            DefaultExpressionSyntax defaultExpr => ConvertDefaultExpression(defaultExpr),
+            IdentifierNameSyntax ident => ConvertIdentifier(ident),
+            MemberAccessExpressionSyntax memberAccess => ConvertMemberAccess(memberAccess),
+            AssignmentExpressionSyntax assignment => ConvertAssignment(assignment),
+            BinaryExpressionSyntax binary => ConvertBinary(binary),
+            PrefixUnaryExpressionSyntax prefix => ConvertPrefixUnary(prefix),
+            PostfixUnaryExpressionSyntax postfix => ConvertPostfixUnary(postfix),
             InvocationExpressionSyntax inv => ConvertInvocation(inv),
-            _ => new JObject { ["kind"] = "xnkExpression", ["text"] = expr.ToString() }
+            ObjectCreationExpressionSyntax objCreate => ConvertObjectCreation(objCreate),
+            CastExpressionSyntax cast => ConvertCast(cast),
+            ElementAccessExpressionSyntax elemAccess => ConvertElementAccess(elemAccess),
+            ThisExpressionSyntax thisExpr => ConvertThis(thisExpr),
+            ArrayCreationExpressionSyntax arrayCreate => ConvertArrayCreation(arrayCreate),
+            InitializerExpressionSyntax initializer => ConvertInitializer(initializer),
+            StackAllocArrayCreationExpressionSyntax stackAlloc => ConvertStackAllocArray(stackAlloc),
+            ImplicitArrayCreationExpressionSyntax implicitArray => ConvertImplicitArrayCreation(implicitArray),
+            QualifiedNameSyntax qualifiedName => ConvertQualifiedName(qualifiedName),
+            SwitchExpressionSyntax switchExpr => ConvertSwitchExpression(switchExpr),
+            RefExpressionSyntax refExpr => ConvertRefExpression(refExpr),
+            SizeOfExpressionSyntax sizeOf => ConvertSizeOf(sizeOf),
+            ArrayTypeSyntax arrayType => ConvertArrayType(arrayType),
+            AliasQualifiedNameSyntax aliasQualified => ConvertAliasQualifiedName(aliasQualified),
+            _ => CreateUnknownNode(expr, "expression")
         };
     }
 
@@ -134,8 +324,246 @@ class Program
         return new JObject
         {
             ["kind"] = "xnkCallExpr",
-            ["expr"] = ConvertExpression(inv.Expression),
+            ["callee"] = ConvertExpression(inv.Expression),
             ["args"] = new JArray(inv.ArgumentList.Arguments.Select(arg => ConvertExpression(arg.Expression)))
+        };
+    }
+
+    // Expression converters
+    static JObject ConvertLiteral(LiteralExpressionSyntax literal)
+    {
+        return new JObject
+        {
+            ["kind"] = "xnkLiteral",
+            ["value"] = literal.Token.Value?.ToString() ?? literal.Token.Text,
+            ["literalKind"] = literal.Kind().ToString()
+        };
+    }
+
+    static JObject ConvertIdentifier(IdentifierNameSyntax ident)
+    {
+        return new JObject
+        {
+            ["kind"] = "xnkIdent",
+            ["identName"] = ident.Identifier.Text
+        };
+    }
+
+    static JObject ConvertMemberAccess(MemberAccessExpressionSyntax memberAccess)
+    {
+        return new JObject
+        {
+            ["kind"] = "xnkMemberAccessExpr",
+            ["memberExpr"] = ConvertExpression(memberAccess.Expression),
+            ["memberName"] = memberAccess.Name.Identifier.Text
+        };
+    }
+
+    static JObject ConvertAssignment(AssignmentExpressionSyntax assignment)
+    {
+        return new JObject
+        {
+            ["kind"] = "xnkAssignStmt",
+            ["lhs"] = ConvertExpression(assignment.Left),
+            ["rhs"] = ConvertExpression(assignment.Right),
+            ["operator"] = assignment.OperatorToken.Text
+        };
+    }
+
+    static JObject ConvertBinary(BinaryExpressionSyntax binary)
+    {
+        return new JObject
+        {
+            ["kind"] = "xnkBinaryExpr",
+            ["binaryLeft"] = ConvertExpression(binary.Left),
+            ["binaryRight"] = ConvertExpression(binary.Right),
+            ["binaryOp"] = binary.OperatorToken.Text
+        };
+    }
+
+    static JObject ConvertObjectCreation(ObjectCreationExpressionSyntax objCreate)
+    {
+        return new JObject
+        {
+            ["kind"] = "xnkNewExpr",
+            ["type"] = objCreate.Type.ToString(),
+            ["args"] = objCreate.ArgumentList != null
+                ? new JArray(objCreate.ArgumentList.Arguments.Select(arg => ConvertExpression(arg.Expression)))
+                : new JArray()
+        };
+    }
+
+    // Statement converters
+    static JObject ConvertLocalDeclaration(LocalDeclarationStatementSyntax localDecl)
+    {
+        // If multiple variables, return a block with individual declarations
+        if (localDecl.Declaration.Variables.Count > 1)
+        {
+            var varDecls = new JArray();
+            foreach (var variable in localDecl.Declaration.Variables)
+            {
+                varDecls.Add(new JObject
+                {
+                    ["kind"] = "xnkVarDecl",
+                    ["declName"] = variable.Identifier.Text,
+                    ["declType"] = localDecl.Declaration.Type.ToString(),
+                    ["initializer"] = variable.Initializer != null
+                        ? ConvertExpression(variable.Initializer.Value)
+                        : JValue.CreateNull()
+                });
+            }
+            return new JObject
+            {
+                ["kind"] = "xnkBlockStmt",
+                ["blockBody"] = varDecls
+            };
+        }
+        else {
+        // Single variable declaration
+        var singleVar = localDecl.Declaration.Variables[0];
+        return new JObject
+        {
+            ["kind"] = "xnkVarDecl",
+            ["declName"] = singleVar.Identifier.Text,
+            ["declType"] = localDecl.Declaration.Type.ToString(),
+            ["initializer"] = singleVar.Initializer != null
+                ? ConvertExpression(singleVar.Initializer.Value)
+                : JValue.CreateNull()
+        };
+        }
+    }
+
+    static JObject ConvertReturn(ReturnStatementSyntax returnStmt)
+    {
+        return new JObject
+        {
+            ["kind"] = "xnkReturnStmt",
+            ["returnExpr"] = returnStmt.Expression != null
+                ? ConvertExpression(returnStmt.Expression)
+                : JValue.CreateNull()
+        };
+    }
+
+    static JObject ConvertIf(IfStatementSyntax ifStmt)
+    {
+        return new JObject
+        {
+            ["kind"] = "xnkIfStmt",
+            ["ifCondition"] = ConvertExpression(ifStmt.Condition),
+            ["ifBody"] = ConvertStatement(ifStmt.Statement),
+            ["elseBody"] = ifStmt.Else != null
+                ? ConvertStatement(ifStmt.Else.Statement)
+                : JValue.CreateNull()
+        };
+    }
+
+    static JObject ConvertFor(ForStatementSyntax forStmt)
+    {
+        return new JObject
+        {
+            ["kind"] = "xnkForStmt",
+            ["declaration"] = forStmt.Declaration != null
+                ? new JObject
+                {
+                    ["type"] = forStmt.Declaration.Type.ToString(),
+                    ["variables"] = new JArray(forStmt.Declaration.Variables.Select(v => new JObject
+                    {
+                        ["name"] = v.Identifier.Text,
+                        ["initializer"] = v.Initializer != null ? ConvertExpression(v.Initializer.Value) : JValue.CreateNull()
+                    }))
+                }
+                : JValue.CreateNull(),
+            ["initializers"] = new JArray(forStmt.Initializers.Select(ConvertExpression)),
+            ["condition"] = forStmt.Condition != null ? ConvertExpression(forStmt.Condition) : JValue.CreateNull(),
+            ["incrementors"] = new JArray(forStmt.Incrementors.Select(ConvertExpression)),
+            ["body"] = ConvertStatement(forStmt.Statement)
+        };
+    }
+
+    static JObject ConvertWhile(WhileStatementSyntax whileStmt)
+    {
+        return new JObject
+        {
+            ["kind"] = "xnkWhileStmt",
+            ["whileCondition"] = ConvertExpression(whileStmt.Condition),
+            ["whileBody"] = ConvertStatement(whileStmt.Statement)
+        };
+    }
+
+    static JObject ConvertForEach(ForEachStatementSyntax forEachStmt)
+    {
+        return new JObject
+        {
+            ["kind"] = "xnkForEachStmt",
+            ["varName"] = forEachStmt.Identifier.Text,
+            ["varType"] = forEachStmt.Type.ToString(),
+            ["collection"] = ConvertExpression(forEachStmt.Expression),
+            ["body"] = ConvertStatement(forEachStmt.Statement)
+        };
+    }
+
+    static JObject ConvertTry(TryStatementSyntax tryStmt)
+    {
+        return new JObject
+        {
+            ["kind"] = "xnkTryStmt",
+            ["tryBlock"] = ConvertBlock(tryStmt.Block),
+            ["catches"] = new JArray(tryStmt.Catches.Select(c => new JObject
+            {
+                ["exceptionType"] = c.Declaration?.Type.ToString() ?? "Exception",
+                ["varName"] = c.Declaration?.Identifier.Text ?? "",
+                ["body"] = ConvertBlock(c.Block)
+            })),
+            ["finallyBlock"] = tryStmt.Finally != null
+                ? ConvertBlock(tryStmt.Finally.Block)
+                : JValue.CreateNull()
+        };
+    }
+
+    // Class member converters
+    static JObject ConvertField(FieldDeclarationSyntax field)
+    {
+        // For fields, we'll just return the first variable as a single field
+        // Multiple field declarations like "int x, y;" are rare in modern C#
+        var firstVar = field.Declaration.Variables[0];
+        return new JObject
+        {
+            ["kind"] = "xnkFieldDecl",
+            ["fieldName"] = firstVar.Identifier.Text,
+            ["fieldType"] = field.Declaration.Type.ToString(),
+            ["modifiers"] = string.Join(" ", field.Modifiers.Select(m => m.Text)),
+            ["fieldInitializer"] = firstVar.Initializer != null
+                ? ConvertExpression(firstVar.Initializer.Value)
+                : JValue.CreateNull()
+        };
+    }
+
+    static JObject ConvertProperty(PropertyDeclarationSyntax property)
+    {
+        return new JObject
+        {
+            ["kind"] = "xnkPropertyDecl",
+            ["propName"] = property.Identifier.Text,
+            ["propType"] = property.Type.ToString(),
+            ["modifiers"] = string.Join(" ", property.Modifiers.Select(m => m.Text)),
+            ["hasGetter"] = property.AccessorList?.Accessors.Any(a => a.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.GetAccessorDeclaration) ?? false,
+            ["hasSetter"] = property.AccessorList?.Accessors.Any(a => a.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.SetAccessorDeclaration) ?? false
+        };
+    }
+
+    static JObject ConvertConstructor(ConstructorDeclarationSyntax constructor)
+    {
+        return new JObject
+        {
+            ["kind"] = "xnkConstructorDecl",
+            ["name"] = constructor.Identifier.Text,
+            ["modifiers"] = string.Join(" ", constructor.Modifiers.Select(m => m.Text)),
+            ["parameters"] = new JArray(constructor.ParameterList.Parameters.Select(p => new JObject
+            {
+                ["name"] = p.Identifier.Text,
+                ["type"] = p.Type?.ToString() ?? "var"
+            })),
+            ["body"] = constructor.Body != null ? ConvertBlock(constructor.Body) : JValue.CreateNull()
         };
     }
 }

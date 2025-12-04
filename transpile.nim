@@ -197,27 +197,33 @@ proc transpileFile(sourceFile: string, lang: Language, outputDir: string): bool 
   echo "\nTranspiling: ", sourceFile
 
   let config = ParserConfigs[lang]
-
+  echo config
   # Compile converter if needed
+  echo "# Compile converter if needed"
   if not compileConverter(config.converterBinary):
     echo "Failed to compile converter"
     return false
 
   # Step 1: Run parser
+  echo "# Step 1: Run parser"
   let (parseSuccess, nativeJson) = runParser(config, sourceFile)
   if not parseSuccess:
     return false
 
+
+  echo "# Step 2: Run converter"
   # Step 2: Run converter
   let (convertSuccess, xlangJson) = runConverter(config.converterBinary, nativeJson)
   if not convertSuccess:
     return false
 
+  echo "# Step 3: Parse XLang JSON"
   # Step 3: Parse XLang JSON
   let (jsonSuccess, xlangAst) = parseXLangJson(xlangJson)
   if not jsonSuccess:
     return false
 
+  echo "# Step 4: Transpile to Nim"
   # Step 4: Transpile to Nim
   let (transpileSuccess, nimCode) = transpileToNim(xlangAst)
   if not transpileSuccess:
