@@ -110,8 +110,8 @@ partial class Program
         }
         else
         {
-            // Output to .csjs file with same basename in same directory
-            string outputPath = Path.ChangeExtension(filePath, ".csjs");
+            // Output to .xljs file with same basename in same directory
+            string outputPath = Path.ChangeExtension(filePath, ".xljs");
             // Use UTF-8 with BOM to handle Unicode surrogate pairs properly
             File.WriteAllText(outputPath, json, System.Text.Encoding.UTF8);
             Console.WriteLine($"  -> Written to: {outputPath}");
@@ -171,6 +171,8 @@ partial class Program
             InterfaceDeclarationSyntax interfaceDecl => ConvertInterface(interfaceDecl),
             StructDeclarationSyntax structDecl => ConvertStruct(structDecl),
             DelegateDeclarationSyntax delegateDecl => ConvertDelegate(delegateDecl),
+            GlobalStatementSyntax globalStmt => ConvertStatement(globalStmt.Statement),
+            FieldDeclarationSyntax field => ConvertField(field),
             _ => CreateUnknownNode(member, "member")
         };
     }
@@ -212,6 +214,9 @@ partial class Program
             IndexerDeclarationSyntax indexer => ConvertIndexer(indexer),
             DelegateDeclarationSyntax delegateDecl => ConvertDelegate(delegateDecl),
             DestructorDeclarationSyntax destructor => ConvertDestructor(destructor),
+            EventFieldDeclarationSyntax eventField => ConvertEventFieldDeclaration(eventField),
+            EventDeclarationSyntax eventDecl => ConvertEventDeclaration(eventDecl),
+            IncompleteMemberSyntax incompleteMember => CreateUnknownNode(incompleteMember, "class_member"),
             _ => CreateUnknownNode(member, "class_member")
         };
     }
@@ -293,7 +298,9 @@ partial class Program
             ThrowExpressionSyntax throwExpr => ConvertThrowExpression(throwExpr),
             ParenthesizedLambdaExpressionSyntax parenLambda => ConvertLambda(parenLambda),
             SimpleLambdaExpressionSyntax simpleLambda => ConvertLambda(simpleLambda),
+            AnonymousMethodExpressionSyntax anonymousMethod => ConvertAnonymousMethodExpression(anonymousMethod),
             DefaultExpressionSyntax defaultExpr => ConvertDefaultExpression(defaultExpr),
+            AwaitExpressionSyntax awaitExpr => ConvertAwaitExpression(awaitExpr),
             IdentifierNameSyntax ident => ConvertIdentifier(ident),
             MemberAccessExpressionSyntax memberAccess => ConvertMemberAccess(memberAccess),
             AssignmentExpressionSyntax assignment => ConvertAssignment(assignment),
@@ -302,6 +309,7 @@ partial class Program
             PostfixUnaryExpressionSyntax postfix => ConvertPostfixUnary(postfix),
             InvocationExpressionSyntax inv => ConvertInvocation(inv),
             ObjectCreationExpressionSyntax objCreate => ConvertObjectCreation(objCreate),
+            AnonymousObjectCreationExpressionSyntax anonObjectCreate => ConvertAnonymousObjectCreationExpression(anonObjectCreate),
             CastExpressionSyntax cast => ConvertCast(cast),
             ElementAccessExpressionSyntax elemAccess => ConvertElementAccess(elemAccess),
             ThisExpressionSyntax thisExpr => ConvertThis(thisExpr),
@@ -311,9 +319,15 @@ partial class Program
             ImplicitArrayCreationExpressionSyntax implicitArray => ConvertImplicitArrayCreation(implicitArray),
             QualifiedNameSyntax qualifiedName => ConvertQualifiedName(qualifiedName),
             SwitchExpressionSyntax switchExpr => ConvertSwitchExpression(switchExpr),
+            QueryExpressionSyntax queryExpr => ConvertQueryExpression(queryExpr),
+            TupleExpressionSyntax tupleExpr => ConvertTupleExpression(tupleExpr),
             RefExpressionSyntax refExpr => ConvertRefExpression(refExpr),
+            RefValueExpressionSyntax refValueExpr => ConvertRefValueExpression(refValueExpr),
+            MakeRefExpressionSyntax makeRefExpr => ConvertMakeRefExpression(makeRefExpr),
+            RefTypeExpressionSyntax refTypeExpr => ConvertRefTypeExpression(refTypeExpr),
             SizeOfExpressionSyntax sizeOf => ConvertSizeOf(sizeOf),
             ArrayTypeSyntax arrayType => ConvertArrayType(arrayType),
+            NullableTypeSyntax nullableType => ConvertNullableType(nullableType),
             AliasQualifiedNameSyntax aliasQualified => ConvertAliasQualifiedName(aliasQualified),
             _ => CreateUnknownNode(expr, "expression")
         };
@@ -332,19 +346,33 @@ partial class Program
     // Expression converters
     static JObject ConvertLiteral(LiteralExpressionSyntax literal)
     {
-        return new JObject
+        // Map C# literal kinds to xlang literal kinds
+        string xlangKind = literal.Kind() switch
         {
-            ["kind"] = "xnkLiteral",
-            ["value"] = literal.Token.Value?.ToString() ?? literal.Token.Text,
-            ["literalKind"] = literal.Kind().ToString()
+            Microsoft.CodeAnalysis.CSharp.SyntaxKind.NumericLiteralExpression => "xnkIntLit",
+            Microsoft.CodeAnalysis.CSharp.SyntaxKind.StringLiteralExpression => "xnkStringLit",
+            Microsoft.CodeAnalysis.CSharp.SyntaxKind.CharacterLiteralExpression => "xnkCharLit",
+            Microsoft.CodeAnalysis.CSharp.SyntaxKind.TrueLiteralExpression => "xnkBoolLit",
+            Microsoft.CodeAnalysis.CSharp.SyntaxKind.FalseLiteralExpression => "xnkBoolLit",
+            Microsoft.CodeAnalysis.CSharp.SyntaxKind.NullLiteralExpression => "xnkNilLit",
+            Microsoft.CodeAnalysis.CSharp.SyntaxKind.DefaultLiteralExpression => "xnkNilLit",
+            _ => "xnkIntLit" // Default fallback
         };
+
+        var result = new JObject
+        {
+            ["kind"] = xlangKind,
+            ["value"] = literal.Token.Value?.ToString() ?? literal.Token.Text
+        };
+
+        return result;
     }
 
     static JObject ConvertIdentifier(IdentifierNameSyntax ident)
     {
         return new JObject
         {
-            ["kind"] = "xnkIdent",
+            ["kind"] = "xnkIdentifier",
             ["identName"] = ident.Identifier.Text
         };
     }
@@ -363,10 +391,9 @@ partial class Program
     {
         return new JObject
         {
-            ["kind"] = "xnkAssignStmt",
-            ["lhs"] = ConvertExpression(assignment.Left),
-            ["rhs"] = ConvertExpression(assignment.Right),
-            ["operator"] = assignment.OperatorToken.Text
+            ["kind"] = "xnkAsgn",
+            ["asgnLeft"] = ConvertExpression(assignment.Left),
+            ["asgnRight"] = ConvertExpression(assignment.Right)
         };
     }
 
@@ -385,8 +412,12 @@ partial class Program
     {
         return new JObject
         {
-            ["kind"] = "xnkNewExpr",
-            ["type"] = objCreate.Type.ToString(),
+            ["kind"] = "xnkCallExpr",
+            ["callee"] = new JObject
+            {
+                ["kind"] = "xnkNamedType",
+                ["typeName"] = objCreate.Type.ToString()
+            },
             ["args"] = objCreate.ArgumentList != null
                 ? new JArray(objCreate.ArgumentList.Arguments.Select(arg => ConvertExpression(arg.Expression)))
                 : new JArray()
@@ -406,7 +437,11 @@ partial class Program
                 {
                     ["kind"] = "xnkVarDecl",
                     ["declName"] = variable.Identifier.Text,
-                    ["declType"] = localDecl.Declaration.Type.ToString(),
+                    ["declType"] = new JObject
+                    {
+                        ["kind"] = "xnkNamedType",
+                        ["name"] = localDecl.Declaration.Type.ToString()
+                    },
                     ["initializer"] = variable.Initializer != null
                         ? ConvertExpression(variable.Initializer.Value)
                         : JValue.CreateNull()
@@ -425,7 +460,11 @@ partial class Program
         {
             ["kind"] = "xnkVarDecl",
             ["declName"] = singleVar.Identifier.Text,
-            ["declType"] = localDecl.Declaration.Type.ToString(),
+            ["declType"] = new JObject
+            {
+                ["kind"] = "xnkNamedType",
+                ["name"] = localDecl.Declaration.Type.ToString()
+            },
             ["initializer"] = singleVar.Initializer != null
                 ? ConvertExpression(singleVar.Initializer.Value)
                 : JValue.CreateNull()
@@ -530,8 +569,11 @@ partial class Program
         {
             ["kind"] = "xnkFieldDecl",
             ["fieldName"] = firstVar.Identifier.Text,
-            ["fieldType"] = field.Declaration.Type.ToString(),
-            ["modifiers"] = string.Join(" ", field.Modifiers.Select(m => m.Text)),
+            ["fieldType"] = new JObject
+            {
+                ["kind"] = "xnkNamedType",
+                ["name"] = field.Declaration.Type.ToString()
+            },
             ["fieldInitializer"] = firstVar.Initializer != null
                 ? ConvertExpression(firstVar.Initializer.Value)
                 : JValue.CreateNull()
@@ -540,15 +582,33 @@ partial class Program
 
     static JObject ConvertProperty(PropertyDeclarationSyntax property)
     {
-        return new JObject
+        var result = new JObject
         {
             ["kind"] = "xnkPropertyDecl",
-            ["propName"] = property.Identifier.Text,
-            ["propType"] = property.Type.ToString(),
-            ["modifiers"] = string.Join(" ", property.Modifiers.Select(m => m.Text)),
-            ["hasGetter"] = property.AccessorList?.Accessors.Any(a => a.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.GetAccessorDeclaration) ?? false,
-            ["hasSetter"] = property.AccessorList?.Accessors.Any(a => a.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.SetAccessorDeclaration) ?? false
+            ["propName"] = property.Identifier.Text
         };
+
+        // propType as XLangNode (NamedType)
+        result["propType"] = new JObject
+        {
+            ["kind"] = "xnkNamedType",
+            ["name"] = property.Type.ToString()
+        };
+
+        // getter and setter as Option[XLangNode]
+        var getAccessor = property.AccessorList?.Accessors.FirstOrDefault(a => a.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.GetAccessorDeclaration);
+        if (getAccessor != null && getAccessor.Body != null)
+        {
+            result["getter"] = ConvertBlock(getAccessor.Body);
+        }
+
+        var setAccessor = property.AccessorList?.Accessors.FirstOrDefault(a => a.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.SetAccessorDeclaration);
+        if (setAccessor != null && setAccessor.Body != null)
+        {
+            result["setter"] = ConvertBlock(setAccessor.Body);
+        }
+
+        return result;
     }
 
     static JObject ConvertConstructor(ConstructorDeclarationSyntax constructor)

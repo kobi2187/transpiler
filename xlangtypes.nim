@@ -31,7 +31,7 @@ type
     xnkFieldDecl, xnkConstructorDecl, xnkDestructorDecl, xnkDelegateDecl, xnkEventDecl
 
     # Statements
-    xnkBlockStmt, xnkIfStmt, xnkSwitchStmt, xnkCaseClause, xnkDefaultClause, xnkForStmt, xnkWhileStmt
+    xnkAsgn, xnkBlockStmt, xnkIfStmt, xnkSwitchStmt, xnkCaseClause, xnkDefaultClause, xnkForStmt, xnkWhileStmt
     xnkDoWhileStmt, xnkForeachStmt, xnkTryStmt, xnkCatchStmt, xnkFinallyStmt
     xnkReturnStmt, xnkYieldStmt, xnkYieldExpr, xnkYieldFromStmt, xnkBreakStmt, xnkContinueStmt
     xnkThrowStmt, xnkAssertStmt, xnkWithStmt, xnkPassStmt, xnkTypeSwitchStmt,
@@ -130,6 +130,11 @@ type
     of xnkEventDecl:
       eventName*: string
       eventType*: XLangNode
+      addAccessor*: Option[XLangNode]
+      removeAccessor*: Option[XLangNode]
+    of xnkAsgn:
+      asgnLeft*: XLangNode
+      asgnRight*: XLangNode
     of xnkBlockStmt:
       blockBody*: seq[XLangNode]
     of xnkIfStmt:

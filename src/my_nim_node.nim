@@ -2,6 +2,7 @@
 # Based on Nim compiler's ast.nim but with no external dependencies
 
 import std/strutils
+import std/json
 
 type
   MyNodeKind* = enum
@@ -638,5 +639,59 @@ proc newPragma*(pragmas: varargs[MyNimNode]): MyNimNode =
   for p in pragmas:
     result.sons.add(p)
 
-proc newNimNode*(k:MyNodeKind):MyNimNode = 
+proc newNimNode*(k:MyNodeKind):MyNimNode =
   result = MyNimNode(kind: k)
+
+# JSON Serialization support using Nim's %* operator
+proc `%*`*(node: MyNimNode): JsonNode =
+  ## Converts a MyNimNode to JSON representation (Nim idiom)
+  ## This proc is called automatically when using % operator
+  result = newJObject()
+  result["kind"] = %($node.kind)
+
+  case node.kind
+  of nnkCharLit, nnkIntLit, nnkInt8Lit, nnkInt16Lit, nnkInt32Lit, nnkInt64Lit,
+     nnkUIntLit, nnkUInt8Lit, nnkUInt16Lit, nnkUInt32Lit, nnkUInt64Lit:
+    result["intVal"] = %node.intVal
+  of nnkFloatLit, nnkFloat32Lit, nnkFloat64Lit, nnkFloat128Lit:
+    result["floatVal"] = %node.floatVal
+  of nnkStrLit, nnkRStrLit, nnkTripleStrLit:
+    result["strVal"] = %node.strVal
+  of nnkIdent:
+    result["identStr"] = %node.identStr
+  of nnkSym:
+    result["symName"] = %node.symName
+  else:
+    # Nodes with children - recursively marshal all sons
+    result["sons"] = %node.sons
+
+proc to*(jnode: JsonNode, T: typedesc[MyNimNode]): MyNimNode =
+  ## Converts JSON back to MyNimNode (used with json.to[MyNimNode])
+  let kindStr = jnode["kind"].getStr()
+
+  # Parse the kind string back to enum
+  var kind: MyNodeKind
+  try:
+    kind = parseEnum[MyNodeKind](kindStr)
+  except ValueError:
+    kind = nnkError
+
+  result = newMyNimNode(kind)
+
+  case kind
+  of nnkCharLit, nnkIntLit, nnkInt8Lit, nnkInt16Lit, nnkInt32Lit, nnkInt64Lit,
+     nnkUIntLit, nnkUInt8Lit, nnkUInt16Lit, nnkUInt32Lit, nnkUInt64Lit:
+    result.intVal = jnode["intVal"].getInt()
+  of nnkFloatLit, nnkFloat32Lit, nnkFloat64Lit, nnkFloat128Lit:
+    result.floatVal = jnode["floatVal"].getFloat()
+  of nnkStrLit, nnkRStrLit, nnkTripleStrLit:
+    result.strVal = jnode["strVal"].getStr()
+  of nnkIdent:
+    result.identStr = jnode["identStr"].getStr()
+  of nnkSym:
+    result.symName = jnode["symName"].getStr()
+  else:
+    # Nodes with children
+    if jnode.hasKey("sons"):
+      for sonJson in jnode["sons"]:
+        result.sons.add(sonJson.to(MyNimNode))
