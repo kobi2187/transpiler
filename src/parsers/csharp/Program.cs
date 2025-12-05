@@ -112,8 +112,9 @@ partial class Program
         {
             // Output to .xljs file with same basename in same directory
             string outputPath = Path.ChangeExtension(filePath, ".xljs");
-            // Use UTF-8 with BOM to handle Unicode surrogate pairs properly
-            File.WriteAllText(outputPath, json, System.Text.Encoding.UTF8);
+            // Use UTF-8 without BOM for JSON compatibility
+            var utf8NoBom = new System.Text.UTF8Encoding(false);
+            File.WriteAllText(outputPath, json, utf8NoBom);
             Console.WriteLine($"  -> Written to: {outputPath}");
         }
     }

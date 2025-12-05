@@ -35,8 +35,12 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkCastExpr",
-            ["type"] = cast.Type.ToString(),
-            ["expr"] = ConvertExpression(cast.Expression)
+            ["castExpr"] = ConvertExpression(cast.Expression),
+            ["castType"] = new JObject
+            {
+                ["kind"] = "xnkNamedType",
+                ["typeName"] = cast.Type.ToString()
+            }
         };
     }
     static JObject ConvertElementAccess(ElementAccessExpressionSyntax elemAccess)
@@ -107,16 +111,36 @@ partial class Program
         {
             ["kind"] = "xnkSwitchStmt",
             ["switchExpr"] = ConvertExpression(switchStmt.Expression),
-            ["switchCases"] = new JArray(switchStmt.Sections.Select(section => new JObject
+            ["switchCases"] = new JArray(switchStmt.Sections.SelectMany(section =>
             {
-                ["labels"] = new JArray(section.Labels.Select(label => new JObject
+                // Body is shared by all labels in this section
+                var body = new JObject
                 {
-                    ["kind"] = label.Kind().ToString(),
-                    ["value"] = label is CaseSwitchLabelSyntax caseLabel
-                ? ConvertExpression(caseLabel.Value)
-                : JValue.CreateNull()
-                })),
-                ["statements"] = new JArray(section.Statements.Select(ConvertStatement))
+                    ["kind"] = "xnkBlockStmt",
+                    ["blockBody"] = new JArray(section.Statements.Select(ConvertStatement))
+                };
+
+                // Create one clause per label
+                return section.Labels.Select(label =>
+                {
+                    if (label is CaseSwitchLabelSyntax caseLabel)
+                    {
+                        return new JObject
+                        {
+                            ["kind"] = "xnkCaseClause",
+                            ["caseValues"] = new JArray(new[] { ConvertExpression(caseLabel.Value) }),
+                            ["caseBody"] = body
+                        };
+                    }
+                    else // DefaultSwitchLabel
+                    {
+                        return new JObject
+                        {
+                            ["kind"] = "xnkDefaultClause",
+                            ["defaultBody"] = body
+                        };
+                    }
+                });
             }))
         };
     }
@@ -199,32 +223,44 @@ partial class Program
     }
     static JObject ConvertIsPattern(IsPatternExpressionSyntax isPattern)
     {
+        // C# "is pattern" maps to TypeAssertion for simple type checks
         return new JObject
         {
-            ["kind"] = "xnkIsPatternExpr",
-            ["expr"] = ConvertExpression(isPattern.Expression),
-            ["pattern"] = isPattern.Pattern.ToString()
+            ["kind"] = "xnkTypeAssertion",
+            ["assertExpr"] = ConvertExpression(isPattern.Expression),
+            ["assertType"] = new JObject
+            {
+                ["kind"] = "xnkNamedType",
+                ["typeName"] = isPattern.Pattern.ToString()
+            }
         };
     }
     static JObject ConvertDeclarationExpression(DeclarationExpressionSyntax declExpr)
     {
+        // Maps to xnkVarDecl for inline variable declarations (e.g., "out var x")
         return new JObject
         {
-            ["kind"] = "xnkDeclarationExpr",
-            ["type"] = declExpr.Type.ToString(),
-            ["designation"] = declExpr.Designation.ToString()
+            ["kind"] = "xnkVarDecl",
+            ["declName"] = declExpr.Designation.ToString(),
+            ["declType"] = new JObject
+            {
+                ["kind"] = "xnkNamedType",
+                ["typeName"] = declExpr.Type.ToString()
+            },
+            ["initializer"] = null
         };
     }
     static JObject ConvertInterpolatedString(InterpolatedStringExpressionSyntax interpolated)
     {
         return new JObject
         {
-            ["kind"] = "xnkInterpolatedString",
-            ["contents"] = new JArray(interpolated.Contents.Select(c => new JObject
-            {
-                ["kind"] = c.Kind().ToString(),
-                ["text"] = c.ToString()
-            }))
+            ["kind"] = "xnkStringInterpolation",
+            ["interpParts"] = new JArray(interpolated.Contents.Select(c =>
+                c is InterpolatedStringTextSyntax text
+                    ? (JObject)new JObject { ["kind"] = "xnkStringLit", ["literalValue"] = text.TextToken.ValueText }
+                    : ConvertExpression(((InterpolationSyntax)c).Expression)
+            )),
+            ["interpIsExpr"] = new JArray(interpolated.Contents.Select(c => c is InterpolationSyntax))
         };
     }
     static JObject ConvertGenericName(GenericNameSyntax genericName)
@@ -617,8 +653,12 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkArrayType",
-            ["elementType"] = arrayType.ElementType.ToString(),
-            ["rankSpecifiers"] = new JArray(arrayType.RankSpecifiers.Select(r => r.ToString()))
+            ["elementType"] = new JObject
+            {
+                ["kind"] = "xnkNamedType",
+                ["typeName"] = arrayType.ElementType.ToString()
+            },
+            ["arraySize"] = JValue.CreateNull()  // C# arrays don't have compile-time size in type
         };
     }
     static JObject ConvertAliasQualifiedName(AliasQualifiedNameSyntax aliasQualified)
@@ -803,7 +843,11 @@ partial class Program
         {
             ["kind"] = "xnkEventDecl",
             ["eventName"] = firstVar.Identifier.Text,
-            ["eventType"] = eventField.Declaration.Type.ToString(),
+            ["eventType"] = new JObject
+            {
+                ["kind"] = "xnkNamedType",
+                ["typeName"] = eventField.Declaration.Type.ToString()
+            },
             ["modifiers"] = string.Join(" ", eventField.Modifiers.Select(m => m.Text))
         };
     }
@@ -815,7 +859,11 @@ partial class Program
         {
             ["kind"] = "xnkEventDecl",
             ["eventName"] = eventDecl.Identifier.Text,
-            ["eventType"] = eventDecl.Type.ToString(),
+            ["eventType"] = new JObject
+            {
+                ["kind"] = "xnkNamedType",
+                ["typeName"] = eventDecl.Type.ToString()
+            },
             ["modifiers"] = string.Join(" ", eventDecl.Modifiers.Select(m => m.Text)),
             ["addAccessor"] = addAccessor != null
         ? (addAccessor.Body != null ? ConvertBlock(addAccessor.Body) : (addAccessor.ExpressionBody != null ? ConvertExpression(addAccessor.ExpressionBody.Expression) : JValue.CreateNull()))

@@ -26,35 +26,3 @@ proc parseXLangJsonString*(jsonString: string): XLangNode =
   ## Returns the root XLangNode
   result = jsonString.fromJson(XLangNode)
 
-proc example() =
-
-  # Usage example
-  let jsonInput = """
-  [
-  {
-    "kind": "xnkFile",
-    "fileName": "example.nim",
-    "declarations": [
-    {
-        "kind": "xnkFuncDecl",
-        "funcName": "main",
-        "params": [],
-        "returnType": null,
-        "body": {
-        "kind": "xnkBlockStmt",
-        "statements": [
-            {
-            "kind": "xnkCallExpr",
-            "callee": {"kind": "xnkIdent", "name": "echo"},
-            "arguments": [{"kind": "xnkStringLit", "value": "Hello, World!"}]
-              }
-          ]
-          }
-      }
-      ]
-  }
-  ]
-  """
-
-  let xlangAst = parseXLangJson(jsonInput)
-  # echo "Parsed XLang AST: ", $xlangAst
