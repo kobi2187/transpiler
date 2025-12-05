@@ -72,7 +72,7 @@ proc transformPythonEnum*(node: XLangNode): XLangNode =
     return node
 
   # Extract enum members from class body
-  var enumMembers: seq[tuple[name: string, value: Option[XLangNode]]] = @[]
+  var enumMembers: seq[XLangNode] = @[]
 
   for member in node.members:
     if member.kind in {xnkVarDecl, xnkLetDecl, xnkConstDecl}:
@@ -80,7 +80,11 @@ proc transformPythonEnum*(node: XLangNode): XLangNode =
       let memberName = normalizeEnumMemberName(member.declName)
       let memberValue = member.initializer
 
-      enumMembers.add((name: memberName, value: memberValue))
+      enumMembers.add(XLangNode(
+        kind: xnkEnumMember,
+        enumMemberName: memberName,
+        enumMemberValue: memberValue
+      ))
 
   result = XLangNode(
     kind: xnkEnumDecl,
@@ -101,11 +105,15 @@ proc transformCSharpEnum*(node: XLangNode): XLangNode =
   if node.kind != xnkEnumDecl:
     return node
 
-  var normalizedMembers: seq[tuple[name: string, value: Option[XLangNode]]] = @[]
+  var normalizedMembers: seq[XLangNode] = @[]
 
   for member in node.enumMembers:
-    let normalizedName = normalizeEnumMemberName(member.name)
-    normalizedMembers.add((name: normalizedName, value: member.value))
+    let normalizedName = normalizeEnumMemberName(member.enumMemberName)
+    normalizedMembers.add(XLangNode(
+      kind: xnkEnumMember,
+      enumMemberName: normalizedName,
+      enumMemberValue: member.enumMemberValue
+    ))
 
   result = XLangNode(
     kind: xnkEnumDecl,
@@ -139,10 +147,10 @@ proc transformStringEnum*(node: XLangNode): XLangNode =
   # Check if all values are strings
   var allStrings = true
   for member in node.enumMembers:
-    if member.value.isNone:
+    if member.enumMemberValue.isNone:
       allStrings = false
       break
-    if member.value.get.kind != xnkStringLit:
+    if member.enumMemberValue.get.kind != xnkStringLit:
       allStrings = false
       break
 
@@ -150,7 +158,7 @@ proc transformStringEnum*(node: XLangNode): XLangNode =
     return node  # Regular enum
 
   # Create distinct string type + const declarations
-  let enumName = node.enumName
+  let enumName = node.enumMemberName
 
   # Type definition: type Status = distinct string
   let typeDef = XLangNode(
@@ -172,7 +180,7 @@ proc transformStringEnum*(node: XLangNode): XLangNode =
       initializer: some(XLangNode(
         kind: xnkCallExpr,
         callee: XLangNode(kind: xnkIdentifier, identName: enumName),
-        args: @[member.value.get]
+        args: @[member.enumMemberValue.get]
       ))
     ))
 

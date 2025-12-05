@@ -168,13 +168,13 @@ proc conv_xnkEnumDecl(node: XLangNode): MyNimNode =
   let enumTy = newNimNode(nnkEnumTy)
   enumTy.add(newEmptyNode())
   for member in node.enumMembers:
-    if member.value.isSome():
+    if member.enumMemberValue.isSome():
       let field = newNimNode(nnkEnumFieldDef)
-      field.add(newIdentNode(member.name))
-      field.add(convertToNimAST(member.value.get))
+      field.add(newIdentNode(member.enumMemberName))
+      field.add(convertToNimAST(member.enumMemberValue.get))
       enumTy.add(field)
     else:
-      enumTy.add(newIdentNode(member.name))
+      enumTy.add(newIdentNode(member.enumMemberName))
   let typeDef = newNimNode(nnkTypeDef)
   typeDef.add(newIdentNode(node.enumName))
   typeDef.add(newEmptyNode())

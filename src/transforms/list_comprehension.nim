@@ -64,8 +64,9 @@ proc transformListComprehension*(node: XLangNode): XLangNode {.gcsafe.} =
   # Build nested for loops (from innermost out)
   # Python allows: [x+y for x in a for y in b]
   # Process in reverse order so innermost is built first
-  for i in countdown(node.compFor.len - 1, 0):
-    let (vars, iter) = node.compFor[i]
+  for i in countdown(node.fors.len - 1, 0):
+    let forNode = node.fors[i]
+    let (vars, iter) = (forNode.vars, forNode.iter)
 
     # For single variable: for x in iter
     if vars.len == 1 and vars[0].kind == xnkIdentifier:

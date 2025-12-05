@@ -89,7 +89,7 @@ proc transformUnionToVariant*(node: XLangNode): XLangNode {.noSideEffect, gcsafe
   let members = node.typeDefBody.typeMembers
 
   # Generate enum values
-  var enumMembers: seq[tuple[name: string, value: Option[XLangNode]]] = @[]
+  var enumMembers: seq[XLangNode] = @[]
   var variantFields: seq[XLangNode] = @[]
 
   for i, memberType in members:
@@ -100,8 +100,12 @@ proc transformUnionToVariant*(node: XLangNode): XLangNode {.noSideEffect, gcsafe
     else:
       enumValueName.add("Type" & $i)
 
-    # Add to enum
-    enumMembers.add((name: enumValueName, value: none(XLangNode)))
+    # Add to enum as XLangNode
+    enumMembers.add(XLangNode(
+      kind: xnkEnumMember,
+      enumMemberName: enumValueName,
+      enumMemberValue: none(XLangNode)
+    ))
 
     # Create variant field
     # For each union member, create a case branch with a field

@@ -32,7 +32,7 @@ proc transformWithToDefer*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} 
   var stmts: seq[XLangNode] = @[]
 
   # Process each with item (Python allows: with a as x, b as y:)
-  for item in node.withItems:
+  for item in node.items:
     let contextExpr = item.contextExpr
 
     if item.asExpr.isSome:
