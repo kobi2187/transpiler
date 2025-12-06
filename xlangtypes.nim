@@ -38,15 +38,18 @@ type
     # Statements
     xnkAsgn, xnkBlockStmt, xnkIfStmt, xnkSwitchStmt, xnkCaseClause, xnkDefaultClause, xnkForStmt, xnkWhileStmt
     xnkDoWhileStmt, xnkForeachStmt, xnkTryStmt, xnkCatchStmt, xnkFinallyStmt
-    xnkReturnStmt, xnkYieldStmt, xnkYieldExpr, xnkYieldFromStmt, xnkBreakStmt, xnkContinueStmt
+    xnkReturnStmt, xnkIteratorYield, xnkIteratorDelegate, xnkBreakStmt, xnkContinueStmt
+    # Legacy (deprecated - unified into iterator nodes):
+    xnkYieldStmt, xnkYieldExpr, xnkYieldFromStmt
     xnkThrowStmt, xnkAssertStmt, xnkWithStmt, xnkPassStmt, xnkTypeSwitchStmt,
+    xnkResourceStmt, xnkResourceItem,  # Unified resource management (with/using)
     xnkDiscardStmt, xnkCaseStmt, xnkRaiseStmt, xnkImportStmt, xnkExportStmt, xnkFromImportStmt, xnkTypeCaseClause, xnkWithItem,
     xnkEmptyStmt, xnkLabeledStmt, xnkGotoStmt, xnkFixedStmt, xnkLockStmt, xnkUnsafeStmt, xnkCheckedStmt, xnkLocalFunctionStmt,
     xnkUnlessStmt, xnkUntilStmt, xnkStaticAssert, xnkSwitchCase, xnkMixinDecl, xnkTemplateDecl, xnkMacroDecl, xnkInclude, xnkExtend
     # Expressions
     xnkBinaryExpr, xnkUnaryExpr, xnkTernaryExpr, xnkCallExpr, xnkIndexExpr,
-     xnkSliceExpr, xnkMemberAccessExpr, xnkSafeNavigationExpr, xnkNullCoalesceExpr, xnkConditionalAccessExpr,
-      xnkLambdaExpr, xnkTypeAssertion, xnkCastExpr, xnkThisExpr, xnkBaseExpr, xnkRefExpr, xnkInstanceVar, xnkClassVar, xnkGlobalVar, xnkProcLiteral, xnkProcPointer, xnkArrayLit, xnkNumberLit, xnkSymbolLit, xnkDynamicType,
+     xnkSliceExpr, xnkMemberAccessExpr, xnkSafeNavigationExpr, xnkNullCoalesceExpr,
+      xnkLambdaExpr, xnkTypeAssertion, xnkCastExpr, xnkThisExpr, xnkBaseExpr, xnkRefExpr, xnkInstanceVar, xnkClassVar, xnkGlobalVar, xnkProcLiteral, xnkProcPointer, xnkNumberLit, xnkSymbolLit, xnkDynamicType,
       xnkGeneratorExpr, xnkAwaitExpr, xnkStringInterpolation, xnkDotExpr, xnkBracketExpr, xnkCompFor,
       xnkDefaultExpr, xnkTypeOfExpr, xnkSizeOfExpr, xnkCheckedExpr, xnkThrowExpr, xnkSwitchExpr, xnkStackAllocExpr, xnkImplicitArrayCreation
     # Literals
@@ -69,7 +72,10 @@ type
     xnkDestructureObj, xnkDestructureArray
 
     xnkMethodReference
-    xnkListExpr, xnkSetExpr, xnkTupleExpr, xnkDictExpr, xnkComprehensionExpr, xnkDictEntry
+    # Collection literals (renamed for clarity and consistency):
+    xnkSequenceLiteral, xnkSetLiteral, xnkMapLiteral, xnkArrayLiteral, xnkTupleExpr, xnkComprehensionExpr, xnkDictEntry
+    # Legacy (deprecated - renamed to *Literal):
+    xnkListExpr, xnkSetExpr, xnkDictExpr, xnkArrayLit
 
 
 
@@ -183,6 +189,13 @@ type
       finallyBody*: XLangNode
     of xnkReturnStmt:
       returnExpr*: Option[XLangNode]
+    of xnkIteratorYield:
+      ## Unified iterator/generator yield: Python yield, C# yield return, Nim yield
+      iteratorYieldValue*: Option[XLangNode]
+    of xnkIteratorDelegate:
+      ## Delegate to sub-iterator: Python yield from, conceptually like foreach+yield
+      iteratorDelegateExpr*: XLangNode
+    # Legacy (deprecated):
     of xnkYieldStmt:
       yieldStmt*: Option[XLangNode]
     of xnkYieldExpr:
@@ -202,6 +215,15 @@ type
     of xnkWithItem:
       contextExpr*: XLangNode
       asExpr*: Option[XLangNode]
+    of xnkResourceStmt:
+      ## Unified resource management: Python 'with', C# 'using', Java 'try-with-resources'
+      resourceItems*: seq[XLangNode]  # xnkResourceItem nodes
+      resourceBody*: XLangNode
+    of xnkResourceItem:
+      ## Individual resource in a resource statement
+      resourceExpr*: XLangNode           # Expression that acquires resource
+      resourceVar*: Option[XLangNode]    # Variable to bind resource to
+      cleanupHint*: Option[string]       # Cleanup method: "close", "dispose", etc.
     of xnkPassStmt:
       discard
     of xnkTypeSwitchStmt:
@@ -261,10 +283,19 @@ type
     of xnkMethodReference:
       refObject*: XLangNode
       refMethod*: string
-    of xnkListExpr, xnkSetExpr, xnkTupleExpr:
+    of xnkSequenceLiteral, xnkSetLiteral, xnkArrayLiteral, xnkTupleExpr:
+      ## Collection literals: [1,2,3], {1,2,3}, (1,2,3)
+      elements*: seq[XLangNode]
+    of xnkMapLiteral:
+      ## Map/dictionary literal: {"a": 1, "b": 2}
+      entries*: seq[XLangNode]  # seq of xnkDictEntry
+    # Legacy (deprecated):
+    of xnkListExpr, xnkSetExpr:
       elements*: seq[XLangNode]
     of xnkDictExpr:
       entries*: seq[XLangNode]
+    of xnkArrayLit:
+      elements*: seq[XLangNode]
     of xnkDictEntry:
       key*: XLangNode
       value*: XLangNode
@@ -468,8 +499,7 @@ type
       procBody*: XLangNode
     of xnkProcPointer:
       procPointerName*: string
-    of xnkArrayLit:
-      arrayLitElements*: seq[XLangNode]
+    # xnkArrayLit moved to unified collection literals section (line 286)
     of xnkNumberLit:
       numberValue*: string
     of xnkSymbolLit:
@@ -517,9 +547,6 @@ type
     of xnkSwitchExpr:
       switchExprValue*: XLangNode
       switchExprArms*: seq[XLangNode]
-    of xnkConditionalAccessExpr:
-      conditionalAccessExpr*: XLangNode
-      conditionalAccessMember*: string
     of xnkStackAllocExpr:
       stackAllocType*: XLangNode
       stackAllocSize*: Option[XLangNode]
@@ -611,6 +638,21 @@ proc getChildren*(node: XLangNode): seq[XLangNode] =
       genChildren.add(f.iter)
     for ifn in node.genIf: genChildren.add(ifn)
     return genChildren
+  of xnkIteratorYield:
+    if node.iteratorYieldValue.isSome():
+      return @[node.iteratorYieldValue.get]
+    return @[]
+  of xnkIteratorDelegate:
+    return @[node.iteratorDelegateExpr]
+  # Legacy:
+  of xnkYieldStmt:
+    if node.yieldStmt.isSome():
+      return @[node.yieldStmt.get]
+    return @[]
+  of xnkYieldExpr:
+    if node.yieldExpr.isSome():
+      return @[node.yieldExpr.get]
+    return @[]
   of xnkYieldFromStmt:
     return @[node.yieldFromExpr]
   of xnkLambdaProc:
@@ -628,4 +670,14 @@ proc getChildren*(node: XLangNode): seq[XLangNode] =
     return @[node.refObject]
   of xnkEventDecl:
     return @[node.eventType]
+  of xnkResourceStmt:
+    var rchildren: seq[XLangNode] = @[]
+    for item in node.resourceItems: rchildren.add(item)
+    rchildren.add(node.resourceBody)
+    return rchildren
+  of xnkResourceItem:
+    var richildren: seq[XLangNode] = @[]
+    richildren.add(node.resourceExpr)
+    if node.resourceVar.isSome(): richildren.add(node.resourceVar.get)
+    return richildren
   else: return @[]

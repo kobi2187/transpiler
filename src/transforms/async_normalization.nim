@@ -30,7 +30,7 @@ proc transformAsyncNormalization*(node: XLangNode): XLangNode {.noSideEffect, gc
     # The XLang → Nim converter will emit: await awaitExpr
     result = node
 
-  of xnkYieldStmt:
+  of xnkIteratorYield, xnkYieldStmt:
     # Python's yield in async context → Nim's yield
     # In Python async generators: async def foo(): yield x
     # In Nim: iterator or async iterator
@@ -39,7 +39,7 @@ proc transformAsyncNormalization*(node: XLangNode): XLangNode {.noSideEffect, gc
 
   of xnkYieldExpr:
     # yield expression → Nim's yield
-    # Keep as-is
+    # Keep as-is (legacy support)
     result = node
 
   else:

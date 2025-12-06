@@ -30,7 +30,7 @@ proc isGeneratorFunction(node: XLangNode): bool =
 
   proc hasYield(n: XLangNode): bool =
     case n.kind
-    of xnkYieldStmt, xnkYieldExpr:
+    of xnkIteratorYield, xnkYieldStmt, xnkYieldExpr:  # Include legacy for now
       return true
     of xnkBlockStmt:
       for stmt in n.blockBody:
@@ -148,20 +148,26 @@ proc transformYieldFrom*(node: XLangNode): XLangNode =
   ## Python: yield from other_generator()
   ## Nim: for item in other_generator(): yield item
 
-  if node.kind != xnkYieldFromStmt:
+  # Handle both new and legacy forms
+  if node.kind notin {xnkIteratorDelegate, xnkYieldFromStmt}:
     return node
+
+  let delegateExpr = if node.kind == xnkIteratorDelegate:
+    node.iteratorDelegateExpr
+  else:
+    node.yieldFromExpr
 
   # Build for loop that yields each item
   result = XLangNode(
     kind: xnkForeachStmt,
     foreachVar: XLangNode(kind: xnkIdentifier, identName: "item"),
-    foreachIter: node.yieldFromExpr,
+    foreachIter: delegateExpr,
     foreachBody: XLangNode(
       kind: xnkBlockStmt,
       blockBody: @[
         XLangNode(
-          kind: xnkYieldStmt,
-          yieldStmt: some(XLangNode(kind: xnkIdentifier, identName: "item"))
+          kind: xnkIteratorYield,
+          iteratorYieldValue: some(XLangNode(kind: xnkIdentifier, identName: "item"))
         )
       ]
     )

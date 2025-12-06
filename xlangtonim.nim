@@ -17,6 +17,55 @@ proc addWarning(kind: XLangNodeKind, msg: string, loc: string = "") =
 proc clearWarnings*() =
   transpileWarnings.setLen(0)
 
+# ==============================================================================
+# CONSTRUCTS THAT SHOULD BE LOWERED BY TRANSFORM PASSES
+# ==============================================================================
+#
+# The following XLang constructs should NOT reach the final xlang→nim converter.
+# They must be transformed by earlier passes in the transform pipeline:
+#
+# Language-Specific Constructs:
+#   xnkPropertyDecl         → property_to_procs.nim (C# properties to getter/setter procs)
+#   xnkEventDecl            → csharp_events.nim (C# events to callback patterns)
+#   xnkIndexerDecl          → property_to_procs.nim (C# indexers to [] operators)
+#   xnkUsingStmt            → csharp_using.nim (C# using to defer pattern)
+#   xnkLockStmt             → lock_to_withlock.nim (C# lock to Nim locks module)
+#
+# Control Flow Transforms:
+#   xnkDoWhileStmt          → dowhile_to_while.nim (do-while to while true + break)
+#   xnkTernaryExpr          → ternary_to_if.nim (?: to if expression)
+#   xnkWithStmt             → with_to_defer.nim (Python with to defer)
+#   xnkUnlessStmt           → normalize_simple.nim (unless to if not)
+#   xnkUntilStmt            → normalize_simple.nim (until to while not)
+#
+# Expression Transforms:
+#   xnkStringInterpolation  → string_interpolation.nim (f"..." to &"...")
+#   xnkNullCoalesceExpr     → null_coalesce.nim (?? to if x != nil)
+#   xnkSafeNavigationExpr   → null_coalesce.nim (?. to if x != nil)
+#   (xnkConditionalAccessExpr removed - was duplicate of xnkSafeNavigationExpr)
+#   xnkComprehensionExpr    → list_comprehension.nim ([x for x in y] to collect)
+#   xnkGeneratorExpr        → python_generators.nim (generator expressions)
+#
+# Type Transforms:
+#   xnkUnionType            → union_to_variant.nim (union types to variant objects)
+#   xnkIntersectionType     → interface_to_concept.nim (intersection types)
+#
+# Destructuring:
+#   xnkDestructureObj       → destructuring.nim ({a,b} = obj to tuple unpacking)
+#   xnkDestructureArray     → destructuring.nim ([a,b] = arr to tuple unpacking)
+#
+# Advanced Features:
+#   xnkIteratorDelegate     → python_generators.nim (yield from to loop + yield)
+#   xnkYieldFromStmt        → (deprecated, use xnkIteratorDelegate)
+#   xnkAwaitExpr            → async_normalization.nim (await handling)
+#   xnkLambdaExpr           → lambda_normalization.nim (complex lambdas)
+#   xnkDelegateDecl         → lambda_normalization.nim (delegates to proc types)
+#
+# If any of these reach the converter, it's a bug in the transform pipeline.
+# Use assertLowered() for these constructs.
+#
+# ==============================================================================
+
 # Serialize node to a deterministic string representation for structural comparison.
 proc serializeXLangNode*(node: XLangNode): string =
   if node == nil:
@@ -272,10 +321,11 @@ proc conv_xnkReturnStmt(node: XLangNode): MyNimNode =
   else:
     result.add(newEmptyNode())
 
-proc conv_xnkYieldStmt(node: XLangNode): MyNimNode =
+## Unified iterator yield: Python yield, C# yield return, Nim yield
+proc conv_xnkIteratorYield(node: XLangNode): MyNimNode =
   result = newNimNode(nnkYieldStmt)
-  if node.yieldExpr.isSome:
-    result.add(convertToNimAST(node.yieldExpr.get))
+  if node.iteratorYieldValue.isSome:
+    result.add(convertToNimAST(node.iteratorYieldValue.get))
   else:
     result.add(newEmptyNode())
 
@@ -483,7 +533,9 @@ proc conv_xnkTupleUnpacking(node: XLangNode): MyNimNode =
   result.add(newEmptyNode())
   result.add(convertToNimAST(node.unpackExpr))
 
-proc conv_xnkUsingStmt(node: XLangNode): MyNimNode =
+## C# using statement → should be lowered to xnkResourceStmt first
+## (Keeping stub implementation for now, but should use transform pass)
+proc conv_xnkUsingStmt_DEPRECATED(node: XLangNode): MyNimNode =
   result = newNimNode(nnkUsingStmt)
   result.add(convertToNimAST(node.usingExpr))
   result.add(convertToNimAST(node.usingBody))
@@ -541,14 +593,21 @@ template notYetImpl(kind: string): MyNimNode =
 # - xnkNullCoalesceExpr, xnkSafeNavigationExpr → null_coalesce.nim
 # - xnkComprehensionExpr → list_comprehension.nim
 # - xnkDestructureObj, xnkDestructureArray → destructuring.nim
-# - xnkYieldFromStmt → python_generators.nim
-# - xnkConditionalAccessExpr → null_coalesce.nim
+# - xnkIteratorDelegate → python_generators.nim
+# - xnkYieldFromStmt → (deprecated, use xnkIteratorDelegate)
+# - (xnkConditionalAccessExpr removed - duplicate of xnkSafeNavigationExpr)
 # - xnkUnionType → union_to_variant.nim
 proc conv_xnkPropertyDecl(node: XLangNode): MyNimNode = assertLowered("xnkPropertyDecl")
 proc conv_xnkEventDecl(node: XLangNode): MyNimNode = assertLowered("xnkEventDecl")
 proc conv_xnkDoWhileStmt(node: XLangNode): MyNimNode = assertLowered("xnkDoWhileStmt")
 proc conv_xnkTernaryExpr(node: XLangNode): MyNimNode = assertLowered("xnkTernaryExpr")
+## Python 'with' / C# 'using' → should be lowered to xnkResourceStmt
 proc conv_xnkWithStmt(node: XLangNode): MyNimNode = assertLowered("xnkWithStmt")
+proc conv_xnkUsingStmt(node: XLangNode): MyNimNode = assertLowered("xnkUsingStmt")
+
+## Unified resource management → should be lowered to defer pattern
+proc conv_xnkResourceStmt(node: XLangNode): MyNimNode = assertLowered("xnkResourceStmt")
+proc conv_xnkResourceItem(node: XLangNode): MyNimNode = assertLowered("xnkResourceItem")
 proc conv_xnkWithItem(node: XLangNode): MyNimNode = assertLowered("xnkWithItem")
 proc conv_xnkStringInterpolation(node: XLangNode): MyNimNode = assertLowered("xnkStringInterpolation")
 proc conv_xnkNullCoalesceExpr(node: XLangNode): MyNimNode = assertLowered("xnkNullCoalesceExpr")
@@ -556,8 +615,12 @@ proc conv_xnkSafeNavigationExpr(node: XLangNode): MyNimNode = assertLowered("xnk
 proc conv_xnkComprehensionExpr(node: XLangNode): MyNimNode = assertLowered("xnkComprehensionExpr")
 proc conv_xnkDestructureObj(node: XLangNode): MyNimNode = assertLowered("xnkDestructureObj")
 proc conv_xnkDestructureArray(node: XLangNode): MyNimNode = assertLowered("xnkDestructureArray")
+proc conv_xnkIteratorDelegate(node: XLangNode): MyNimNode = assertLowered("xnkIteratorDelegate")
+# Legacy yield nodes (deprecated - unified into xnkIteratorYield):
+proc conv_xnkYieldStmt(node: XLangNode): MyNimNode = assertLowered("xnkYieldStmt")
+proc conv_xnkYieldExpr(node: XLangNode): MyNimNode = assertLowered("xnkYieldExpr")
 proc conv_xnkYieldFromStmt(node: XLangNode): MyNimNode = assertLowered("xnkYieldFromStmt")
-proc conv_xnkConditionalAccessExpr(node: XLangNode): MyNimNode = assertLowered("xnkConditionalAccessExpr")
+# xnkConditionalAccessExpr removed - was duplicate of xnkSafeNavigationExpr
 
 # ==== SIMPLE DIRECT MAPPINGS ====
 
@@ -688,21 +751,16 @@ proc conv_xnkFinallyStmt(node: XLangNode): MyNimNode =
   result = newNimNode(nnkFinally)
   result.add(convertToNimAST(node.finallyBody))
 
-## C#: `yield return x;`
-## Nim: `yield x`
-proc conv_xnkYieldExpr(node: XLangNode): MyNimNode =
-  result = newNimNode(nnkYieldStmt)
-  if node.yieldExpr.isSome():
-    result.add(convertToNimAST(node.yieldExpr.get))
-  else:
-    result.add(newEmptyNode())
+## (conv_xnkYieldExpr moved to unified iterator yield section - see line 333)
 
-## C#: `throw e;`
+## C#: `throw e;` → Should be migrated to xnkRaiseStmt by parser
 ## Nim: `raise e`
 proc conv_xnkThrowStmt(node: XLangNode): MyNimNode =
+  # Legacy support: convert throw to raise on the fly
   result = newNimNode(nnkRaiseStmt)
   result.add(convertToNimAST(node.throwExpr))
 
+## Python/Nim: `raise` or `raise e`  (already defined earlier at line ~368)
 ## C#: `Debug.Assert(x);`
 ## Nim: `assert x`
 proc conv_xnkAssertStmt(node: XLangNode): MyNimNode =
@@ -728,12 +786,10 @@ proc conv_xnkFixedStmt(node: XLangNode): MyNimNode =
   result = newNimNode(nnkCommentStmt)
   result.strVal = "UNSUPPORTED: fixed statement - use unsafe pointer operations manually"
 
-## C#: `lock (obj) { }` (Nim has no built-in lock)
-## Nim: (use locks module manually)
+## C#: `lock (obj) { }` → should be lowered by lock_to_withlock.nim transform
+## Nim: `withLock obj:` or acquire/defer/release pattern
 proc conv_xnkLockStmt(node: XLangNode): MyNimNode =
-  addWarning(xnkLockStmt, "lock statement not directly supported - use locks module")
-  result = newNimNode(nnkCommentStmt)
-  result.strVal = "UNSUPPORTED: lock statement - use locks module with withLock template"
+  assertLowered("xnkLockStmt")
 
 ## C#: `unsafe { }` (Nim doesn't need unsafe blocks)
 ## Nim: (just convert body)
@@ -791,14 +847,46 @@ proc conv_xnkDefaultClause(node: XLangNode): MyNimNode =
 
 ## C#/Python: `[1, 2, 3]`
 ## Nim: `[1, 2, 3]`
-proc conv_xnkArrayLit(node: XLangNode): MyNimNode =
+## Array literal `[1, 2, 3]` (fixed-size)
+## Nim: `[1, 2, 3]`
+proc conv_xnkArrayLiteral(node: XLangNode): MyNimNode =
   result = newNimNode(nnkBracket)
-  for elem in node.arrayLitElements:
+  for elem in node.elements:
     result.add(convertToNimAST(elem))
 
-## Python: `[1, 2, 3]`
+## Sequence literal `[1, 2, 3]` (dynamic)
 ## Nim: `@[1, 2, 3]`
-proc conv_xnkListExpr(node: XLangNode): MyNimNode =
+proc conv_xnkSequenceLiteral(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkPrefix)
+  result.add(newIdentNode("@"))
+  let bracket = newNimNode(nnkBracket)
+  for elem in node.elements:
+    bracket.add(convertToNimAST(elem))
+  result.add(bracket)
+
+## Set literal `{1, 2, 3}`
+## Nim: `{1, 2, 3}`
+proc conv_xnkSetLiteral(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkCurly)
+  for elem in node.elements:
+    result.add(convertToNimAST(elem))
+
+## Map/Dict literal `{"a": 1, "b": 2}`
+## Nim: `{"a": 1, "b": 2}.toTable`
+proc conv_xnkMapLiteral(node: XLangNode): MyNimNode =
+  result = newNimNode(nnkTableConstr)
+  for entry in node.entries:
+    result.add(convertToNimAST(entry))
+
+# Legacy (deprecated - use *Literal):
+proc conv_xnkArrayLit(node: XLangNode): MyNimNode = assertLowered("xnkArrayLit")
+proc conv_xnkListExpr(node: XLangNode): MyNimNode = assertLowered("xnkListExpr")
+proc conv_xnkSetExpr(node: XLangNode): MyNimNode = assertLowered("xnkSetExpr")
+proc conv_xnkDictExpr(node: XLangNode): MyNimNode = assertLowered("xnkDictExpr")
+
+## Python: `[1, 2, 3]` - DEPRECATED, parsers should emit xnkSequenceLiteral
+## Nim: `@[1, 2, 3]`
+proc conv_xnkListExpr_DEPRECATED(node: XLangNode): MyNimNode =
   result = newNimNode(nnkPrefix)
   result.add(newIdentNode("@"))
   let bracket = newNimNode(nnkBracket)
@@ -1122,6 +1210,8 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
     result = conv_xnkUnaryExpr(node)
   of xnkReturnStmt:
     result = conv_xnkReturnStmt(node)
+  of xnkIteratorYield:
+    result = conv_xnkIteratorYield(node)
   of xnkYieldStmt:
     result = conv_xnkYieldStmt(node)
   of xnkDiscardStmt:
@@ -1244,6 +1334,8 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
     result = conv_xnkCatchStmt(node)
   of xnkFinallyStmt:
     result = conv_xnkFinallyStmt(node)
+  of xnkIteratorDelegate:
+    result = conv_xnkIteratorDelegate(node)
   of xnkYieldExpr:
     result = conv_xnkYieldExpr(node)
   of xnkYieldFromStmt:
@@ -1258,6 +1350,10 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
     result = conv_xnkAssertStmt(node)
   of xnkWithStmt:
     result = conv_xnkWithStmt(node)
+  of xnkResourceStmt:
+    result = conv_xnkResourceStmt(node)
+  of xnkResourceItem:
+    result = conv_xnkResourceItem(node)
   of xnkPassStmt:
     result = conv_xnkPassStmt(node)
   of xnkTypeSwitchStmt:
@@ -1308,8 +1404,7 @@ proc convertToNimAST*(node: XLangNode): MyNimNode =
     result = conv_xnkSafeNavigationExpr(node)
   of xnkNullCoalesceExpr:
     result = conv_xnkNullCoalesceExpr(node)
-  of xnkConditionalAccessExpr:
-    result = conv_xnkConditionalAccessExpr(node)
+  # xnkConditionalAccessExpr removed - was duplicate of xnkSafeNavigationExpr
   of xnkLambdaExpr:
     result = conv_xnkLambdaExpr(node)
   of xnkTypeAssertion:

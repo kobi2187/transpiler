@@ -48,6 +48,8 @@ type
     tpGoImplicitInterfaces = "go-implicit-interfaces"
     tpEnumNormalization = "enum-normalization"
     tpPythonMultipleInheritance = "python-multiple-inheritance"
+    tpLockToWithLock = "lock-to-withlock"
+    tpResourceToDefer = "resource-to-defer"
     # Add more passes here as they are implemented
 
   TransformPassKind* = enum
