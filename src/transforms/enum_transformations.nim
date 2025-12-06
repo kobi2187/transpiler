@@ -147,7 +147,7 @@ proc transformStringEnum*(node: XLangNode): XLangNode =
   # Check if all values are strings
   var allStrings = true
   for member in node.enumMembers:
-    if member.enumMemberValue.isNone:
+    if member.enumMemberValue.isNone():
       allStrings = false
       break
     if member.enumMemberValue.get.kind != xnkStringLit:

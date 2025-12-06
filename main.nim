@@ -149,7 +149,7 @@ proc main() =
       errorCollector.addError(
         tekConversionError,
         "Failed to convert XLang to Nim AST: " & e.msg,
-        location = "xlangtonim_complete",
+        location = "xlangtonim",
         details = e.getStackTrace()
       )
       continue  # Skip to next file

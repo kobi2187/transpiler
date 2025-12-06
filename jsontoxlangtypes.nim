@@ -1,6 +1,6 @@
 import jsony
 import xlangtypes
-import os
+
 
 proc stripBOM(s: string): string =
   ## Strip UTF-8 BOM if present
