@@ -61,7 +61,7 @@ partial class Program
     }
     static JObject ConvertArrayCreation(ArrayCreationExpressionSyntax arrayCreate)
     {
-        // If there's an initializer, use xnkListExpr, otherwise use xnkCallExpr with array type
+        // If there's an initializer, use xnkSequenceLiteral, otherwise use xnkCallExpr with array type
         if (arrayCreate.Initializer != null)
         {
             return ConvertInitializer(arrayCreate.Initializer);
@@ -87,20 +87,21 @@ partial class Program
     }
     static JObject ConvertInitializer(InitializerExpressionSyntax initializer)
     {
-        // Map to xnkListExpr for array/collection initializers
+        // Map to xnkSequenceLiteral for array/collection initializers
         return new JObject
         {
-            ["kind"] = "xnkListExpr",
+            ["kind"] = "xnkSequenceLiteral",
             ["elements"] = new JArray(initializer.Expressions.Select(ConvertExpression))
         };
     }
     // Additional Statement converters
     static JObject ConvertThrow(ThrowStatementSyntax throwStmt)
     {
+        // C# throw → xnkRaiseStmt (unified with Python raise)
         return new JObject
         {
-            ["kind"] = "xnkThrowStmt",
-            ["throwExpr"] = throwStmt.Expression != null
+            ["kind"] = "xnkRaiseStmt",
+            ["raiseExpr"] = throwStmt.Expression != null
         ? ConvertExpression(throwStmt.Expression)
         : JValue.CreateNull()
         };
@@ -146,22 +147,52 @@ partial class Program
     }
     static JObject ConvertUsing(UsingStatementSyntax usingStmt)
     {
+        // Convert C# using to unified xnkResourceStmt
+        var resourceItems = new JArray();
+
+        if (usingStmt.Declaration != null)
+        {
+            // using (Type var = expr) → resource items with declarations
+            foreach (var variable in usingStmt.Declaration.Variables)
+            {
+                resourceItems.Add(new JObject
+                {
+                    ["kind"] = "xnkResourceItem",
+                    ["resourceExpr"] = variable.Initializer != null
+                        ? ConvertExpression(variable.Initializer.Value)
+                        : JValue.CreateNull(),
+                    ["resourceVar"] = new JObject
+                    {
+                        ["kind"] = "xnkVarDecl",
+                        ["declName"] = variable.Identifier.Text,
+                        ["declType"] = new JObject
+                        {
+                            ["kind"] = "xnkNamedType",
+                            ["typeName"] = usingStmt.Declaration.Type.ToString()
+                        },
+                        ["initializer"] = JValue.CreateNull()
+                    },
+                    ["cleanupHint"] = "Dispose"
+                });
+            }
+        }
+        else if (usingStmt.Expression != null)
+        {
+            // using (expr) → resource item without declaration
+            resourceItems.Add(new JObject
+            {
+                ["kind"] = "xnkResourceItem",
+                ["resourceExpr"] = ConvertExpression(usingStmt.Expression),
+                ["resourceVar"] = JValue.CreateNull(),
+                ["cleanupHint"] = "Dispose"
+            });
+        }
+
         return new JObject
         {
-            ["kind"] = "xnkUsingStmt",
-            ["declaration"] = usingStmt.Declaration != null
-        ? new JObject
-        {
-            ["type"] = usingStmt.Declaration.Type.ToString(),
-            ["variables"] = new JArray(usingStmt.Declaration.Variables.Select(v => new JObject
-            {
-                ["name"] = v.Identifier.Text,
-                ["initializer"] = v.Initializer != null ? ConvertExpression(v.Initializer.Value) : JValue.CreateNull()
-            }))
-        }
-        : JValue.CreateNull(),
-            ["expression"] = usingStmt.Expression != null ? ConvertExpression(usingStmt.Expression) : JValue.CreateNull(),
-            ["statement"] = ConvertStatement(usingStmt.Statement)
+            ["kind"] = "xnkResourceStmt",
+            ["resourceItems"] = resourceItems,
+            ["resourceBody"] = ConvertStatement(usingStmt.Statement)
         };
     }
     static JObject ConvertLock(LockStatementSyntax lockStmt)
@@ -184,13 +215,13 @@ partial class Program
     }
     static JObject ConvertYield(YieldStatementSyntax yieldStmt)
     {
+        // C# yield return → xnkIteratorYield (unified with Python yield)
         return new JObject
         {
-            ["kind"] = "xnkYieldStmt",
-            ["yieldKind"] = yieldStmt.Kind().ToString(),
-            ["expr"] = yieldStmt.Expression != null
-        ? ConvertExpression(yieldStmt.Expression)
-        : JValue.CreateNull()
+            ["kind"] = "xnkIteratorYield",
+            ["iteratorYieldValue"] = yieldStmt.Expression != null
+                ? ConvertExpression(yieldStmt.Expression)
+                : JValue.CreateNull()
         };
     }
     // More expression converters
@@ -289,11 +320,12 @@ partial class Program
     }
     static JObject ConvertConditionalAccess(ConditionalAccessExpressionSyntax condAccess)
     {
+        // C# ?. operator → xnkSafeNavigationExpr (xnkConditionalAccessExpr was duplicate)
         return new JObject
         {
-            ["kind"] = "xnkConditionalAccessExpr",
-            ["expr"] = ConvertExpression(condAccess.Expression),
-            ["whenNotNull"] = condAccess.WhenNotNull.ToString()
+            ["kind"] = "xnkSafeNavigationExpr",
+            ["safeObject"] = ConvertExpression(condAccess.Expression),
+            ["safeMember"] = condAccess.WhenNotNull.ToString()
         };
     }
     static JObject ConvertThrowExpression(ThrowExpressionSyntax throwExpr)
@@ -473,30 +505,45 @@ partial class Program
     }
     static JObject ConvertAnonymousObjectCreationExpression(AnonymousObjectCreationExpressionSyntax anonObject)
     {
-        var keys = new JArray();
-        var values = new JArray();
+        // C# anonymous objects → xnkMapLiteral with entries
+        var entries = new JArray();
         foreach (var initializer in anonObject.Initializers)
         {
             // NameEquals can be null if the property name is inferred.
             var name = initializer.NameEquals?.Name.Identifier.Text ?? (initializer.Expression as IdentifierNameSyntax)?.Identifier.Text;
             if (name != null)
             {
-                keys.Add(name);
-                values.Add(ConvertExpression(initializer.Expression));
+                entries.Add(new JObject
+                {
+                    ["kind"] = "xnkDictEntry",
+                    ["key"] = new JObject
+                    {
+                        ["kind"] = "xnkStringLit",
+                        ["value"] = name
+                    },
+                    ["value"] = ConvertExpression(initializer.Expression)
+                });
             }
             else
             {
                 // Could be a more complex expression where name is inferred, e.g. new { a.b, a.c }
-                // For now, we'll just create an unknown node for this initializer.
-                keys.Add("unknown");
-                values.Add(CreateUnknownNode(initializer, "anonymous_initializer"));
+                // For now, we'll just create an unknown entry for this initializer.
+                entries.Add(new JObject
+                {
+                    ["kind"] = "xnkDictEntry",
+                    ["key"] = new JObject
+                    {
+                        ["kind"] = "xnkStringLit",
+                        ["value"] = "unknown"
+                    },
+                    ["value"] = CreateUnknownNode(initializer, "anonymous_initializer")
+                });
             }
         }
         return new JObject
         {
-            ["kind"] = "xnkDictExpr",
-            ["keys"] = keys,
-            ["values"] = values
+            ["kind"] = "xnkMapLiteral",
+            ["entries"] = entries
         };
     }
     static JObject ConvertNullableType(NullableTypeSyntax nullableType)

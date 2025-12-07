@@ -40,6 +40,11 @@ import go_type_assertions
 import go_implicit_interfaces
 import enum_transformations
 import python_multiple_inheritance
+import safe_navigation
+import indexer_to_procs
+import generator_expressions
+import throw_expression
+import resource_to_defer
 import collections/tables
 
 template toClosure(p: untyped): proc(node: XLangNode): XLangNode {.closure, gcsafe.} =
@@ -82,21 +87,27 @@ proc buildNimPassRegistry*(): Table[TransformPassID, TransformPass] =
   reg[tpLambdaNormalization] = newTransformPass(tpLambdaNormalization, toClosure(transformLambdaNormalization), @[]) 
   reg[tpGoTypeAssertions] = newTransformPass(tpGoTypeAssertions, toClosure(transformGoTypeAssertions), @[]) 
   reg[tpGoImplicitInterfaces] = newTransformPass(tpGoImplicitInterfaces, toClosure(transformGoImplicitInterfaces), @[]) 
-  reg[tpEnumNormalization] = newTransformPass(tpEnumNormalization, toClosure(transformEnumNormalization), @[]) 
-  reg[tpPythonMultipleInheritance] = newTransformPass(tpPythonMultipleInheritance, toClosure(transformMultipleInheritance), @[]) 
+  reg[tpEnumNormalization] = newTransformPass(tpEnumNormalization, toClosure(transformEnumNormalization), @[])
+  reg[tpPythonMultipleInheritance] = newTransformPass(tpPythonMultipleInheritance, toClosure(transformMultipleInheritance), @[])
+  reg[tpSafeNavigation] = newTransformPass(tpSafeNavigation, toClosure(transformSafeNavigation), @[], @[xnkSafeNavigationExpr])
+  reg[tpIndexerToProcs] = newTransformPass(tpIndexerToProcs, toClosure(transformIndexerToProcs), @[], @[xnkIndexerDecl, xnkClassDecl, xnkStructDecl])
+  reg[tpGeneratorExpressions] = newTransformPass(tpGeneratorExpressions, toClosure(transformGeneratorExpressions), @[], @[xnkGeneratorExpr])
+  reg[tpThrowExpression] = newTransformPass(tpThrowExpression, toClosure(transformThrowExpression), @[], @[xnkThrowExpr, xnkVarDecl, xnkLetDecl, xnkReturnStmt, xnkAsgn])
+  reg[tpResourceToDefer] = newTransformPass(tpResourceToDefer, toClosure(transformResourceToDefer), @[], @[xnkResourceStmt])
 
   return reg
 
 let nimDefaultPassIDs = @[tpForToWhile, tpDoWhileToWhile, tpTernaryToIf, tpInterfaceToConcept, tpPropertyToProcs, tpSwitchFallthrough,
                          tpNullCoalesce, tpMultipleCatch, tpDestructuring, tpListComprehension, tpStringInterpolation, tpNormalizeSimple,
                          tpWithToDefer, tpAsyncNormalization, tpUnionToVariant, tpLinqToSequtils, tpOperatorOverload, tpPatternMatching,
-                         tpDecoratorAttribute, tpExtensionMethods, tpLambdaNormalization, tpEnumNormalization]
+                         tpDecoratorAttribute, tpExtensionMethods, tpLambdaNormalization, tpEnumNormalization, tpSafeNavigation,
+                         tpResourceToDefer, tpThrowExpression, tpGeneratorExpressions]
 
 let goDefaultPassIDs = @[tpGoErrorHandling, tpGoDefer, tpGoConcurrency, tpGoTypeAssertions, tpGoImplicitInterfaces, tpGoPanicRecover]
 
-let pythonDefaultPassIDs = @[tpPythonGenerators, tpPythonTypeHints, tpListComprehension, tpDestructuring, tpPatternMatching]
+let pythonDefaultPassIDs = @[tpPythonGenerators, tpPythonTypeHints, tpListComprehension, tpDestructuring, tpPatternMatching, tpGeneratorExpressions]
 
-let csharpDefaultPassIDs = @[tpLinqToSequtils, tpCSharpUsing, tpCSharpEvents, tpExtensionMethods]
+let csharpDefaultPassIDs = @[tpLinqToSequtils, tpCSharpUsing, tpCSharpEvents, tpExtensionMethods, tpIndexerToProcs, tpThrowExpression]
 
 proc selectPassIDsForLang*(caps: LangCapabilities): seq[TransformPassID] =
   result = @[]

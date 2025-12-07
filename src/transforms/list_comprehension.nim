@@ -114,8 +114,8 @@ proc transformListComprehension*(node: XLangNode): XLangNode {.gcsafe.} =
         declName: resultVar,
         declType: none(XLangNode),  # Type inference will handle it
         initializer: some(XLangNode(
-          kind: xnkListExpr,
-          elements: @[]  # Empty list literal @[]
+          kind: xnkSequenceLiteral,
+          elements: @[]  # Empty sequence literal @[]
         ))
       ),
       # The for loop(s) with conditions

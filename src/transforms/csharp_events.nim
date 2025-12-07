@@ -70,8 +70,8 @@ proc transformEventDeclaration*(node: XLangNode): XLangNode =
       genericArgs: @[eventType]
     )),
     initializer: some(XLangNode(
-      kind: xnkListExpr,
-      elements: @[]  # Empty list @[]
+      kind: xnkSequenceLiteral,
+      elements: @[]  # Empty sequence @[]
     ))
   )
 

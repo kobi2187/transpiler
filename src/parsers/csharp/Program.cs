@@ -194,6 +194,13 @@ partial class Program
         {
             ["kind"] = "xnkClassDecl",
             ["typeNameDecl"] = cls.Identifier.Text,
+            ["baseTypes"] = cls.BaseList != null
+                ? new JArray(cls.BaseList.Types.Select(t => new JObject
+                {
+                    ["kind"] = "xnkNamedType",
+                    ["typeName"] = t.Type.ToString()
+                }))
+                : new JArray(),
             ["members"] = new JArray(cls.Members.Select(ConvertClassMember))
         };
     }
@@ -573,7 +580,7 @@ partial class Program
             ["fieldType"] = new JObject
             {
                 ["kind"] = "xnkNamedType",
-                ["name"] = field.Declaration.Type.ToString()
+                ["typeName"] = field.Declaration.Type.ToString()
             },
             ["fieldInitializer"] = firstVar.Initializer != null
                 ? ConvertExpression(firstVar.Initializer.Value)
@@ -617,14 +624,26 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkConstructorDecl",
-            ["name"] = constructor.Identifier.Text,
-            ["modifiers"] = string.Join(" ", constructor.Modifiers.Select(m => m.Text)),
-            ["parameters"] = new JArray(constructor.ParameterList.Parameters.Select(p => new JObject
+            ["constructorParams"] = new JArray(constructor.ParameterList.Parameters.Select(p => new JObject
             {
-                ["name"] = p.Identifier.Text,
-                ["type"] = p.Type?.ToString() ?? "var"
+                ["kind"] = "xnkParameter",
+                ["paramName"] = p.Identifier.Text,
+                ["paramType"] = new JObject
+                {
+                    ["kind"] = "xnkNamedType",
+                    ["typeName"] = p.Type?.ToString() ?? "auto"
+                },
+                ["defaultValue"] = p.Default != null ? ConvertExpression(p.Default.Value) : JValue.CreateNull()
             })),
-            ["body"] = constructor.Body != null ? ConvertBlock(constructor.Body) : JValue.CreateNull()
+            // TODO: Handle constructor initializers: this(...) and base(...) calls
+            ["constructorInitializers"] = constructor.Initializer != null
+                ? new JArray(new JObject
+                {
+                    ["kind"] = constructor.Initializer.ThisOrBaseKeyword.Text == "base" ? "xnkBaseCall" : "xnkThisCall",
+                    ["arguments"] = new JArray(constructor.Initializer.ArgumentList.Arguments.Select(ConvertArgument))
+                })
+                : new JArray(),
+            ["constructorBody"] = constructor.Body != null ? ConvertBlock(constructor.Body) : JValue.CreateNull()
         };
     }
 }

@@ -289,13 +289,13 @@ type
     of xnkMapLiteral:
       ## Map/dictionary literal: {"a": 1, "b": 2}
       entries*: seq[XLangNode]  # seq of xnkDictEntry
-    # Legacy (deprecated):
+    # Legacy (deprecated - use unified *Literal nodes):
     of xnkListExpr, xnkSetExpr:
-      elements*: seq[XLangNode]
+      legacyElements*: seq[XLangNode]
     of xnkDictExpr:
-      entries*: seq[XLangNode]
+      legacyEntries*: seq[XLangNode]
     of xnkArrayLit:
-      elements*: seq[XLangNode]
+      legacyArrayElements*: seq[XLangNode]
     of xnkDictEntry:
       key*: XLangNode
       value*: XLangNode

@@ -50,6 +50,10 @@ type
     tpPythonMultipleInheritance = "python-multiple-inheritance"
     tpLockToWithLock = "lock-to-withlock"
     tpResourceToDefer = "resource-to-defer"
+    tpSafeNavigation = "safe-navigation"
+    tpIndexerToProcs = "indexer-to-procs"
+    tpGeneratorExpressions = "generator-expressions"
+    tpThrowExpression = "throw-expression"
     # Add more passes here as they are implemented
 
   TransformPassKind* = enum

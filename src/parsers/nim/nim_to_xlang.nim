@@ -1,5 +1,5 @@
 import macros, options, strutils
-import ../../xlang/xlang_types #TODO: replace with xlangtypes.nim
+import ../../xlangtypes
 
 ## Nim AST to XLang AST Converter
 ## Converts NimNode (from Nim's macro system) to XLangNode
