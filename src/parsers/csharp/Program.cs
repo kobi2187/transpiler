@@ -364,13 +364,13 @@ partial class Program
             Microsoft.CodeAnalysis.CSharp.SyntaxKind.FalseLiteralExpression => "xnkBoolLit",
             Microsoft.CodeAnalysis.CSharp.SyntaxKind.NullLiteralExpression => "xnkNilLit",
             Microsoft.CodeAnalysis.CSharp.SyntaxKind.DefaultLiteralExpression => "xnkNilLit",
-            _ => "xnkIntLit" // Default fallback
+            _ => "xnkUnknownLit" // Default fallback
         };
 
         var result = new JObject
         {
             ["kind"] = xlangKind,
-            ["value"] = literal.Token.Value?.ToString() ?? literal.Token.Text
+            ["literalValue"] = literal.Token.Value?.ToString() ?? literal.Token.Text
         };
 
         return result;
@@ -541,7 +541,7 @@ partial class Program
     {
         return new JObject
         {
-            ["kind"] = "xnkForEachStmt",
+            ["kind"] = "xnkForeachStmt",
             ["varName"] = forEachStmt.Identifier.Text,
             ["varType"] = forEachStmt.Type.ToString(),
             ["collection"] = ConvertExpression(forEachStmt.Expression),

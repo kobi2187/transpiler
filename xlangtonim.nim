@@ -1524,7 +1524,9 @@ proc conv_xnkProcPointer(node: XLangNode, ctx: ConversionContext): MyNimNode =
 proc conv_xnkNumberLit(node: XLangNode, ctx: ConversionContext): MyNimNode =
   # Try to parse as int, fallback to float
   try:
+    echo node.literalValue
     result = newIntLitNode(parseInt(node.literalValue))
+
   except ValueError:
     result = newFloatLitNode(parseFloat(node.literalValue))
 
