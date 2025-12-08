@@ -130,7 +130,8 @@ partial class Program
                         {
                             ["kind"] = "xnkCaseClause",
                             ["caseValues"] = new JArray(new[] { ConvertExpression(caseLabel.Value) }),
-                            ["caseBody"] = body
+                            ["caseBody"] = body,
+                            ["caseFallthrough"] = false  // C# doesn't have fallthrough by default
                         };
                     }
                     else // DefaultSwitchLabel
@@ -200,8 +201,8 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkLockStmt",
-            ["expr"] = ConvertExpression(lockStmt.Expression),
-            ["statement"] = ConvertStatement(lockStmt.Statement)
+            ["lockExpr"] = ConvertExpression(lockStmt.Expression),
+            ["lockBody"] = ConvertStatement(lockStmt.Statement)
         };
     }
     static JObject ConvertDo(DoStatementSyntax doStmt)
@@ -209,8 +210,8 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkDoWhileStmt",
-            ["condition"] = ConvertExpression(doStmt.Condition),
-            ["statement"] = ConvertStatement(doStmt.Statement)
+            ["whileCondition"] = ConvertExpression(doStmt.Condition),
+            ["whileBody"] = ConvertStatement(doStmt.Statement)
         };
     }
     static JObject ConvertYield(YieldStatementSyntax yieldStmt)
@@ -231,7 +232,7 @@ partial class Program
         {
             ["kind"] = "xnkCheckedExpr",
             ["isChecked"] = checkedExpr.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.CheckedExpression,
-            ["expr"] = ConvertExpression(checkedExpr.Expression)
+            ["checkedExpr"] = ConvertExpression(checkedExpr.Expression)
         };
     }
     static JObject ConvertConditional(ConditionalExpressionSyntax conditional)
@@ -249,7 +250,7 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkNamedType",
-            ["name"] = predefinedType.Keyword.Text
+            ["typeName"] = predefinedType.Keyword.Text
         };
     }
     static JObject ConvertIsPattern(IsPatternExpressionSyntax isPattern)
@@ -299,8 +300,12 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkGenericName",
-            ["identifier"] = genericName.Identifier.Text,
-            ["typeArguments"] = new JArray(genericName.TypeArgumentList.Arguments.Select(arg => arg.ToString()))
+            ["genericNameIdentifier"] = genericName.Identifier.Text,
+            ["genericNameArgs"] = new JArray(genericName.TypeArgumentList.Arguments.Select(arg => new JObject
+            {
+                ["kind"] = "xnkNamedType",
+                ["typeName"] = arg.ToString()
+            }))
         };
     }
     static JObject ConvertTypeOf(TypeOfExpressionSyntax typeOf)
@@ -308,7 +313,11 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkTypeOfExpr",
-            ["type"] = typeOf.Type.ToString()
+            ["typeOfType"] = new JObject
+            {
+                ["kind"] = "xnkNamedType",
+                ["typeName"] = typeOf.Type.ToString()
+            }
         };
     }
     static JObject ConvertBase(BaseExpressionSyntax baseExpr)
@@ -324,8 +333,8 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkSafeNavigationExpr",
-            ["safeObject"] = ConvertExpression(condAccess.Expression),
-            ["safeMember"] = condAccess.WhenNotNull.ToString()
+            ["safeNavObject"] = ConvertExpression(condAccess.Expression),
+            ["safeNavMember"] = condAccess.WhenNotNull.ToString()
         };
     }
     static JObject ConvertThrowExpression(ThrowExpressionSyntax throwExpr)
@@ -333,21 +342,49 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkThrowExpr",
-            ["expr"] = ConvertExpression(throwExpr.Expression)
+            ["throwExprValue"] = ConvertExpression(throwExpr.Expression)
         };
     }
     static JObject ConvertLambda(LambdaExpressionSyntax lambda)
     {
+        var parameters = lambda is ParenthesizedLambdaExpressionSyntax paren
+            ? paren.ParameterList.Parameters.Select(p => new JObject
+            {
+                ["kind"] = "xnkParameter",
+                ["paramName"] = p.Identifier.Text,
+                ["paramType"] = p.Type != null ? new JObject
+                {
+                    ["kind"] = "xnkNamedType",
+                    ["typeName"] = p.Type.ToString()
+                } : JValue.CreateNull(),
+                ["defaultValue"] = JValue.CreateNull()
+            })
+            : lambda is SimpleLambdaExpressionSyntax simple
+            ? new[] { new JObject
+            {
+                ["kind"] = "xnkParameter",
+                ["paramName"] = simple.Parameter.Identifier.Text,
+                ["paramType"] = simple.Parameter.Type != null ? new JObject
+                {
+                    ["kind"] = "xnkNamedType",
+                    ["typeName"] = simple.Parameter.Type.ToString()
+                } : JValue.CreateNull(),
+                ["defaultValue"] = JValue.CreateNull()
+            }}
+            : Enumerable.Empty<JObject>();
+
         return new JObject
         {
             ["kind"] = "xnkLambdaExpr",
-            ["lambdaKind"] = lambda.Kind().ToString(),
-            ["parameters"] = lambda is ParenthesizedLambdaExpressionSyntax paren
-        ? new JArray(paren.ParameterList.Parameters.Select(p => p.Identifier.Text))
-        : lambda is SimpleLambdaExpressionSyntax simple
-        ? new JArray(simple.Parameter.Identifier.Text)
-        : new JArray(),
-            ["body"] = lambda.Body.ToString()
+            ["lambdaParams"] = new JArray(parameters),
+            ["lambdaReturnType"] = JValue.CreateNull(),
+            ["lambdaBody"] = lambda.Body is BlockSyntax block
+                ? ConvertBlock(block)
+                : new JObject
+                {
+                    ["kind"] = "xnkBlockStmt",
+                    ["blockBody"] = new JArray(new[] { ConvertExpression((ExpressionSyntax)lambda.Body) })
+                }
         };
     }
     static JObject ConvertDefaultExpression(DefaultExpressionSyntax defaultExpr)
@@ -617,8 +654,7 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkGotoStmt",
-            ["gotoKind"] = gotoStmt.Kind().ToString(),
-            ["label"] = gotoStmt.Expression?.ToString() ?? ""
+            ["gotoLabel"] = gotoStmt.Expression?.ToString() ?? ""
         };
     }
     static JObject ConvertLabeledStatement(LabeledStatementSyntax labeled)
@@ -626,8 +662,8 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkLabeledStmt",
-            ["label"] = labeled.Identifier.Text,
-            ["statement"] = ConvertStatement(labeled.Statement)
+            ["labelName"] = labeled.Identifier.Text,
+            ["labeledStmt"] = ConvertStatement(labeled.Statement)
         };
     }
     static JObject ConvertEmptyStatement(EmptyStatementSyntax empty)
@@ -643,8 +679,12 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkStackAllocExpr",
-            ["type"] = stackAlloc.Type.ToString(),
-            ["initializer"] = stackAlloc.Initializer != null
+            ["stackAllocType"] = new JObject
+            {
+                ["kind"] = "xnkNamedType",
+                ["typeName"] = stackAlloc.Type.ToString()
+            },
+            ["stackAllocSize"] = stackAlloc.Initializer != null
         ? ConvertInitializer(stackAlloc.Initializer)
         : JValue.CreateNull()
         };
@@ -654,7 +694,7 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkImplicitArrayCreation",
-            ["initializer"] = ConvertInitializer(implicitArray.Initializer)
+            ["implicitArrayElements"] = new JArray(implicitArray.Initializer.Expressions.Select(ConvertExpression))
         };
     }
     static JObject ConvertQualifiedName(QualifiedNameSyntax qualifiedName)
@@ -662,8 +702,12 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkQualifiedName",
-            ["left"] = qualifiedName.Left.ToString(),
-            ["right"] = qualifiedName.Right.ToString()
+            ["qualifiedLeft"] = new JObject
+            {
+                ["kind"] = "xnkIdentifier",
+                ["identName"] = qualifiedName.Left.ToString()
+            },
+            ["qualifiedRight"] = qualifiedName.Right.ToString()
         };
     }
     static JObject ConvertSwitchExpression(SwitchExpressionSyntax switchExpr)
@@ -671,12 +715,8 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkSwitchExpr",
-            ["governingExpression"] = ConvertExpression(switchExpr.GoverningExpression),
-            ["arms"] = new JArray(switchExpr.Arms.Select(arm => new JObject
-            {
-                ["pattern"] = arm.Pattern.ToString(),
-                ["expression"] = ConvertExpression(arm.Expression)
-            }))
+            ["switchExprValue"] = ConvertExpression(switchExpr.GoverningExpression),
+            ["switchExprArms"] = new JArray(switchExpr.Arms.Select(arm => ConvertExpression(arm.Expression)))
         };
     }
     static JObject ConvertRefExpression(RefExpressionSyntax refExpr)
@@ -684,7 +724,7 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkRefExpr",
-            ["expression"] = ConvertExpression(refExpr.Expression)
+            ["refExpr"] = ConvertExpression(refExpr.Expression)
         };
     }
     static JObject ConvertSizeOf(SizeOfExpressionSyntax sizeOf)
@@ -692,7 +732,11 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkSizeOfExpr",
-            ["type"] = sizeOf.Type.ToString()
+            ["sizeOfType"] = new JObject
+            {
+                ["kind"] = "xnkNamedType",
+                ["typeName"] = sizeOf.Type.ToString()
+            }
         };
     }
     static JObject ConvertArrayType(ArrayTypeSyntax arrayType)
@@ -713,8 +757,8 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkAliasQualifiedName",
-            ["alias"] = aliasQualified.Alias.ToString(),
-            ["name"] = aliasQualified.Name.ToString()
+            ["aliasQualifier"] = aliasQualified.Alias.ToString(),
+            ["aliasQualifiedName"] = aliasQualified.Name.ToString()
         };
     }
     // Additional statement converters
@@ -723,16 +767,18 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkFixedStmt",
-            ["declaration"] = new JObject
+            ["fixedDeclarations"] = new JArray(fixedStmt.Declaration.Variables.Select(v => new JObject
             {
-                ["type"] = fixedStmt.Declaration.Type.ToString(),
-                ["variables"] = new JArray(fixedStmt.Declaration.Variables.Select(v => new JObject
+                ["kind"] = "xnkVarDecl",
+                ["declName"] = v.Identifier.Text,
+                ["declType"] = new JObject
                 {
-                    ["name"] = v.Identifier.Text,
-                    ["initializer"] = v.Initializer != null ? ConvertExpression(v.Initializer.Value) : JValue.CreateNull()
-                }))
-            },
-            ["statement"] = ConvertStatement(fixedStmt.Statement)
+                    ["kind"] = "xnkNamedType",
+                    ["typeName"] = fixedStmt.Declaration.Type.ToString()
+                },
+                ["initializer"] = v.Initializer != null ? ConvertExpression(v.Initializer.Value) : JValue.CreateNull()
+            })),
+            ["fixedBody"] = ConvertStatement(fixedStmt.Statement)
         };
     }
     static JObject ConvertLocalFunctionStatement(LocalFunctionStatementSyntax localFunc)
@@ -740,14 +786,24 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkLocalFunctionStmt",
-            ["returnType"] = localFunc.ReturnType.ToString(),
-            ["identifier"] = localFunc.Identifier.Text,
-            ["parameters"] = new JArray(localFunc.ParameterList.Parameters.Select(p => new JObject
+            ["localFuncName"] = localFunc.Identifier.Text,
+            ["localFuncParams"] = new JArray(localFunc.ParameterList.Parameters.Select(p => new JObject
             {
-                ["name"] = p.Identifier.Text,
-                ["type"] = p.Type?.ToString() ?? "var"
+                ["kind"] = "xnkParameter",
+                ["paramName"] = p.Identifier.Text,
+                ["paramType"] = new JObject
+                {
+                    ["kind"] = "xnkNamedType",
+                    ["typeName"] = p.Type?.ToString() ?? "auto"
+                },
+                ["defaultValue"] = JValue.CreateNull()
             })),
-            ["body"] = localFunc.Body != null ? ConvertBlock(localFunc.Body) : JValue.CreateNull()
+            ["localFuncReturnType"] = new JObject
+            {
+                ["kind"] = "xnkNamedType",
+                ["typeName"] = localFunc.ReturnType.ToString()
+            },
+            ["localFuncBody"] = localFunc.Body != null ? ConvertBlock(localFunc.Body) : JValue.CreateNull()
         };
     }
     static JObject ConvertUnsafeStatement(UnsafeStatementSyntax unsafeStmt)
@@ -755,7 +811,7 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkUnsafeStmt",
-            ["block"] = ConvertBlock(unsafeStmt.Block)
+            ["unsafeBody"] = ConvertBlock(unsafeStmt.Block)
         };
     }
     static JObject ConvertCheckedStatement(CheckedStatementSyntax checkedStmt)
@@ -763,8 +819,8 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkCheckedStmt",
-            ["isChecked"] = checkedStmt.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.CheckedStatement,
-            ["block"] = ConvertBlock(checkedStmt.Block)
+            ["checkedIsChecked"] = checkedStmt.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.CheckedStatement,
+            ["checkedBody"] = ConvertBlock(checkedStmt.Block)
         };
     }
     // Type declaration converters
@@ -773,13 +829,12 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkEnumDecl",
-            ["identifier"] = enumDecl.Identifier.Text,
-            ["modifiers"] = string.Join(" ", enumDecl.Modifiers.Select(m => m.Text)),
-            ["baseType"] = enumDecl.BaseList?.Types.FirstOrDefault()?.ToString() ?? "",
-            ["members"] = new JArray(enumDecl.Members.Select(m => new JObject
+            ["enumName"] = enumDecl.Identifier.Text,
+            ["enumMembers"] = new JArray(enumDecl.Members.Select(m => new JObject
             {
-                ["name"] = m.Identifier.Text,
-                ["value"] = m.EqualsValue?.Value.ToString() ?? ""
+                ["kind"] = "xnkEnumMember",
+                ["enumMemberName"] = m.Identifier.Text,
+                ["enumMemberValue"] = m.EqualsValue != null ? ConvertExpression(m.EqualsValue.Value) : JValue.CreateNull()
             }))
         };
     }
@@ -788,8 +843,14 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkInterfaceDecl",
-            ["identifier"] = interfaceDecl.Identifier.Text,
-            ["modifiers"] = string.Join(" ", interfaceDecl.Modifiers.Select(m => m.Text)),
+            ["typeNameDecl"] = interfaceDecl.Identifier.Text,
+            ["baseTypes"] = interfaceDecl.BaseList != null
+                ? new JArray(interfaceDecl.BaseList.Types.Select(t => new JObject
+                {
+                    ["kind"] = "xnkNamedType",
+                    ["typeName"] = t.Type.ToString()
+                }))
+                : new JArray(),
             ["members"] = new JArray(interfaceDecl.Members.Select(m => ConvertMemberDeclaration(m)))
         };
     }
@@ -798,8 +859,14 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkStructDecl",
-            ["identifier"] = structDecl.Identifier.Text,
-            ["modifiers"] = string.Join(" ", structDecl.Modifiers.Select(m => m.Text)),
+            ["typeNameDecl"] = structDecl.Identifier.Text,
+            ["baseTypes"] = structDecl.BaseList != null
+                ? new JArray(structDecl.BaseList.Types.Select(t => new JObject
+                {
+                    ["kind"] = "xnkNamedType",
+                    ["typeName"] = t.Type.ToString()
+                }))
+                : new JArray(),
             ["members"] = new JArray(structDecl.Members.Select(ConvertClassMember))
         };
     }
@@ -808,14 +875,22 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkDelegateDecl",
-            ["identifier"] = delegateDecl.Identifier.Text,
-            ["modifiers"] = string.Join(" ", delegateDecl.Modifiers.Select(m => m.Text)),
-            ["returnType"] = delegateDecl.ReturnType.ToString(),
-            ["parameters"] = new JArray(delegateDecl.ParameterList.Parameters.Select(p => new JObject
+            ["delegateName"] = delegateDecl.Identifier.Text,
+            ["delegateParams"] = new JArray(delegateDecl.ParameterList.Parameters.Select(p => new JObject
             {
-                ["name"] = p.Identifier.Text,
-                ["type"] = p.Type?.ToString() ?? "var"
-            }))
+                ["kind"] = "xnkParameter",
+                ["paramName"] = p.Identifier.Text,
+                ["paramType"] = new JObject
+                {
+                    ["kind"] = "xnkNamedType",
+                    ["typeName"] = p.Type?.ToString() ?? "auto"
+                }
+            })),
+            ["delegateReturnType"] = new JObject
+            {
+                ["kind"] = "xnkNamedType",
+                ["typeName"] = delegateDecl.ReturnType.ToString()
+            }
         };
     }
     // Class member converters for advanced members
@@ -824,15 +899,24 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkOperatorDecl",
-            ["operatorToken"] = operatorDecl.OperatorToken.Text,
-            ["modifiers"] = string.Join(" ", operatorDecl.Modifiers.Select(m => m.Text)),
-            ["returnType"] = operatorDecl.ReturnType.ToString(),
-            ["parameters"] = new JArray(operatorDecl.ParameterList.Parameters.Select(p => new JObject
+            ["operatorSymbol"] = operatorDecl.OperatorToken.Text,
+            ["operatorParams"] = new JArray(operatorDecl.ParameterList.Parameters.Select(p => new JObject
             {
-                ["name"] = p.Identifier.Text,
-                ["type"] = p.Type?.ToString() ?? "var"
+                ["kind"] = "xnkParameter",
+                ["paramName"] = p.Identifier.Text,
+                ["paramType"] = new JObject
+                {
+                    ["kind"] = "xnkNamedType",
+                    ["typeName"] = p.Type?.ToString() ?? "auto"
+                },
+                ["defaultValue"] = JValue.CreateNull()
             })),
-            ["body"] = operatorDecl.Body != null ? ConvertBlock(operatorDecl.Body) : JValue.CreateNull()
+            ["operatorReturnType"] = new JObject
+            {
+                ["kind"] = "xnkNamedType",
+                ["typeName"] = operatorDecl.ReturnType.ToString()
+            },
+            ["operatorBody"] = operatorDecl.Body != null ? ConvertBlock(operatorDecl.Body) : JValue.CreateNull()
         };
     }
     static JObject ConvertConversionOperator(ConversionOperatorDeclarationSyntax conversionOp)
@@ -840,36 +924,52 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkConversionOperatorDecl",
-            ["implicitOrExplicitKeyword"] = conversionOp.ImplicitOrExplicitKeyword.Text,
-            ["modifiers"] = string.Join(" ", conversionOp.Modifiers.Select(m => m.Text)),
-            ["type"] = conversionOp.Type.ToString(),
-            ["parameters"] = new JArray(conversionOp.ParameterList.Parameters.Select(p => new JObject
+            ["conversionIsImplicit"] = conversionOp.ImplicitOrExplicitKeyword.Text == "implicit",
+            ["conversionFromType"] = conversionOp.ParameterList.Parameters.Count > 0
+                ? new JObject
+                {
+                    ["kind"] = "xnkNamedType",
+                    ["typeName"] = conversionOp.ParameterList.Parameters[0].Type?.ToString() ?? "unknown"
+                }
+                : new JObject { ["kind"] = "xnkNamedType", ["typeName"] = "unknown" },
+            ["conversionToType"] = new JObject
             {
-                ["name"] = p.Identifier.Text,
-                ["type"] = p.Type?.ToString() ?? "var"
-            })),
-            ["body"] = conversionOp.Body != null ? ConvertBlock(conversionOp.Body) : JValue.CreateNull()
+                ["kind"] = "xnkNamedType",
+                ["typeName"] = conversionOp.Type.ToString()
+            },
+            ["conversionBody"] = conversionOp.Body != null ? ConvertBlock(conversionOp.Body) : JValue.CreateNull()
         };
     }
     static JObject ConvertIndexer(IndexerDeclarationSyntax indexer)
     {
+        var getAccessor = indexer.AccessorList?.Accessors.FirstOrDefault(a => a.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.GetAccessorDeclaration);
+        var setAccessor = indexer.AccessorList?.Accessors.FirstOrDefault(a => a.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.SetAccessorDeclaration);
+
         return new JObject
         {
             ["kind"] = "xnkIndexerDecl",
-            ["type"] = indexer.Type.ToString(),
-            ["modifiers"] = string.Join(" ", indexer.Modifiers.Select(m => m.Text)),
-            ["parameters"] = new JArray(indexer.ParameterList.Parameters.Select(p => new JObject
+            ["indexerType"] = new JObject
             {
-                ["name"] = p.Identifier.Text,
-                ["type"] = p.Type?.ToString() ?? "var"
+                ["kind"] = "xnkNamedType",
+                ["typeName"] = indexer.Type.ToString()
+            },
+            ["indexerParams"] = new JArray(indexer.ParameterList.Parameters.Select(p => new JObject
+            {
+                ["kind"] = "xnkParameter",
+                ["paramName"] = p.Identifier.Text,
+                ["paramType"] = new JObject
+                {
+                    ["kind"] = "xnkNamedType",
+                    ["typeName"] = p.Type?.ToString() ?? "auto"
+                },
+                ["defaultValue"] = JValue.CreateNull()
             })),
-            ["accessors"] = indexer.AccessorList != null
-        ? new JArray(indexer.AccessorList.Accessors.Select(a => new JObject
-        {
-            ["kind"] = a.Kind().ToString(),
-            ["body"] = a.Body != null ? ConvertBlock(a.Body) : JValue.CreateNull()
-        }))
-        : new JArray()
+            ["indexerGetter"] = getAccessor != null && getAccessor.Body != null
+                ? ConvertBlock(getAccessor.Body)
+                : JValue.CreateNull(),
+            ["indexerSetter"] = setAccessor != null && setAccessor.Body != null
+                ? ConvertBlock(setAccessor.Body)
+                : JValue.CreateNull()
         };
     }
     static JObject ConvertDestructor(DestructorDeclarationSyntax destructor)
@@ -877,9 +977,7 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkDestructorDecl",
-            ["identifier"] = destructor.Identifier.Text,
-            ["modifiers"] = string.Join(" ", destructor.Modifiers.Select(m => m.Text)),
-            ["body"] = destructor.Body != null ? ConvertBlock(destructor.Body) : JValue.CreateNull()
+            ["destructorBody"] = destructor.Body != null ? ConvertBlock(destructor.Body) : JValue.CreateNull()
         };
     }
     static JObject ConvertEventFieldDeclaration(EventFieldDeclarationSyntax eventField)
@@ -927,7 +1025,7 @@ partial class Program
         {
             MethodDeclarationSyntax method => ConvertMethod(method),
             PropertyDeclarationSyntax property => ConvertProperty(property),
-            _ => new JObject { ["kind"] = "xnkUnknown", ["text"] = member.ToString() }
+            _ => new JObject { ["kind"] = "xnkUnknown", ["unknownData"] = member.ToString() }
         };
     }
 }

@@ -145,9 +145,7 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkUnknown",
-            ["syntaxKind"] = node.Kind().ToString(),
-            ["nodeType"] = nodeType,
-            ["text"] = node.ToString().Length > 100 ? node.ToString().Substring(0, 100) + "..." : node.ToString()
+            ["unknownData"] = node.ToString().Length > 100 ? node.ToString().Substring(0, 100) + "..." : node.ToString()
         };
     }
 
@@ -236,8 +234,9 @@ partial class Program
             ["kind"] = "xnkFuncDecl",
             ["funcName"] = method.Identifier.Text,
             ["params"] = new JArray(),
-            ["returnType"] = new JObject { ["kind"] = "xnkNamedType", ["name"] = method.ReturnType.ToString() },
-            ["body"] = method.Body != null ? ConvertBlock(method.Body) : JValue.CreateNull()
+            ["returnType"] = new JObject { ["kind"] = "xnkNamedType", ["typeName"] = method.ReturnType.ToString() },
+            ["body"] = method.Body != null ? ConvertBlock(method.Body) : JValue.CreateNull(),
+            ["isAsync"] = method.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.AsyncKeyword))
         };
     }
 
@@ -369,9 +368,18 @@ partial class Program
 
         var result = new JObject
         {
-            ["kind"] = xlangKind,
-            ["literalValue"] = literal.Token.Value?.ToString() ?? literal.Token.Text
+            ["kind"] = xlangKind
         };
+
+        // xnkBoolLit uses boolValue field, others use literalValue
+        if (xlangKind == "xnkBoolLit")
+        {
+            result["boolValue"] = literal.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.TrueLiteralExpression;
+        }
+        else
+        {
+            result["literalValue"] = literal.Token.Value?.ToString() ?? literal.Token.Text;
+        }
 
         return result;
     }
@@ -448,7 +456,7 @@ partial class Program
                     ["declType"] = new JObject
                     {
                         ["kind"] = "xnkNamedType",
-                        ["name"] = localDecl.Declaration.Type.ToString()
+                        ["typeName"] = localDecl.Declaration.Type.ToString()
                     },
                     ["initializer"] = variable.Initializer != null
                         ? ConvertExpression(variable.Initializer.Value)
@@ -471,7 +479,7 @@ partial class Program
             ["declType"] = new JObject
             {
                 ["kind"] = "xnkNamedType",
-                ["name"] = localDecl.Declaration.Type.ToString()
+                ["typeName"] = localDecl.Declaration.Type.ToString()
             },
             ["initializer"] = singleVar.Initializer != null
                 ? ConvertExpression(singleVar.Initializer.Value)
@@ -542,10 +550,19 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkForeachStmt",
-            ["varName"] = forEachStmt.Identifier.Text,
-            ["varType"] = forEachStmt.Type.ToString(),
-            ["collection"] = ConvertExpression(forEachStmt.Expression),
-            ["body"] = ConvertStatement(forEachStmt.Statement)
+            ["foreachVar"] = new JObject
+            {
+                ["kind"] = "xnkVarDecl",
+                ["declName"] = forEachStmt.Identifier.Text,
+                ["declType"] = new JObject
+                {
+                    ["kind"] = "xnkNamedType",
+                    ["typeName"] = forEachStmt.Type.ToString()
+                },
+                ["initializer"] = JValue.CreateNull()
+            },
+            ["foreachIter"] = ConvertExpression(forEachStmt.Expression),
+            ["foreachBody"] = ConvertStatement(forEachStmt.Statement)
         };
     }
 
@@ -554,14 +571,21 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkTryStmt",
-            ["tryBlock"] = ConvertBlock(tryStmt.Block),
-            ["catches"] = new JArray(tryStmt.Catches.Select(c => new JObject
+            ["tryBody"] = ConvertBlock(tryStmt.Block),
+            ["catchClauses"] = new JArray(tryStmt.Catches.Select(c => new JObject
             {
-                ["exceptionType"] = c.Declaration?.Type.ToString() ?? "Exception",
-                ["varName"] = c.Declaration?.Identifier.Text ?? "",
-                ["body"] = ConvertBlock(c.Block)
+                ["kind"] = "xnkCatchStmt",
+                ["catchType"] = c.Declaration != null ? new JObject
+                {
+                    ["kind"] = "xnkNamedType",
+                    ["typeName"] = c.Declaration.Type.ToString()
+                } : JValue.CreateNull(),
+                ["catchVar"] = c.Declaration != null && !string.IsNullOrEmpty(c.Declaration.Identifier.Text)
+                    ? c.Declaration.Identifier.Text
+                    : JValue.CreateNull(),
+                ["catchBody"] = ConvertBlock(c.Block)
             })),
-            ["finallyBlock"] = tryStmt.Finally != null
+            ["finallyClause"] = tryStmt.Finally != null
                 ? ConvertBlock(tryStmt.Finally.Block)
                 : JValue.CreateNull()
         };
@@ -600,7 +624,7 @@ partial class Program
         result["propType"] = new JObject
         {
             ["kind"] = "xnkNamedType",
-            ["name"] = property.Type.ToString()
+            ["typeName"] = property.Type.ToString()
         };
 
         // getter and setter as Option[XLangNode]
