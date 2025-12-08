@@ -8,6 +8,7 @@ import src/transforms/nim_passes
 import src/xlang/error_handling
 import src/my_nim_node
 import src/astprinter
+import src/naming_conventions
 
 
 proc collectXljsFiles(path: string): seq[string] =
@@ -182,8 +183,15 @@ proc main() =
         # Single file with explicit output name
         nimOutputFile = outputFile
       else:
-        # Auto-generate output name from input
-        nimOutputFile = inputFile.changeFileExt(".nim")
+        # Auto-generate output name from input based on namespace conventions
+        nimOutputFile = getOutputFileName(xlangAst, inputFile, ".nim")
+
+        # Create parent directories if needed
+        let parentDir = nimOutputFile.parentDir()
+        if parentDir != "" and not dirExists(parentDir):
+          createDir(parentDir)
+          if verbose:
+            echo "DEBUG: Created directory: ", parentDir
 
       if verbose:
         echo "DEBUG: About to write .nim file to: ", nimOutputFile

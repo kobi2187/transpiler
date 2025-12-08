@@ -200,39 +200,41 @@ proc printValidationReport*(stats: ValidationStats) =
 
   if stats.errorsByMessage.len > 0:
     echo "╔═══════════════════════════════════════════════════════╗"
-    echo "║           TOP ERROR MESSAGES                          ║"
-    echo "╚═══════════════════════════════════════════════════════╝"
-    echo ""
-
-    # Sort by count descending and show top 20
-    var errorMsgs = toSeq(stats.errorsByMessage.pairs)
-    errorMsgs.sort(proc(a, b: (string, int)): int = cmp(b[1], a[1]))
-
-    for i, (msg, count) in errorMsgs:
-      if i >= 20:
-        break
-
-      # Truncate long messages
-      let shortMsg = if msg.len > 80: msg[0..76] & "..." else: msg
-      echo "  [", count, "x] ", shortMsg
-
-    if errorMsgs.len > 20:
-      echo ""
-      echo "  ... and ", errorMsgs.len - 20, " more unique error messages"
-    echo ""
-
-  if stats.errors.len > 0 and stats.errors.len <= 10:
-    echo "╔═══════════════════════════════════════════════════════╗"
     echo "║           DETAILED ERRORS                             ║"
     echo "╚═══════════════════════════════════════════════════════╝"
     echo ""
 
-    for i, err in stats.errors:
-      echo "ERROR ", i + 1, ": ", err.errorKind
-      echo "  File:    ", err.filePath
-      echo "  Message: ", err.errorMsg
-      if err.offset >= 0:
-        echo "  Offset:  ", err.offset
+    # Group errors by unique message and show full details
+    var errorMsgs = toSeq(stats.errorsByMessage.pairs)
+    errorMsgs.sort(proc(a, b: (string, int)): int = cmp(b[1], a[1]))
+
+    # Show top 50 unique error types with full messages
+    for i, (msg, count) in errorMsgs:
+      if i >= 50:
+        echo ""
+        echo "... and ", errorMsgs.len - 50, " more unique error types"
+        break
+
+      echo "═" .repeat(80)
+      echo "ERROR TYPE ", i + 1, " (", count, " occurrence", (if count > 1: "s" else: ""), "):"
+      echo "─" .repeat(80)
+
+      # Show full error message (no truncation)
+      echo msg
+      echo ""
+
+      # Find and show 1-3 example files with this error
+      var exampleCount = 0
+      for err in stats.errors:
+        if err.errorMsg == msg:
+          echo "  Example file: ", err.filePath
+          if err.offset >= 0:
+            echo "  At offset:    ", err.offset
+          exampleCount += 1
+          if exampleCount >= 3:
+            if count > 3:
+              echo "  ... and ", count - 3, " more file(s) with this error"
+            break
       echo ""
 
 proc writeErrorReport*(stats: ValidationStats, outputPath: string) =

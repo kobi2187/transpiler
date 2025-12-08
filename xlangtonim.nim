@@ -2,6 +2,7 @@ import xlangtypes
 import src/helpers
 import options, strutils, tables, sets, sequtils, algorithm
 import src/my_nim_node
+import src/naming_conventions
 
 # ==============================================================================
 # CONVERSION CONTEXT
@@ -639,13 +640,18 @@ proc conv_xnkTypeDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result.add(typeDef)
 
 proc conv_xnkImportStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+  ## Convert import statements, converting C# namespaces to Nim module paths
+  ## Example: "System.Collections.Generic" -> "system/collections/generic"
   result = newNimNode(nnkImportStmt)
   for item in node.imports:
-    result.add(newIdentNode(item))
+    let modulePath = namespaceToModulePath(item)
+    result.add(newIdentNode(modulePath))
 
 proc conv_xnkImport(node: XLangNode, ctx: ConversionContext): MyNimNode =
+  ## Convert single import, converting C# namespace to Nim module path
   result = newNimNode(nnkImportStmt)
-  result.add(newIdentNode(node.importPath))
+  let modulePath = namespaceToModulePath(node.importPath)
+  result.add(newIdentNode(modulePath))
   if node.importAlias.isSome:
     result.add(newIdentNode("as"))
     result.add(newIdentNode(node.importAlias.get))

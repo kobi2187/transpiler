@@ -47,7 +47,7 @@ type
     xnkEmptyStmt, xnkLabeledStmt, xnkGotoStmt, xnkFixedStmt, xnkLockStmt, xnkUnsafeStmt, xnkCheckedStmt, xnkLocalFunctionStmt,
     xnkUnlessStmt, xnkUntilStmt, xnkStaticAssert, xnkSwitchCase, xnkMixinDecl, xnkTemplateDecl, xnkMacroDecl, xnkInclude, xnkExtend
     # Expressions
-    xnkBinaryExpr, xnkUnaryExpr, xnkTernaryExpr, xnkCallExpr, xnkIndexExpr,
+    xnkBinaryExpr, xnkUnaryExpr, xnkTernaryExpr, xnkCallExpr, xnkThisCall, xnkBaseCall, xnkIndexExpr,
      xnkSliceExpr, xnkMemberAccessExpr, xnkSafeNavigationExpr, xnkNullCoalesceExpr,
       xnkLambdaExpr, xnkTypeAssertion, xnkCastExpr, xnkThisExpr, xnkBaseExpr, xnkRefExpr, xnkInstanceVar, xnkClassVar, xnkGlobalVar, xnkProcLiteral, xnkProcPointer, xnkNumberLit, xnkSymbolLit, xnkDynamicType,
       xnkGeneratorExpr, xnkAwaitExpr, xnkStringInterpolation, xnkDotExpr, xnkBracketExpr, xnkCompFor,
@@ -244,6 +244,9 @@ type
     of xnkCallExpr:
       callee*: XLangNode
       args*: seq[XLangNode]
+    of xnkThisCall, xnkBaseCall:
+      ## C# constructor initializers: this(...) or base(...)
+      arguments*: seq[XLangNode]
     of xnkIndexExpr:
       indexExpr*: XLangNode
       indexArgs*: seq[XLangNode]

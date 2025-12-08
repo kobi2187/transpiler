@@ -640,7 +640,7 @@ partial class Program
                 ? new JArray(new JObject
                 {
                     ["kind"] = constructor.Initializer.ThisOrBaseKeyword.Text == "base" ? "xnkBaseCall" : "xnkThisCall",
-                    ["arguments"] = new JArray(constructor.Initializer.ArgumentList.Arguments.Select(ConvertArgument))
+                    ["arguments"] = new JArray(constructor.Initializer.ArgumentList.Arguments.Select(arg => ConvertExpression(arg.Expression)))
                 })
                 : new JArray(),
             ["constructorBody"] = constructor.Body != null ? ConvertBlock(constructor.Body) : JValue.CreateNull()
