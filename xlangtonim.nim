@@ -809,6 +809,43 @@ proc conv_xnkCallExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
   for arg in node.args:
     result.add(convertToNimAST(arg, ctx))
 
+proc conv_xnkThisCall(node: XLangNode, ctx: ConversionContext): MyNimNode =
+  ## C# constructor initializer: this(...)
+  ## Convert to a call to the current type's constructor
+  ## In Nim, this would typically be handled differently, but we approximate with a proc call
+  result = newNimNode(nnkCall)
+
+  # Get the current class name for the constructor call
+  let typeName = if ctx.currentClass.isSome():
+    ctx.currentClass.get().typeNameDecl
+  else:
+    "UnknownType"
+
+  result.add(newIdentNode("new" & typeName))
+  for arg in node.arguments:
+    result.add(convertToNimAST(arg, ctx))
+
+proc conv_xnkBaseCall(node: XLangNode, ctx: ConversionContext): MyNimNode =
+  ## C# constructor initializer: base(...)
+  ## Convert to a call to the parent type's constructor
+  ## In Nim, there's no direct equivalent, so we approximate with a proc call
+  result = newNimNode(nnkCall)
+
+  # Try to determine parent type name
+  let parentTypeName = if ctx.currentClass.isSome() and ctx.currentClass.get().baseTypes.len > 0:
+    # Get first base type name (simplified - assumes it's xnkNamedType)
+    let baseType = ctx.currentClass.get().baseTypes[0]
+    if baseType.kind == xnkNamedType:
+      baseType.typeName
+    else:
+      "ParentType"
+  else:
+    "ParentType"
+
+  result.add(newIdentNode("new" & parentTypeName))
+  for arg in node.arguments:
+    result.add(convertToNimAST(arg, ctx))
+
 proc conv_xnkDotExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result = newNimNode(nnkDotExpr)
   result.add(convertToNimAST(node.dotBase, ctx))
@@ -1778,6 +1815,10 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
     result = conv_xnkBlockStmt(node, ctx)
   of xnkCallExpr:
     result = conv_xnkCallExpr(node, ctx)
+  of xnkThisCall:
+    result = conv_xnkThisCall(node, ctx)
+  of xnkBaseCall:
+    result = conv_xnkBaseCall(node, ctx)
   of xnkDotExpr:
     result = conv_xnkDotExpr(node, ctx)
   of xnkMemberAccessExpr:

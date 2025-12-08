@@ -7,9 +7,8 @@
 import ../../xlangtypes
 import options
 
-proc transformPropertyToProcs*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
-  ## Transform property declarations into getter/setter procedures
-  ## Returns a block containing both the getter and setter procs
+proc transformPropertyHelper(node: XLangNode): XLangNode =
+  ## Transform a single property node
   case node.kind
   of xnkPropertyDecl:
     let prop = node
@@ -49,7 +48,16 @@ proc transformPropertyToProcs*(node: XLangNode): XLangNode {.noSideEffect, gcsaf
 
     # If we have both getter and setter, wrap in block
     # If only one, return just that proc
-    if procs.len == 1:
+    # If neither, convert to a simple field
+    if procs.len == 0:
+      # No getter/setter - convert to field declaration
+      result = XLangNode(
+        kind: xnkFieldDecl,
+        fieldName: prop.propName,
+        fieldType: if prop.propType.isSome(): prop.propType.get() else: XLangNode(kind: xnkNamedType, typeName: "auto"),
+        fieldInitializer: none(XLangNode)
+      )
+    elif procs.len == 1:
       result = procs[0]
     else:
       result = XLangNode(
@@ -58,3 +66,23 @@ proc transformPropertyToProcs*(node: XLangNode): XLangNode {.noSideEffect, gcsaf
       )
   else:
     return node
+
+proc transformPropertyToProcs*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+  ## Transform property declarations into getter/setter procedures
+  ## Handles properties nested in classes/structs/interfaces
+  case node.kind
+  of xnkClassDecl, xnkStructDecl, xnkInterfaceDecl:
+    # Transform class members, converting properties to procs
+    var newMembers: seq[XLangNode] = @[]
+    for member in node.members:
+      newMembers.add(transformPropertyHelper(member))
+
+    result = node
+    result.members = newMembers
+
+  of xnkPropertyDecl:
+    # Standalone property (shouldn't happen usually, but handle it)
+    result = transformPropertyHelper(node)
+
+  else:
+    result = node

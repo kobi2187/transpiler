@@ -60,13 +60,17 @@ proc buildNimPassRegistry*(): Table[TransformPassID, TransformPass] =
   reg[tpDoWhileToWhile] = newTransformPass(tpDoWhileToWhile, toClosure(transformDoWhileToWhile), @[], @[xnkDoWhileStmt])
   reg[tpTernaryToIf] = newTransformPass(tpTernaryToIf, toClosure(transformTernaryToIf), @[], @[xnkTernaryExpr])
   reg[tpInterfaceToConcept] = newTransformPass(tpInterfaceToConcept, toClosure(transformInterfaceToConcept), @[], @[xnkInterfaceDecl])
-  reg[tpPropertyToProcs] = newTransformPass(tpPropertyToProcs, toClosure(transformPropertyToProcs), @[], @[xnkPropertyDecl])
+  reg[tpPropertyToProcs] = newTransformPass(tpPropertyToProcs, toClosure(transformPropertyToProcs), @[], @[xnkPropertyDecl, xnkClassDecl, xnkStructDecl, xnkInterfaceDecl])
   reg[tpSwitchFallthrough] = newTransformPass(tpSwitchFallthrough, toClosure(transformSwitchFallthrough), @[], @[xnkSwitchStmt, xnkCaseClause])
   reg[tpNullCoalesce] = newTransformPass(tpNullCoalesce, toClosure(transformNullCoalesce), @[], @[xnkNullCoalesceExpr, xnkSafeNavigationExpr])
   reg[tpMultipleCatch] = newTransformPass(tpMultipleCatch, toClosure(transformMultipleCatch), @[], @[xnkTryStmt])
   reg[tpDestructuring] = newTransformPass(tpDestructuring, toClosure(transformDestructuring), @[], @[xnkDestructureObj, xnkDestructureArray, xnkTupleUnpacking])
   reg[tpListComprehension] = newTransformPass(tpListComprehension, toClosure(transformListComprehension), @[], @[xnkComprehensionExpr])
-  reg[tpStringInterpolation] = newTransformPass(tpStringInterpolation, toClosure(transformStringInterpolation), @[], @[xnkStringInterpolation])
+    # String interpolation can appear in many contexts, so we register for common parent nodes
+  # and structural nodes to ensure we traverse into all contexts where they might appear
+  reg[tpStringInterpolation] = newTransformPass(tpStringInterpolation, toClosure(transformStringInterpolation), @[],
+    @[xnkStringInterpolation, xnkFile, xnkNamespace, xnkClassDecl, xnkStructDecl, xnkFuncDecl, xnkMethodDecl,
+      xnkBlockStmt, xnkIfStmt, xnkVarDecl, xnkLetDecl, xnkConstDecl, xnkAsgn, xnkReturnStmt, xnkRaiseStmt, xnkCallExpr])
   reg[tpNormalizeSimple] = newTransformPass(tpNormalizeSimple, toClosure(transformNormalizeSimple), @[] )
   reg[tpWithToDefer] = newTransformPass(tpWithToDefer, toClosure(transformWithToDefer), @[], @[xnkWithStmt])
   reg[tpAsyncNormalization] = newTransformPass(tpAsyncNormalization, toClosure(transformAsyncNormalization), @[], @[xnkAwaitExpr, xnkIteratorYield, xnkYieldExpr])

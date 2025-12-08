@@ -12,40 +12,37 @@
 ## - Or strformat: fmt"Hello {name}, you are {age} years old"  (more idiomatic)
 
 import ../../xlangtypes
-import options
+import options, sequtils
 
-proc transformStringInterpolation*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
-  ## Transform string interpolation into Nim string concatenation or strformat
-  if node.kind != xnkStringInterpolation:
-    return node
+proc transformStringInterpolation*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.}
 
-  # Strategy: Build concatenation chain with & operator
-  # f"Hello {name}!" → "Hello " & name & "!"
+proc transformStringInterpolationHelper(node: XLangNode): XLangNode =
+  ## Helper that recursively transforms string interpolations in any expression context
+  case node.kind
+  of xnkStringInterpolation:
+    # Strategy: Build concatenation chain with & operator
+    # f"Hello {name}!" → "Hello " & name & "!"
 
-  if node.interpParts.len == 0:
-    # Empty interpolation, return empty string
-    return XLangNode(kind: xnkStringLit, literalValue: "")
+    if node.interpParts.len == 0:
+      # Empty interpolation, return empty string
+      return XLangNode(kind: xnkStringLit, literalValue: "")
 
-  if node.interpParts.len == 1 and not node.interpIsExpr[0]:
-    # Single string literal, no interpolation
-    return node.interpParts[0]
+    if node.interpParts.len == 1 and not node.interpIsExpr[0]:
+      # Single string literal, no interpolation
+      return node.interpParts[0]
 
-  # Build concatenation chain
-  var parts: seq[XLangNode] = @[]
+    # Build concatenation chain (recursively transform parts that might contain interpolations)
+    var parts: seq[XLangNode] = @[]
 
-  for i, part in node.interpParts:
-    if node.interpIsExpr[i]:
-      # Expression - may need to convert to string with $
-      # For now, assume it's already the right type or will be handled
-      parts.add(part)
-    else:
-      # String literal
-      parts.add(part)
+    for i, part in node.interpParts:
+      if node.interpIsExpr[i]:
+        # Expression - recursively transform it
+        parts.add(transformStringInterpolationHelper(part))
+      else:
+        # String literal part
+        parts.add(part)
 
-  # Build left-associative concatenation: a & b & c
-  if parts.len == 1:
-    result = parts[0]
-  else:
+    # Create chain of binary & operations
     result = parts[0]
     for i in 1..<parts.len:
       result = XLangNode(
@@ -55,6 +52,75 @@ proc transformStringInterpolation*(node: XLangNode): XLangNode {.noSideEffect, g
         binaryRight: parts[i]
       )
 
-  # Alternative strategy (commented out): Use strformat
-  # Could generate: fmt"Hello {name}!" directly if all parts are known
-  # This would be more idiomatic but requires importing strformat
+  of xnkCallExpr:
+    # Recursively transform arguments
+    result = node
+    result.args = node.args.map(transformStringInterpolationHelper)
+
+  of xnkBinaryExpr:
+    result = node
+    result.binaryLeft = transformStringInterpolationHelper(node.binaryLeft)
+    result.binaryRight = transformStringInterpolationHelper(node.binaryRight)
+
+  of xnkUnaryExpr:
+    result = node
+    result.unaryOperand = transformStringInterpolationHelper(node.unaryOperand)
+
+  of xnkVarDecl, xnkLetDecl, xnkConstDecl:
+    result = node
+    if node.initializer.isSome():
+      result.initializer = some(transformStringInterpolationHelper(node.initializer.get()))
+
+  of xnkAsgn:
+    result = node
+    result.asgnRight = transformStringInterpolationHelper(node.asgnRight)
+
+  of xnkReturnStmt:
+    result = node
+    if node.returnExpr.isSome():
+      result.returnExpr = some(transformStringInterpolationHelper(node.returnExpr.get()))
+
+  of xnkRaiseStmt:
+    result = node
+    if node.raiseExpr.isSome():
+      result.raiseExpr = some(transformStringInterpolationHelper(node.raiseExpr.get()))
+
+  of xnkBlockStmt:
+    result = node
+    result.blockBody = node.blockBody.map(transformStringInterpolationHelper)
+
+  of xnkIfStmt:
+    result = node
+    result.ifCondition = transformStringInterpolationHelper(node.ifCondition)
+    result.ifBody = transformStringInterpolationHelper(node.ifBody)
+    if node.elseBody.isSome():
+      result.elseBody = some(transformStringInterpolationHelper(node.elseBody.get()))
+
+  of xnkFuncDecl, xnkMethodDecl:
+    result = node
+    # Transform function body
+    if node.kind == xnkFuncDecl:
+      result.body = transformStringInterpolationHelper(node.body)
+    else:
+      result.mbody = transformStringInterpolationHelper(node.mbody)
+
+  of xnkClassDecl, xnkStructDecl:
+    result = node
+    result.members = node.members.map(transformStringInterpolationHelper)
+
+  of xnkNamespace:
+    result = node
+    result.namespaceBody = node.namespaceBody.map(transformStringInterpolationHelper)
+
+  of xnkFile:
+    result = node
+    result.moduleDecls = node.moduleDecls.map(transformStringInterpolationHelper)
+
+  else:
+    # For all other nodes, return as-is (don't recurse into everything)
+    result = node
+
+proc transformStringInterpolation*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+  ## Transform string interpolation into Nim string concatenation
+  ## Recursively handles interpolations in all expression contexts
+  result = transformStringInterpolationHelper(node)
