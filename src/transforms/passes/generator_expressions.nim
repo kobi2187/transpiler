@@ -14,7 +14,7 @@
 ##               if x > 5:
 ##                 yield x
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 
 proc transformGeneratorExpressions*(node: XLangNode): XLangNode {.gcsafe.}
@@ -52,22 +52,23 @@ proc buildGeneratorIterator(node: XLangNode): XLangNode =
 
   # Wrap in for loops (outermost last)
   for i in countdown(node.genFor.len - 1, 0):
-    let (vars, iter) = node.genFor[i]
+    let forClause = node.genFor[i]  # xnkCompFor node
+    assert forClause.kind == xnkCompFor
 
     # Create loop variable(s)
-    let loopVar = if vars.len == 1:
-      vars[0]
+    let loopVar = if forClause.vars.len == 1:
+      forClause.vars[0]
     else:
       # Multiple variables - create tuple destructuring
       XLangNode(
         kind: xnkTupleExpr,
-        elements: vars
+        elements: forClause.vars
       )
 
     body = XLangNode(
       kind: xnkForeachStmt,
       foreachVar: loopVar,
-      foreachIter: iter,
+      foreachIter: forClause.iter,
       foreachBody: XLangNode(
         kind: xnkBlockStmt,
         blockBody: @[body]

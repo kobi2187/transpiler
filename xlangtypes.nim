@@ -313,7 +313,7 @@ type
       iter*: XLangNode
     of xnkGeneratorExpr:
       genExpr*: XLangNode
-      genFor*: seq[tuple[vars: seq[XLangNode], iter: XLangNode]]
+      genFor*: seq[XLangNode]  # Each should be xnkCompFor
       genIf*: seq[XLangNode]
     of xnkAwaitExpr:
       awaitExpr*: XLangNode
@@ -756,6 +756,8 @@ proc `$`*(node: XLangNode): string =
     result &= "(" & $node.interpParts.len & " parts)"
   of xnkMethodReference:
     result &= "(" & node.refMethod & ")"
+  of xnkGeneratorExpr:
+    result &= "(" & $node.genFor.len & " for clause" & (if node.genFor.len != 1: "s" else: "") & ")"
 
   # Statements and expressions with no meaningful string fields to display
   of xnkConstructorDecl, xnkDestructorDecl, xnkAsgn, xnkBlockStmt, xnkIfStmt,
@@ -770,7 +772,7 @@ proc `$`*(node: XLangNode): string =
      xnkInclude, xnkExtend, xnkTernaryExpr, xnkCallExpr, xnkThisCall, xnkBaseCall,
      xnkIndexExpr, xnkSliceExpr, xnkNullCoalesceExpr, xnkLambdaExpr,
      xnkTypeAssertion, xnkCastExpr, xnkThisExpr, xnkBaseExpr, xnkRefExpr,
-     xnkProcLiteral, xnkDynamicType, xnkGeneratorExpr, xnkAwaitExpr,
+     xnkProcLiteral, xnkDynamicType, xnkAwaitExpr,
      xnkDotExpr, xnkBracketExpr, xnkCompFor, xnkDefaultExpr, xnkTypeOfExpr,
      xnkSizeOfExpr, xnkThrowExpr, xnkSwitchExpr, xnkStackAllocExpr,
      xnkImplicitArrayCreation, xnkNoneLit, xnkNilLit, xnkArrayType, xnkMapType,

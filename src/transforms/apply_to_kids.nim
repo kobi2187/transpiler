@@ -218,9 +218,7 @@ proc visit*(node: var XLangNode, p: proc (x: var XLangNode)) =
     visit node.iter, p
   of xnkGeneratorExpr:
     visit node.genExpr, p
-    for f in node.genFor.mitems:
-      for v in f.vars.mitems: visit v, p
-      visit f.iter, p
+    for item in node.genFor.mitems: visit item, p  # Each is xnkCompFor
     for item in node.genIf.mitems: visit item, p
   of xnkAwaitExpr:
     visit node.awaitExpr, p
