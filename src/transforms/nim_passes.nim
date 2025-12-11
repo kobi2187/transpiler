@@ -4,7 +4,7 @@
 ## to Nim-compatible constructs.
 
 import ../../xlangtypes
-import pass_manager
+import pass_manager2
 import ../xlang/lang_capabilities
 import strutils
 import for_to_while
@@ -50,6 +50,12 @@ import collections/tables
 template toClosure(p: untyped): proc(node: XLangNode): XLangNode {.closure, gcsafe.} =
   proc(node: XLangNode): XLangNode {.closure, gcsafe.} =
     p(node)
+
+
+
+
+# based on Nim's language constructs and features, choose transformation passes
+# to add to the pass manager for xlang node kinds that aren't supported by Nim.
 
 proc buildNimPassRegistry*(): Table[TransformPassID, TransformPass] =
   ## Build a registry of all Nim passes so callers can select which ones to add based on target capabilities.
@@ -113,9 +119,9 @@ let pythonDefaultPassIDs = @[tpPythonGenerators, tpPythonTypeHints, tpListCompre
 
 let csharpDefaultPassIDs = @[tpLinqToSequtils, tpCSharpUsing, tpCSharpEvents, tpExtensionMethods, tpIndexerToProcs, tpThrowExpression]
 
-proc selectPassIDsForLang*(caps: LangCapabilities): seq[TransformPassID] =
+proc selectPassIDsForLang*(name:string): seq[TransformPassID] =
   result = @[]
-  case caps.name.toLowerAscii():
+  case name.toLowerAscii():
   of "nim": result = nimDefaultPassIDs
   of "go": result = goDefaultPassIDs
   of "python": result = pythonDefaultPassIDs
@@ -127,10 +133,10 @@ proc selectPassIDsForLang*(caps: LangCapabilities): seq[TransformPassID] =
   result.add(tpOperatorOverload)
   return result
 
-proc registerNimPasses*(pm: PassManager) =
+proc registerNimPasses*(pm: PassManager2) =
   ## Register all transformation passes for Nim target language using the pass registry + selection logic
-  let registry = buildNimPassRegistry()
-  let ids = selectPassIDsForLang(pm.targetLang)
+  let registry = buildNimPassRegistry() # other langs may choose lowering passes that better suits their own constructs.
+  let ids = selectPassIDsForLang(pm.targetLang.name)
 
   for id in ids:
     if registry.hasKey(id):

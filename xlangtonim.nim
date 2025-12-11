@@ -365,15 +365,16 @@ proc serializeXLangNode*(node: XLangNode): string =
     if node.returnExpr.isSome:
       sbParts.add(":ret=" & serializeXLangNode(node.returnExpr.get))
   else:
-    # fallback: serialize child nodes obtained via getChildren
-    var children = getChildren(node)
-    if children.len > 0:
-      sbParts.add(":[")
-      var childParts: seq[string] = @[]
-      for c in children:
-        childParts.add(serializeXLangNode(c))
-      sbParts.add(childParts.join(","))
-      sbParts.add("]")
+    raise newException(ValueError, "Unsupported node kind: " & $node.kind)
+    # # fallback: serialize child nodes obtained via getChildren
+    # var children = getChildren(node)
+    # if children.len > 0:
+    #   sbParts.add(":[")
+    #   var childParts: seq[string] = @[]
+    #   for c in children:
+    #     childParts.add(serializeXLangNode(c))
+    #   sbParts.add(childParts.join(","))
+    #   sbParts.add("]")
   return sbParts.join("")
 
 # Public structural equality function using the deterministic serializer.
@@ -795,12 +796,12 @@ proc conv_xnkTupleUnpacking(node: XLangNode, ctx: ConversionContext): MyNimNode 
   result.add(newEmptyNode())
   result.add(convertToNimAST(node.unpackExpr, ctx))
 
-## C# using statement → should be lowered to xnkResourceStmt first
-## (Keeping stub implementation for now, but should use transform pass)
-proc conv_xnkUsingStmt_DEPRECATED(node: XLangNode, ctx: ConversionContext): MyNimNode =
-  result = newNimNode(nnkUsingStmt)
-  result.add(convertToNimAST(node.usingExpr, ctx))
-  result.add(convertToNimAST(node.usingBody, ctx))
+# ## C# using statement → should be lowered to xnkResourceStmt first
+# ## (Keeping stub implementation for now, but should use transform pass)
+# proc conv_xnkUsingStmt_DEPRECATED(node: XLangNode, ctx: ConversionContext): MyNimNode =
+#   result = newNimNode(nnkUsingStmt)
+#   result.add(convertToNimAST(node.usingExpr, ctx))
+#   result.add(convertToNimAST(node.usingBody, ctx))
 
 
 proc conv_xnkCallExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
@@ -1791,6 +1792,7 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
   let context = if ctx.isNil: newContext() else: ctx
 
   case node.kind
+  
   of xnkFile:
     result = conv_xnkFile(node, context)
   of xnkModule:

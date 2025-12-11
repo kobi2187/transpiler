@@ -10,6 +10,7 @@ type
     tekParseError        ## Error parsing input JSON
     tekValidationError   ## XLang AST validation error
     tekTransformError    ## Error during transformation pass
+    tekTransformLimitReachedError
     tekConversionError   ## Error converting XLang to Nim AST
     tekCodegenError      ## Error generating Nim code
 

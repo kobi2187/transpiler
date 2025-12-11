@@ -3,58 +3,6 @@
 ## Orchestrates multiple transformation passes on XLang AST
 ## to lower constructs and make code more idiomatic for the target language.
 
-import ../../xlangtypes
-import ../xlang/lang_capabilities
-import ../xlang/error_handling
-import options
-import tables
-import strutils
-
-type
-  TransformPassID* = enum
-    ## Unique identifier for each transformation pass
-    ## Used for dependency tracking
-    tpNone = "none"
-    tpForToWhile = "for-to-while"
-    tpDoWhileToWhile = "dowhile-to-while"
-    tpTernaryToIf = "ternary-to-if"
-    tpInterfaceToConcept = "interface-to-concept"
-    tpPropertyToProcs = "property-to-procs"
-    tpSwitchFallthrough = "switch-fallthrough"
-    tpNullCoalesce = "null-coalesce"
-    tpMultipleCatch = "multiple-catch"
-    tpDestructuring = "destructuring"
-    tpListComprehension = "list-comprehension"
-    tpNormalizeSimple = "normalize-simple"
-    tpStringInterpolation = "string-interpolation"
-    tpWithToDefer = "with-to-defer"
-    tpAsyncNormalization = "async-normalization"
-    tpUnionToVariant = "union-to-variant"
-    tpLinqToSequtils = "linq-to-sequtils"
-    tpOperatorOverload = "operator-overload"
-    tpPatternMatching = "pattern-matching"
-    tpDecoratorAttribute = "decorator-attribute"
-    tpExtensionMethods = "extension-methods"
-    tpGoErrorHandling = "go-error-handling"
-    tpGoDefer = "go-defer"
-    tpCSharpUsing = "csharp-using"
-    tpGoConcurrency = "go-concurrency"
-    tpPythonGenerators = "python-generators"
-    tpPythonTypeHints = "python-type-hints"
-    tpGoPanicRecover = "go-panic-recover"
-    tpCSharpEvents = "csharp-events"
-    tpLambdaNormalization = "lambda-normalization"
-    tpGoTypeAssertions = "go-type-assertions"
-    tpGoImplicitInterfaces = "go-implicit-interfaces"
-    tpEnumNormalization = "enum-normalization"
-    tpPythonMultipleInheritance = "python-multiple-inheritance"
-    tpLockToWithLock = "lock-to-withlock"
-    tpResourceToDefer = "resource-to-defer"
-    tpSafeNavigation = "safe-navigation"
-    tpIndexerToProcs = "indexer-to-procs"
-    tpGeneratorExpressions = "generator-expressions"
-    tpThrowExpression = "throw-expression"
-    # Add more passes here as they are implemented
 
   TransformPassKind* = enum
     ## Different kinds of transformation passes
@@ -63,85 +11,11 @@ type
     tpkNormalization ## Normalize to idiomatic patterns
     tpkValidation    ## Validate AST structure
 
-  TransformPass* = ref object
-    ## A single transformation pass
-    id*: TransformPassID         ## Unique identifier
-    name*: string
-    kind*: TransformPassKind
-    description*: string
-    enabled*: bool
-    dependencies*: seq[TransformPassID]  ## Passes that must run before this one
-    transform*: proc(node: XLangNode): XLangNode
-    targetKinds*: seq[XLangNodeKind]         ## Optional node kinds this pass operates on; empty = all
-
-
-  PassManager* = ref object
-    ## Manages and executes transformation passes
-    passes*: seq[TransformPass]
-    maxIterations*: int  ## Maximum number of times to run all passes
-    config*: Table[string, bool]  ## Configuration for conditional passes
-    targetLang*: LangCapabilities  ## Target language capabilities
-    errorCollector*: ErrorCollector  ## Collect errors during transformation
-
-proc copy*(p: TransformPass): TransformPass =
-  ## Creates a shallow copy of a TransformPass object.
-  result = TransformPass(
-    id: p.id,
-    name: p.name,
-    kind: p.kind,
-    description: p.description,
-    enabled: p.enabled,
-    dependencies: p.dependencies, # seq is copied by value (shallow copy of elements)
-    transform: p.transform,       # closure is copied by value (shallow copy)
-    targetKinds: p.targetKinds    # seq is copied by value (shallow copy of elements)
-  )
-
-proc newTransformPass*(
-  id: TransformPassID,
-  transform: proc(node: XLangNode): XLangNode,
-  dependencies: seq[TransformPassID] = @[],
-  targetKinds: seq[XLangNodeKind] = @[]
-): TransformPass =
-  ## Create a new transformation pass with lightweight fields; name and kind are defaulted
-  result = TransformPass()
-  result.id = id
-  result.name = $id
-  result.kind = tpkLowering
-  result.description = ""
-  result.enabled = true
-  result.dependencies = dependencies
-  let transformProc = transform
-  result.transform = transformProc
-  result.targetKinds = targetKinds
-
-proc newPassManager*(targetLang: string = "nim", maxIterations: int = 10,
-                     errorCollector: ErrorCollector = nil): PassManager =
-  ## Create a new pass manager for a target language
-  PassManager(
-    passes: @[],
-    maxIterations: maxIterations,
-    config: initTable[string, bool](),
-    targetLang: getCapabilities(targetLang),
-    errorCollector: if errorCollector != nil: errorCollector else: newErrorCollector()
-  )
-
 proc addPass*(pm: PassManager, pass: TransformPass) =
   ## Add a transformation pass to the manager
   pm.passes.add(pass)
 
-proc enablePass*(pm: PassManager, passName: string) =
-  ## Enable a specific pass by name
-  for pass in pm.passes:
-    if pass.name == passName:
-      pass.enabled = true
-      return
 
-proc disablePass*(pm: PassManager, passName: string) =
-  ## Disable a specific pass by name
-  for pass in pm.passes:
-    if pass.name == passName:
-      pass.enabled = false
-      return
 
 proc applyPass(pass: TransformPass, node: XLangNode): XLangNode =
   ## Apply a single pass recursively to an AST node

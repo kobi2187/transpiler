@@ -3,7 +3,7 @@ import std/json
 import xlangtypes
 import jsontoxlangtypes
 import xlangtonim
-import src/transforms/pass_manager
+import src/transforms/pass_manager2
 import src/transforms/nim_passes
 import src/xlang/error_handling
 import src/my_nim_node

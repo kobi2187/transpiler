@@ -1,27 +1,28 @@
 import options
-import strutils
+# import strutils
 
-type
-  XLangVersion = tuple[major, minor, patch: int]
+# type
+#   XLangVersion = tuple[major, minor, patch: int]
 
-const SUPPORTED_XLANG_VERSION: XLangVersion = (1, 0, 0)
-proc parseVersion(v: string): XLangVersion =
-  let parts: seq[string] = v.split(".")
-  if parts.len != 3:
-    raise newException(ValueError, "Invalid version string")
-  result = (parseInt(parts[0]), parseInt(parts[1]), parseInt(parts[2]))
+# const SUPPORTED_XLANG_VERSION: XLangVersion = (1, 0, 0)
+# proc parseVersion(v: string): XLangVersion =
+#   let parts: seq[string] = v.split(".")
+#   if parts.len != 3:
+#     raise newException(ValueError, "Invalid version string")
+#   result = (parseInt(parts[0]), parseInt(parts[1]), parseInt(parts[2]))
 
-proc isVersionCompatible(ast_version, supported_version: XLangVersion): bool =
-  if ast_version.major != supported_version.major:
-    return false
-  if ast_version.major == supported_version.major and ast_version.minor > supported_version.minor:
-    return false
-  return true
+# proc isVersionCompatible(ast_version, supported_version: XLangVersion): bool =
+#   if ast_version.major != supported_version.major:
+#     return false
+#   if ast_version.major == supported_version.major and ast_version.minor > supported_version.minor:
+#     return false
+#   return true
 
 
 
 type
   XLangNodeKind* = enum
+    # xnkNone
     # Basic structure
     xnkFile, xnkModule, xnkNamespace
 
@@ -209,6 +210,7 @@ type
     of xnkAssertStmt:
       assertCond*: XLangNode
       assertMsg*: Option[XLangNode]
+    
     of xnkWithStmt:
       items*: seq[XLangNode]
       withBody*: XLangNode
@@ -592,95 +594,97 @@ type
     # else: discard
 
 
-type XLangAST = object
-  version: XLangVersion
-  root: XLangNode
+# type XLangAST = object
+#   version: XLangVersion
+#   root: XLangNode
 
 
 proc `$`*(node: XLangNode): string =
   if node == nil: return "nil"
   result = $node.kind
 
-proc getChildren*(node: XLangNode): seq[XLangNode] =
-  case node.kind:
-  of xnkFile:
-    return node.moduleDecls
-  of xnkModule:
-    return node.moduleBody
-  of xnkNamespace:
-    return node.namespaceBody
-  of xnkFuncDecl:
-    var fchildren: seq[XLangNode] = @[]
-    if node.returnType != none(XLangNode): fchildren.add(node.returnType.get)
-    for p in node.params: fchildren.add(p)
-    fchildren.add(node.body)
-    return fchildren
-  of xnkMethodDecl:
-    var mchildren: seq[XLangNode] = @[]
-    if node.receiver != none(XLangNode): mchildren.add(node.receiver.get)
-    if node.mreturnType != none(XLangNode): mchildren.add(node.mreturnType.get)
-    for p in node.mparams: mchildren.add(p)
-    mchildren.add(node.mbody)
-    return mchildren
-  of xnkIteratorDecl:
-    var itchildren: seq[XLangNode] = @[]
-    for p in node.iteratorParams: itchildren.add(p)
-    if node.iteratorReturnType != none(XLangNode): itchildren.add(node.iteratorReturnType.get)
-    itchildren.add(node.iteratorBody)
-    return itchildren
-  of xnkGenericType:
-    var gchildren: seq[XLangNode] = @[]
-    if node.genericBase != none(XLangNode): gchildren.add(node.genericBase.get)
-    for ga in node.genericArgs: gchildren.add(ga)
-    return gchildren
-  of xnkGeneratorExpr:
-    var genChildren: seq[XLangNode] = @[]
-    genChildren.add(node.genExpr)
-    for f in node.genFor:
-      for v in f.vars: genChildren.add(v)
-      genChildren.add(f.iter)
-    for ifn in node.genIf: genChildren.add(ifn)
-    return genChildren
-  of xnkIteratorYield:
-    if node.iteratorYieldValue.isSome():
-      return @[node.iteratorYieldValue.get]
-    return @[]
-  of xnkIteratorDelegate:
-    return @[node.iteratorDelegateExpr]
-  # Legacy:
-  of xnkYieldStmt:
-    if node.yieldStmt.isSome():
-      return @[node.yieldStmt.get]
-    return @[]
-  of xnkYieldExpr:
-    if node.yieldExpr.isSome():
-      return @[node.yieldExpr.get]
-    return @[]
-  of xnkYieldFromStmt:
-    return @[node.yieldFromExpr]
-  of xnkLambdaProc:
-    var lpChildren: seq[XLangNode] = @[]
-    for p in node.lambdaProcParams: lpChildren.add(p)
-    if node.lambdaProcReturn != none(XLangNode): lpChildren.add(node.lambdaProcReturn.get)
-    lpChildren.add(node.lambdaProcBody)
-    return lpChildren
-  of xnkArrowFunc:
-    var afChildren: seq[XLangNode] = @[]
-    for p in node.arrowParams: afChildren.add(p)
-    afChildren.add(node.arrowBody)
-    return afChildren
-  of xnkMethodReference:
-    return @[node.refObject]
-  of xnkEventDecl:
-    return @[node.eventType]
-  of xnkResourceStmt:
-    var rchildren: seq[XLangNode] = @[]
-    for item in node.resourceItems: rchildren.add(item)
-    rchildren.add(node.resourceBody)
-    return rchildren
-  of xnkResourceItem:
-    var richildren: seq[XLangNode] = @[]
-    richildren.add(node.resourceExpr)
-    if node.resourceVar.isSome(): richildren.add(node.resourceVar.get)
-    return richildren
-  else: return @[]
+# proc getChildren*(node: XLangNode): Option[seq[XLangNode]] =
+#   case node.kind:
+#   of xnkFile:
+#     return some node.moduleDecls
+#   of xnkModule:
+#     return some node.moduleBody
+#   of xnkNamespace:
+#     return some node.namespaceBody
+#   of xnkFuncDecl:
+#     var fchildren: seq[XLangNode] = @[]
+#     if node.returnType != none(XLangNode):
+#       fchildren.add(node.returnType.get)
+#     for p in node.params: fchildren.add(p)
+#     fchildren.add(node.body)
+#     return fchildren
+#   of xnkMethodDecl:
+#     var mchildren: seq[XLangNode] = @[]
+#     if node.receiver != none(XLangNode): mchildren.add(node.receiver.get)
+#     if node.mreturnType != none(XLangNode): mchildren.add(node.mreturnType.get)
+#     for p in node.mparams: mchildren.add(p)
+#     mchildren.add(node.mbody)
+#     return mchildren
+#   of xnkIteratorDecl:
+#     var itchildren: seq[XLangNode] = @[]
+#     for p in node.iteratorParams: itchildren.add(p)
+#     if node.iteratorReturnType != none(XLangNode): itchildren.add(node.iteratorReturnType.get)
+#     itchildren.add(node.iteratorBody)
+#     return itchildren
+#   of xnkGenericType:
+#     var gchildren: seq[XLangNode] = @[]
+#     if node.genericBase != none(XLangNode): gchildren.add(node.genericBase.get)
+#     for ga in node.genericArgs: gchildren.add(ga)
+#     return gchildren
+#   of xnkGeneratorExpr:
+#     var genChildren: seq[XLangNode] = @[]
+#     genChildren.add(node.genExpr)
+#     for f in node.genFor:
+#       for v in f.vars: genChildren.add(v)
+#       genChildren.add(f.iter)
+#     for ifn in node.genIf: genChildren.add(ifn)
+#     return genChildren
+#   of xnkIteratorYield:
+#     if node.iteratorYieldValue.isSome():
+#       return @[node.iteratorYieldValue.get]
+#     return @[]
+#   of xnkIteratorDelegate:
+#     return @[node.iteratorDelegateExpr]
+#   # Legacy:
+#   of xnkYieldStmt:
+#     if node.yieldStmt.isSome():
+#       return @[node.yieldStmt.get]
+#     return @[]
+#   of xnkYieldExpr:
+#     if node.yieldExpr.isSome():
+#       return @[node.yieldExpr.get]
+#     return @[]
+#   of xnkYieldFromStmt:
+#     return @[node.yieldFromExpr]
+#   of xnkLambdaProc:
+#     var lpChildren: seq[XLangNode] = @[]
+#     for p in node.lambdaProcParams: lpChildren.add(p)
+#     if node.lambdaProcReturn != none(XLangNode): lpChildren.add(node.lambdaProcReturn.get)
+#     lpChildren.add(node.lambdaProcBody)
+#     return lpChildren
+#   of xnkArrowFunc:
+#     var afChildren: seq[XLangNode] = @[]
+#     for p in node.arrowParams: afChildren.add(p)
+#     afChildren.add(node.arrowBody)
+#     return afChildren
+#   of xnkMethodReference:
+#     return @[node.refObject]
+#   of xnkEventDecl:
+#     return @[node.eventType]
+#   of xnkResourceStmt:
+#     var rchildren: seq[XLangNode] = @[]
+#     for item in node.resourceItems: rchildren.add(item)
+#     rchildren.add(node.resourceBody)
+#     return rchildren
+#   of xnkResourceItem:
+#     var richildren: seq[XLangNode] = @[]
+#     richildren.add(node.resourceExpr)
+#     if node.resourceVar.isSome(): richildren.add(node.resourceVar.get)
+#     return richildren
+#   else: return none(seq[XLangNode])
+# #...@[]
