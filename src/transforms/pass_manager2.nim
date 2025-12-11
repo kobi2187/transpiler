@@ -12,7 +12,6 @@ import types
 import ../xlang/error_handling
 import tables
 import sets
-import options
 
 import helpers
 

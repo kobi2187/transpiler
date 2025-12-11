@@ -28,8 +28,8 @@ proc collectAllKinds*(tree: var XLangNode): HashSet[XLangNodeKind] =
 proc isValidTransform*(transform: TransformPass, kinds: HashSet[XLangNodeKind]): bool =
   result = (transform.operatesOnKinds - kinds).len == 0
 
-proc validTransforms(transforms: seq[TransformPass], kinds: HashSet[XLangNodeKind]): seq[TransformPass] =
-  transforms.filterIt(isValidTransform(it, kinds))
+# proc validTransforms(transforms: seq[TransformPass], kinds: HashSet[XLangNodeKind]): seq[TransformPass] =
+#   transforms.filterIt(isValidTransform(it, kinds))
   
 proc hash*(node: var XLangNode): Hash =
   var h: Hash = 0 # ?? better seed needed?
