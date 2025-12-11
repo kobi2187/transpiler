@@ -1,24 +1,22 @@
 # helpers for the xlang lowering passes mechanism:
-# tree traversal, operations and transformations.  
+# tree traversal, operations and transformations.
 import ../../xlangtypes
 import hashes, sugar, sets, sequtils
 import types
+import apply_to_kids
 
-proc applyToKids*(node: var XLangNode, p: proc (node: var XLangNode))=
-  discard
-#  # TODO: do this well. it basically just applies p to all the kids of node. (but in traverseTree you can use a local var in the anonymous proc.)
-#   case node.kind
-#   of xnk...:
-#     applyToKids node.xlangNode, p
+proc applyToKids*(node: var XLangNode, p: proc (x: var XLangNode))=
+  visit(node, p)
 
 
 proc traverseTree*(node: var XLangNode, p:( proc(node: var XLangNode) : void) )=
   p node
   applyToKids(node, p)
 
-proc printTree*(root: var XLangNode) =
-  traverseTree root, (node: var XLangNode) =>
-    echo node
+proc printTree*(root: var XLangNode, indent: int = 0) =
+  echo "  ".repeat(indent) & $root
+  applyToKids root, proc(child: var XLangNode) =
+    printTree(child, indent + 1)
 
 proc collectAllKinds*(tree: var XLangNode): HashSet[XLangNodeKind] =
   var kinds = initHashSet[XLangNodeKind]()

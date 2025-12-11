@@ -1,18 +1,17 @@
 # apply_to_kids.nim
 
-import xlangtypes
+import ../../xlangtypes
 
 
 # recursive, only touch the child nodes
-proc visit*(var node: XLangNode, p: proc (var XLangNode)) =
-  p node
+proc visit*(node: var XLangNode, p: proc (x: var XLangNode)) =
   case node.kind:
   of xnkFile:
-    for m in node.moduleDecls: visit m, p
+    for m in node.moduleDecls.mitems: visit m, p
   of xnkModule:
-    for body in moduleBody: visit body, p
+    for body in node.moduleBody.mitems: visit body, p
   of xnkNamespace:
-    for item in node.namespaceBody: visit item, p
+    for item in node.namespaceBody.mitems: visit item, p
   of xnkFuncDecl:
     for item in node.params: visit item, p
     if node.returnType.isSome(): 
@@ -59,7 +58,7 @@ proc visit*(var node: XLangNode, p: proc (var XLangNode)) =
     for item in node.constructorInitializers: visit item, p
     visit node.constructorBody, p
 
-  of xnkConstructorDecl:
+  of xnkDestructorDecl:
     visit node.destructorBody, p
   of xnkDelegateDecl:
     for item in node.delegateParams: visit item, p
@@ -126,182 +125,328 @@ proc visit*(var node: XLangNode, p: proc (var XLangNode)) =
   of xnkAssertStmt:
     visit node.assertCond, p
     if node.assertMsg.isSome(): visit node.assertMsg.get, p
-# ... Continue
 
-  #[
+  of xnkWithStmt:
+    for item in node.items: visit item, p
     visit node.withBody, p
+  of xnkWithItem:
     visit node.contextExpr, p
+    if node.asExpr.isSome(): visit node.asExpr.get, p
+  of xnkResourceStmt:
+    for item in node.resourceItems: visit item, p
     visit node.resourceBody, p
+  of xnkResourceItem:
     visit node.resourceExpr, p
+    if node.resourceVar.isSome(): visit node.resourceVar.get, p
+  of xnkPassStmt:
+    discard
+  of xnkTypeSwitchStmt:
     visit node.typeSwitchExpr, p
+    if node.typeSwitchVar.isSome(): visit node.typeSwitchVar.get, p
+    for item in node.typeSwitchCases: visit item, p
+
+  of xnkBinaryExpr:
     visit node.binaryLeft, p
     visit node.binaryRight, p
+  of xnkUnaryExpr:
     visit node.unaryOperand, p
+  of xnkTernaryExpr:
     visit node.ternaryCondition, p
     visit node.ternaryThen, p
     visit node.ternaryElse, p
+  of xnkCallExpr:
     visit node.callee, p
+    for item in node.args: visit item, p
+  of xnkThisCall, xnkBaseCall:
+    for item in node.arguments: visit item, p
+  of xnkIndexExpr:
     visit node.indexExpr, p
+    for item in node.indexArgs: visit item, p
+  of xnkSliceExpr:
     visit node.sliceExpr, p
-    visit node.memberExpr, p
-    visit node.safeNavObject, p
-    visit node.nullCoalesceLeft, p
-    visit node.nullCoalesceRight, p
-    visit node.lambdaBody, p
-    visit node.assertExpr, p
-    visit node.assertType, p
-    visit node.lambdaProcBody, p
-    visit node.arrowBody, p
-    visit node.refObject, p
-    visit node.key, p
-    visit node.value, p
-    visit node.compExpr, p
-    visit node.iter, p
-    visit node.genExpr, p
-    visit node.awaitExpr, p
-    visit node.elementType, p
-    visit node.keyType, p
-    visit node.valueType, p
-    visit node.referentType, p
-    visit node.distinctBaseType, p
-    visit node.exportedDecl, p
-    visit node.argValue, p
-    visit node.decoratorExpr, p
-    visit node.tmplbody, p
-    visit node.staticBody, p
-    visit node.baseType, p
-    visit node.conceptBody, p
-    visit node.unpackExpr, p
-    visit node.usingExpr, p
-    visit node.usingBody, p
-    visit node.destructObjSource, p
-    visit node.destructArraySource, p
-    visit node.dotBase, p
-    visit node.member, p
-    visit node.base, p
-    visit node.index, p
-    visit node.caseType, p
-    visit node.typeCaseBody, p
-    visit node.aliasTarget, p
-    visit node.extVarType, p
-    visit node.unlessCondition, p
-    visit node.unlessBody, p
-    visit node.untilCondition, p
-    visit node.untilBody, p
-    visit node.staticAssertCondition, p
-    visit node.switchCaseBody, p
-    visit node.mixinDeclExpr, p
-    visit node.macroBody, p
-    visit node.includeName, p
-    visit node.extendName, p
-    visit node.castExpr, p
-    visit node.castType, p
-    visit node.procBody, p
-    visit node.indexerType, p
-    visit node.operatorReturnType, p
-    visit node.operatorBody, p
-    visit node.conversionFromType, p
-    visit node.conversionToType, p
-    visit node.conversionBody, p
-    visit node.refExpr, p
-    visit node.typeOfType, p
-    visit node.sizeOfType, p
-    visit node.checkedExpr, p
-    visit node.throwExprValue, p
-    visit node.switchExprValue, p
-    visit node.stackAllocType, p
-    visit node.labeledStmt, p
-    visit node.fixedBody, p
-    visit node.lockExpr, p
-    visit node.lockBody, p
-    visit node.unsafeBody, p
-    visit node.checkedBody, p
-    visit node.localFuncBody, p
-    visit node.qualifiedLeft, p
-
-
-
-
-    if node.asExpr.isSome(): visit node.asExpr.get, p
-    if node.resourceVar.isSome(): visit node.resourceVar.get, p
-    if node.typeSwitchVar.isSome(): visit node.typeSwitchVar.get, p
     if node.sliceStart.isSome(): visit node.sliceStart.get, p
     if node.sliceEnd.isSome(): visit node.sliceEnd.get, p
     if node.sliceStep.isSome(): visit node.sliceStep.get, p
-    if node.lambdaReturnType.isSome(): visit node.lambdaReturnType.get, p
-    if node.lambdaProcReturn.isSome(): visit node.lambdaProcReturn.get, p
-    if node.arrowReturnType.isSome(): visit node.arrowReturnType.get, p
-    if node.reqReturn.isSome(): visit node.reqReturn.get, p
-    if node.arraySize.isSome(): visit node.arraySize.get, p
-    if node.funcReturnType.isSome(): visit node.funcReturnType.get, p
-    if node.genericBase.isSome(): visit node.genericBase.get, p
-    if node.paramType.isSome(): visit node.paramType.get, p
-    if node.defaultValue.isSome(): visit node.defaultValue.get, p
-    if node.expr.isSome(): visit node.expr.get, p
-    if node.caseElseBody.isSome(): visit node.caseElseBody.get, p
-    if node.raiseExpr.isSome(): visit node.raiseExpr.get, p
-    if node.discardExpr.isSome(): visit node.discardExpr.get, p
-    if node.enumMemberValue.isSome(): visit node.enumMemberValue.get, p
-    if node.cfuncReturnType.isSome(): visit node.cfuncReturnType.get, p
-    if node.staticAssertMessage.isSome(): visit node.staticAssertMessage.get, p
-    if node.dynamicConstraint.isSome(): visit node.dynamicConstraint.get, p
-    if node.functionTypeReturn.isSome(): visit node.functionTypeReturn.get, p
-    if node.indexerGetter.isSome(): visit node.indexerGetter.get, p
-    if node.indexerSetter.isSome(): visit node.indexerSetter.get, p
-    if node.defaultType.isSome(): visit node.defaultType.get, p
-    if node.stackAllocSize.isSome(): visit node.stackAllocSize.get, p
-    if node.localFuncReturnType.isSome(): visit node.localFuncReturnType.get, p
-
-
-    for item in node.items: visit item, p
-    for item in node.resourceItems: visit item, p
-    for item in node.typeSwitchCases: visit item, p
-    for item in node.args: visit item, p
-    for item in node.arguments: visit item, p
-    for item in node.indexArgs: visit item, p
+  of xnkMemberAccessExpr:
+    visit node.memberExpr, p
+  of xnkSafeNavigationExpr:
+    visit node.safeNavObject, p
+  of xnkNullCoalesceExpr:
+    visit node.nullCoalesceLeft, p
+    visit node.nullCoalesceRight, p
+  of xnkLambdaExpr:
     for item in node.lambdaParams: visit item, p
+    if node.lambdaReturnType.isSome(): visit node.lambdaReturnType.get, p
+    visit node.lambdaBody, p
+  of xnkTypeAssertion:
+    visit node.assertExpr, p
+    visit node.assertType, p
+  of xnkLambdaProc:
     for item in node.lambdaProcParams: visit item, p
+    if node.lambdaProcReturn.isSome(): visit node.lambdaProcReturn.get, p
+    visit node.lambdaProcBody, p
+  of xnkArrowFunc:
     for item in node.arrowParams: visit item, p
+    visit node.arrowBody, p
+    if node.arrowReturnType.isSome(): visit node.arrowReturnType.get, p
+  of xnkConceptRequirement:
     for item in node.reqParams: visit item, p
+    if node.reqReturn.isSome(): visit node.reqReturn.get, p
+  of xnkMethodReference:
+    visit node.refObject, p
+
+  of xnkSequenceLiteral, xnkSetLiteral, xnkArrayLiteral, xnkTupleExpr:
     for item in node.elements: visit item, p
+  of xnkMapLiteral:
     for item in node.entries: visit item, p
+  of xnkListExpr, xnkSetExpr:
     for item in node.legacyElements: visit item, p
+  of xnkDictExpr:
     for item in node.legacyEntries: visit item, p
+  of xnkArrayLit:
     for item in node.legacyArrayElements: visit item, p
+  of xnkDictEntry:
+    visit node.key, p
+    visit node.value, p
+  of xnkComprehensionExpr:
+    visit node.compExpr, p
     for item in node.fors: visit item, p
     for item in node.compIf: visit item, p
+  of xnkCompFor:
     for item in node.vars: visit item, p
+    visit node.iter, p
+  of xnkGeneratorExpr:
+    visit node.genExpr, p
+    for f in node.genFor:
+      for v in f.vars: visit v, p
+      visit f.iter, p
     for item in node.genIf: visit item, p
+  of xnkAwaitExpr:
+    visit node.awaitExpr, p
+  of xnkStringInterpolation:
     for item in node.interpParts: visit item, p
+
+  of xnkIntLit, xnkFloatLit, xnkStringLit, xnkCharLit, xnkBoolLit, xnkNoneLit, xnkNilLit:
+    discard
+
+  of xnkNamedType:
+    discard
+  of xnkArrayType:
+    visit node.elementType, p
+    if node.arraySize.isSome(): visit node.arraySize.get, p
+  of xnkMapType:
+    visit node.keyType, p
+    visit node.valueType, p
+  of xnkFuncType:
     for item in node.funcParams: visit item, p
+    if node.funcReturnType.isSome(): visit node.funcReturnType.get, p
+  of xnkPointerType, xnkReferenceType:
+    visit node.referentType, p
+  of xnkGenericType:
+    if node.genericBase.isSome(): visit node.genericBase.get, p
     for item in node.genericArgs: visit item, p
+  of xnkUnionType:
     for item in node.unionTypes: visit item, p
+  of xnkIntersectionType:
     for item in node.typeMembers: visit item, p
+  of xnkDistinctType:
+    visit node.distinctBaseType, p
+
+  of xnkIdentifier, xnkComment:
+    discard
+  of xnkImport:
+    discard
+  of xnkExport:
+    visit node.exportedDecl, p
+  of xnkAttribute:
     for item in node.attrArgs: visit item, p
+  of xnkGenericParameter:
     for item in node.genericParamConstraints: visit item, p
     for item in node.bounds: visit item, p
+  of xnkParameter:
+    if node.paramType.isSome(): visit node.paramType.get, p
+    if node.defaultValue.isSome(): visit node.defaultValue.get, p
+  of xnkArgument:
+    visit node.argValue, p
+  of xnkDecorator:
+    visit node.decoratorExpr, p
+
+  of xnkTemplateDef, xnkMacroDef:
     for item in node.tplparams: visit item, p
+    visit node.tmplbody, p
+  of xnkPragma:
     for item in node.pragmas: visit item, p
+  of xnkStaticStmt, xnkDeferStmt:
+    visit node.staticBody, p
+  of xnkAsmStmt:
+    discard
+  of xnkDistinctTypeDef:
+    visit node.baseType, p
+  of xnkConceptDef:
+    visit node.conceptBody, p
+  of xnkConceptDecl:
     for item in node.conceptRequirements: visit item, p
+  of xnkMixinStmt, xnkBindStmt:
+    discard
+  of xnkTupleConstr:
     for item in node.tupleElements: visit item, p
+  of xnkTupleUnpacking:
     for item in node.unpackTargets: visit item, p
+    visit node.unpackExpr, p
+  of xnkUsingStmt:
+    visit node.usingExpr, p
+    visit node.usingBody, p
+  of xnkDestructureObj:
+    visit node.destructObjSource, p
+  of xnkDestructureArray:
+    visit node.destructArraySource, p
+
+  of xnkDotExpr:
+    visit node.dotBase, p
+    visit node.member, p
+  of xnkBracketExpr:
+    visit node.base, p
+    visit node.index, p
+  of xnkCaseStmt:
+    if node.expr.isSome(): visit node.expr.get, p
     for item in node.branches: visit item, p
+    if node.caseElseBody.isSome(): visit node.caseElseBody.get, p
+  of xnkRaiseStmt:
+    if node.raiseExpr.isSome(): visit node.raiseExpr.get, p
+  of xnkImportStmt, xnkExportStmt, xnkFromImportStmt:
+    discard
+  of xnkDiscardStmt:
+    if node.discardExpr.isSome(): visit node.discardExpr.get, p
+  of xnkTypeCaseClause:
+    visit node.caseType, p
+    visit node.typeCaseBody, p
+
+  of xnkModuleDecl:
     for item in node.moduleMembers: visit item, p
+  of xnkTypeAlias:
+    visit node.aliasTarget, p
+  of xnkAbstractDecl:
     for item in node.abstractBody: visit item, p
+  of xnkEnumMember:
+    if node.enumMemberValue.isSome(): visit node.enumMemberValue.get, p
+
+  of xnkLibDecl:
     for item in node.libBody: visit item, p
+  of xnkCFuncDecl:
     for item in node.cfuncParams: visit item, p
+    if node.cfuncReturnType.isSome(): visit node.cfuncReturnType.get, p
+  of xnkExternalVar:
+    visit node.extVarType, p
+
+  of xnkUnlessStmt:
+    visit node.unlessCondition, p
+    visit node.unlessBody, p
+  of xnkUntilStmt:
+    visit node.untilCondition, p
+    visit node.untilBody, p
+  of xnkStaticAssert:
+    visit node.staticAssertCondition, p
+    if node.staticAssertMessage.isSome(): visit node.staticAssertMessage.get, p
+  of xnkSwitchCase:
     for item in node.switchCaseConditions: visit item, p
+    visit node.switchCaseBody, p
+  of xnkMixinDecl:
+    visit node.mixinDeclExpr, p
+  of xnkTemplateDecl:
     for item in node.templateParams: visit item, p
     for item in node.templateBody: visit item, p
+  of xnkMacroDecl:
     for item in node.macroParams: visit item, p
+    visit node.macroBody, p
+  of xnkInclude:
+    visit node.includeName, p
+  of xnkExtend:
+    visit node.extendName, p
+
+  of xnkCastExpr:
+    visit node.castExpr, p
+    visit node.castType, p
+  of xnkThisExpr, xnkBaseExpr:
+    discard
+  of xnkInstanceVar, xnkClassVar, xnkGlobalVar:
+    discard
+  of xnkProcLiteral:
+    visit node.procBody, p
+  of xnkProcPointer:
+    discard
+  of xnkNumberLit, xnkSymbolLit:
+    discard
+  of xnkDynamicType:
+    if node.dynamicConstraint.isSome(): visit node.dynamicConstraint.get, p
+  of xnkAbstractType:
+    discard
+  of xnkFunctionType:
     for item in node.functionTypeParams: visit item, p
+    if node.functionTypeReturn.isSome(): visit node.functionTypeReturn.get, p
+  of xnkMetadata:
     for item in node.metadataEntries: visit item, p
+
+  of xnkIndexerDecl:
     for item in node.indexerParams: visit item, p
+    visit node.indexerType, p
+    if node.indexerGetter.isSome(): visit node.indexerGetter.get, p
+    if node.indexerSetter.isSome(): visit node.indexerSetter.get, p
+  of xnkOperatorDecl:
     for item in node.operatorParams: visit item, p
+    visit node.operatorReturnType, p
+    visit node.operatorBody, p
+  of xnkConversionOperatorDecl:
+    visit node.conversionFromType, p
+    visit node.conversionToType, p
+    visit node.conversionBody, p
+  of xnkRefExpr:
+    visit node.refExpr, p
+  of xnkDefaultExpr:
+    if node.defaultType.isSome(): visit node.defaultType.get, p
+  of xnkTypeOfExpr:
+    visit node.typeOfType, p
+  of xnkSizeOfExpr:
+    visit node.sizeOfType, p
+  of xnkCheckedExpr:
+    visit node.checkedExpr, p
+  of xnkThrowExpr:
+    visit node.throwExprValue, p
+  of xnkSwitchExpr:
+    visit node.switchExprValue, p
     for item in node.switchExprArms: visit item, p
+  of xnkStackAllocExpr:
+    visit node.stackAllocType, p
+    if node.stackAllocSize.isSome(): visit node.stackAllocSize.get, p
+  of xnkImplicitArrayCreation:
     for item in node.implicitArrayElements: visit item, p
+
+  of xnkEmptyStmt:
+    discard
+  of xnkLabeledStmt:
+    visit node.labeledStmt, p
+  of xnkGotoStmt:
+    discard
+  of xnkFixedStmt:
     for item in node.fixedDeclarations: visit item, p
+    visit node.fixedBody, p
+  of xnkLockStmt:
+    visit node.lockExpr, p
+    visit node.lockBody, p
+  of xnkUnsafeStmt:
+    visit node.unsafeBody, p
+  of xnkCheckedStmt:
+    visit node.checkedBody, p
+  of xnkLocalFunctionStmt:
     for item in node.localFuncParams: visit item, p
+    if node.localFuncReturnType.isSome(): visit node.localFuncReturnType.get, p
+    visit node.localFuncBody, p
+
+  of xnkQualifiedName:
+    visit node.qualifiedLeft, p
+  of xnkAliasQualifiedName:
+    discard
+  of xnkGenericName:
     for item in node.genericNameArgs: visit item, p
 
-    ]#
+  of xnkUnknown:
+    discard

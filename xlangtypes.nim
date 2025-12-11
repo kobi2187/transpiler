@@ -601,90 +601,185 @@ type
 
 proc `$`*(node: XLangNode): string =
   if node == nil: return "nil"
+
   result = $node.kind
 
-# proc getChildren*(node: XLangNode): Option[seq[XLangNode]] =
-#   case node.kind:
-#   of xnkFile:
-#     return some node.moduleDecls
-#   of xnkModule:
-#     return some node.moduleBody
-#   of xnkNamespace:
-#     return some node.namespaceBody
-#   of xnkFuncDecl:
-#     var fchildren: seq[XLangNode] = @[]
-#     if node.returnType != none(XLangNode):
-#       fchildren.add(node.returnType.get)
-#     for p in node.params: fchildren.add(p)
-#     fchildren.add(node.body)
-#     return fchildren
-#   of xnkMethodDecl:
-#     var mchildren: seq[XLangNode] = @[]
-#     if node.receiver != none(XLangNode): mchildren.add(node.receiver.get)
-#     if node.mreturnType != none(XLangNode): mchildren.add(node.mreturnType.get)
-#     for p in node.mparams: mchildren.add(p)
-#     mchildren.add(node.mbody)
-#     return mchildren
-#   of xnkIteratorDecl:
-#     var itchildren: seq[XLangNode] = @[]
-#     for p in node.iteratorParams: itchildren.add(p)
-#     if node.iteratorReturnType != none(XLangNode): itchildren.add(node.iteratorReturnType.get)
-#     itchildren.add(node.iteratorBody)
-#     return itchildren
-#   of xnkGenericType:
-#     var gchildren: seq[XLangNode] = @[]
-#     if node.genericBase != none(XLangNode): gchildren.add(node.genericBase.get)
-#     for ga in node.genericArgs: gchildren.add(ga)
-#     return gchildren
-#   of xnkGeneratorExpr:
-#     var genChildren: seq[XLangNode] = @[]
-#     genChildren.add(node.genExpr)
-#     for f in node.genFor:
-#       for v in f.vars: genChildren.add(v)
-#       genChildren.add(f.iter)
-#     for ifn in node.genIf: genChildren.add(ifn)
-#     return genChildren
-#   of xnkIteratorYield:
-#     if node.iteratorYieldValue.isSome():
-#       return @[node.iteratorYieldValue.get]
-#     return @[]
-#   of xnkIteratorDelegate:
-#     return @[node.iteratorDelegateExpr]
-#   # Legacy:
-#   of xnkYieldStmt:
-#     if node.yieldStmt.isSome():
-#       return @[node.yieldStmt.get]
-#     return @[]
-#   of xnkYieldExpr:
-#     if node.yieldExpr.isSome():
-#       return @[node.yieldExpr.get]
-#     return @[]
-#   of xnkYieldFromStmt:
-#     return @[node.yieldFromExpr]
-#   of xnkLambdaProc:
-#     var lpChildren: seq[XLangNode] = @[]
-#     for p in node.lambdaProcParams: lpChildren.add(p)
-#     if node.lambdaProcReturn != none(XLangNode): lpChildren.add(node.lambdaProcReturn.get)
-#     lpChildren.add(node.lambdaProcBody)
-#     return lpChildren
-#   of xnkArrowFunc:
-#     var afChildren: seq[XLangNode] = @[]
-#     for p in node.arrowParams: afChildren.add(p)
-#     afChildren.add(node.arrowBody)
-#     return afChildren
-#   of xnkMethodReference:
-#     return @[node.refObject]
-#   of xnkEventDecl:
-#     return @[node.eventType]
-#   of xnkResourceStmt:
-#     var rchildren: seq[XLangNode] = @[]
-#     for item in node.resourceItems: rchildren.add(item)
-#     rchildren.add(node.resourceBody)
-#     return rchildren
-#   of xnkResourceItem:
-#     var richildren: seq[XLangNode] = @[]
-#     richildren.add(node.resourceExpr)
-#     if node.resourceVar.isSome(): richildren.add(node.resourceVar.get)
-#     return richildren
-#   else: return none(seq[XLangNode])
-# #...@[]
+  case node.kind:
+  of xnkFile:
+    result &= "(" & node.fileName & ")"
+  of xnkModule:
+    result &= "(" & node.moduleName & ")"
+  of xnkNamespace:
+    result &= "(" & node.namespaceName & ")"
+  of xnkFuncDecl:
+    result &= "(" & node.funcName & ")"
+  of xnkMethodDecl:
+    result &= "(" & node.methodName & ")"
+  of xnkIteratorDecl:
+    result &= "(" & node.iteratorName & ")"
+  of xnkClassDecl, xnkStructDecl, xnkInterfaceDecl:
+    result &= "(" & node.typeNameDecl & ")"
+  of xnkEnumDecl:
+    result &= "(" & node.enumName & ")"
+  of xnkVarDecl, xnkLetDecl, xnkConstDecl:
+    result &= "(" & node.declName & ")"
+  of xnkTypeDecl:
+    result &= "(" & node.typeDefName & ")"
+  of xnkPropertyDecl:
+    result &= "(" & node.propName & ")"
+  of xnkFieldDecl:
+    result &= "(" & node.fieldName & ")"
+  of xnkDelegateDecl:
+    result &= "(" & node.delegateName & ")"
+  of xnkEventDecl:
+    result &= "(" & node.eventName & ")"
+  of xnkBinaryExpr:
+    result &= "(" & node.binaryOp & ")"
+  of xnkUnaryExpr:
+    result &= "(" & node.unaryOp & ")"
+  of xnkMemberAccessExpr:
+    result &= "(" & node.memberName & ")"
+  of xnkSafeNavigationExpr:
+    result &= "(" & node.safeNavMember & ")"
+  of xnkIntLit, xnkFloatLit, xnkStringLit, xnkCharLit:
+    result &= "(\"" & node.literalValue & "\")"
+  of xnkBoolLit:
+    result &= "(" & $node.boolValue & ")"
+  of xnkNamedType:
+    result &= "(" & node.typeName & ")"
+  of xnkGenericType:
+    result &= "(" & node.genericTypeName & ")"
+  of xnkIdentifier:
+    result &= "(" & node.identName & ")"
+  of xnkComment:
+    let preview = if node.commentText.len > 30: node.commentText[0..29] & "..." else: node.commentText
+    result &= "(\"" & preview & "\")"
+  of xnkImport:
+    result &= "(" & node.importPath & ")"
+  of xnkAttribute:
+    result &= "(" & node.attrName & ")"
+  of xnkGenericParameter:
+    result &= "(" & node.genericParamName & ")"
+  of xnkParameter:
+    result &= "(" & node.paramName & ")"
+  of xnkArgument:
+    if node.argName.isSome():
+      result &= "(" & node.argName.get & ")"
+  of xnkTemplateDef, xnkMacroDef:
+    result &= "(" & node.name & ")"
+  of xnkAsmStmt:
+    let preview = if node.asmCode.len > 30: node.asmCode[0..29] & "..." else: node.asmCode
+    result &= "(\"" & preview & "\")"
+  of xnkDistinctTypeDef:
+    result &= "(" & node.distinctName & ")"
+  of xnkConceptDef:
+    result &= "(" & node.conceptName & ")"
+  of xnkConceptDecl:
+    result &= "(" & node.conceptDeclName & ")"
+  of xnkConceptRequirement:
+    result &= "(" & node.reqName & ")"
+  of xnkModuleDecl:
+    result &= "(" & node.moduleNameDecl & ")"
+  of xnkTypeAlias:
+    result &= "(" & node.aliasName & ")"
+  of xnkAbstractDecl:
+    result &= "(" & node.abstractName & ")"
+  of xnkEnumMember:
+    result &= "(" & node.enumMemberName & ")"
+  of xnkLibDecl:
+    result &= "(" & node.libName & ")"
+  of xnkCFuncDecl:
+    result &= "(" & node.cfuncName & ")"
+  of xnkExternalVar:
+    result &= "(" & node.extVarName & ")"
+  of xnkTemplateDecl:
+    result &= "(" & node.templateName & ")"
+  of xnkMacroDecl:
+    result &= "(" & node.macroName & ")"
+  of xnkInstanceVar, xnkClassVar, xnkGlobalVar:
+    result &= "(" & node.varName & ")"
+  of xnkProcPointer:
+    result &= "(" & node.procPointerName & ")"
+  of xnkNumberLit:
+    result &= "(\"" & node.numberValue & "\")"
+  of xnkSymbolLit:
+    result &= "(\"" & node.symbolValue & "\")"
+  of xnkAbstractType:
+    result &= "(" & node.abstractTypeName & ")"
+  of xnkOperatorDecl:
+    result &= "(" & node.operatorSymbol & ")"
+  of xnkConversionOperatorDecl:
+    result &= "(" & (if node.conversionIsImplicit: "implicit" else: "explicit") & ")"
+  of xnkCheckedExpr:
+    result &= "(" & (if node.isChecked: "checked" else: "unchecked") & ")"
+  of xnkLabeledStmt:
+    result &= "(" & node.labelName & ")"
+  of xnkGotoStmt:
+    result &= "(" & node.gotoLabel & ")"
+  of xnkCheckedStmt:
+    result &= "(" & (if node.checkedIsChecked: "checked" else: "unchecked") & ")"
+  of xnkLocalFunctionStmt:
+    result &= "(" & node.localFuncName & ")"
+  of xnkQualifiedName:
+    result &= "(" & node.qualifiedRight & ")"
+  of xnkAliasQualifiedName:
+    result &= "(" & node.aliasQualifier & "::" & node.aliasQualifiedName & ")"
+  of xnkGenericName:
+    result &= "(" & node.genericNameIdentifier & ")"
+  of xnkUnknown:
+    let preview = if node.unknownData.len > 30: node.unknownData[0..29] & "..." else: node.unknownData
+    result &= "(\"" & preview & "\")"
+  of xnkBreakStmt, xnkContinueStmt:
+    if node.label.isSome():
+      result &= "(" & node.label.get & ")"
+  of xnkCatchStmt:
+    if node.catchVar.isSome():
+      result &= "(" & node.catchVar.get & ")"
+  of xnkMixinStmt:
+    result &= "(" & $node.mixinNames & ")"
+  of xnkBindStmt:
+    result &= "(" & $node.bindNames & ")"
+  of xnkDestructureObj:
+    result &= "(" & $node.destructObjFields & ")"
+  of xnkDestructureArray:
+    result &= "(" & $node.destructArrayVars & ")"
+  of xnkImportStmt:
+    result &= "(" & $node.imports & ")"
+  of xnkExportStmt:
+    result &= "(" & $node.exports & ")"
+  of xnkFromImportStmt:
+    result &= "(from " & node.module & ")"
+  of xnkResourceItem:
+    if node.cleanupHint.isSome():
+      result &= "(" & node.cleanupHint.get & ")"
+  of xnkStringInterpolation:
+    result &= "(" & $node.interpParts.len & " parts)"
+  of xnkMethodReference:
+    result &= "(" & node.refMethod & ")"
+
+  # Statements and expressions with no meaningful string fields to display
+  of xnkConstructorDecl, xnkDestructorDecl, xnkAsgn, xnkBlockStmt, xnkIfStmt,
+     xnkSwitchStmt, xnkCaseClause, xnkDefaultClause, xnkForStmt, xnkWhileStmt,
+     xnkDoWhileStmt, xnkForeachStmt, xnkTryStmt, xnkFinallyStmt,
+     xnkReturnStmt, xnkIteratorYield, xnkIteratorDelegate,
+     xnkYieldStmt, xnkYieldExpr, xnkYieldFromStmt,
+     xnkThrowStmt, xnkAssertStmt, xnkWithStmt, xnkPassStmt, xnkTypeSwitchStmt,
+     xnkResourceStmt, xnkWithItem, xnkDiscardStmt, xnkCaseStmt, xnkRaiseStmt,
+     xnkTypeCaseClause, xnkEmptyStmt, xnkFixedStmt, xnkLockStmt, xnkUnsafeStmt,
+     xnkUnlessStmt, xnkUntilStmt, xnkStaticAssert, xnkSwitchCase,
+     xnkInclude, xnkExtend, xnkTernaryExpr, xnkCallExpr, xnkThisCall, xnkBaseCall,
+     xnkIndexExpr, xnkSliceExpr, xnkNullCoalesceExpr, xnkLambdaExpr,
+     xnkTypeAssertion, xnkCastExpr, xnkThisExpr, xnkBaseExpr, xnkRefExpr,
+     xnkProcLiteral, xnkDynamicType, xnkGeneratorExpr, xnkAwaitExpr,
+     xnkDotExpr, xnkBracketExpr, xnkCompFor, xnkDefaultExpr, xnkTypeOfExpr,
+     xnkSizeOfExpr, xnkThrowExpr, xnkSwitchExpr, xnkStackAllocExpr,
+     xnkImplicitArrayCreation, xnkNoneLit, xnkNilLit, xnkArrayType, xnkMapType,
+     xnkFuncType, xnkPointerType, xnkReferenceType, xnkUnionType,
+     xnkIntersectionType, xnkDistinctType, xnkExport, xnkDecorator,
+     xnkLambdaProc, xnkArrowFunc, xnkPragma, xnkStaticStmt, xnkDeferStmt,
+     xnkTupleConstr, xnkTupleUnpacking, xnkUsingStmt, xnkSequenceLiteral,
+     xnkSetLiteral, xnkMapLiteral, xnkArrayLiteral, xnkTupleExpr,
+     xnkComprehensionExpr, xnkDictEntry, xnkListExpr, xnkSetExpr, xnkDictExpr,
+     xnkArrayLit, xnkIndexerDecl, xnkFunctionType, xnkMetadata, xnkMixinDecl:
+    discard
+
