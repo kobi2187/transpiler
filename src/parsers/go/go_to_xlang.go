@@ -11,11 +11,6 @@ import (
 	"strings"
 )
 
-type XLangNode struct {
-	Kind string      `json:"kind"`
-	Data interface{} `json:"data,omitempty"`
-}
-
 type Statistics struct {
 	Constructs map[string]int
 }
@@ -83,559 +78,724 @@ func processFile(filename string, stats *Statistics) error {
 	return nil
 }
 
-func convertToXLang(node ast.Node, stats *Statistics) XLangNode {
+func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 	switch n := node.(type) {
-	// ========== File and Package ==========
+	// ========== File ==========
 	case *ast.File:
-		stats.Constructs["File"]++
-		return XLangNode{Kind: "File", Data: map[string]interface{}{
-			"Name":     n.Name.Name,
-			"Imports":  convertToXLangList(n.Imports, stats),
-			"Decls":    convertToXLangList(n.Decls, stats),
-			"Comments": convertCommentGroups(n.Comments, stats),
-		}}
+		stats.Constructs["xnkFile"]++
+		decls := []interface{}{}
+
+		// Add imports
+		for _, imp := range n.Imports {
+			decls = append(decls, convertToXLang(imp, stats))
+		}
+
+		// Add declarations
+		for _, decl := range n.Decls {
+			converted := convertToXLang(decl, stats)
+			if converted != nil {
+				decls = append(decls, converted)
+			}
+		}
+
+		return map[string]interface{}{
+			"kind":        "xnkFile",
+			"fileName":    filepath.Base(n.Name.Name + ".go"),
+			"moduleDecls": decls,
+		}
+
+	// ========== Import ==========
+	case *ast.ImportSpec:
+		stats.Constructs["xnkImport"]++
+		path := strings.Trim(n.Path.Value, `"`)
+		result := map[string]interface{}{
+			"kind":        "xnkImport",
+			"importPath":  path,
+			"importAlias": nil,
+		}
+		if n.Name != nil {
+			result["importAlias"] = n.Name.Name
+		}
+		return result
 
 	// ========== Declarations ==========
-	case *ast.BadDecl:
-		stats.Constructs["BadDecl"]++
-		return XLangNode{Kind: "BadDecl", Data: "syntax error"}
-
 	case *ast.GenDecl:
+		// Handle based on token type
 		switch n.Tok {
 		case token.IMPORT:
-			stats.Constructs["ImportDecl"]++
-			return XLangNode{Kind: "ImportDecl", Data: convertToXLangList(n.Specs, stats)}
-		case token.TYPE:
-			stats.Constructs["TypeDecl"]++
-			return XLangNode{Kind: "TypeDecl", Data: convertToXLangList(n.Specs, stats)}
+			// Already handled in File case
+			return nil
 		case token.CONST:
-			stats.Constructs["ConstDecl"]++
-			return XLangNode{Kind: "ConstDecl", Data: convertToXLangList(n.Specs, stats)}
+			if len(n.Specs) > 0 {
+				return convertValueSpec(n.Specs[0].(*ast.ValueSpec), true, stats)
+			}
 		case token.VAR:
-			stats.Constructs["VarDecl"]++
-			return XLangNode{Kind: "VarDecl", Data: convertToXLangList(n.Specs, stats)}
+			if len(n.Specs) > 0 {
+				return convertValueSpec(n.Specs[0].(*ast.ValueSpec), false, stats)
+			}
+		case token.TYPE:
+			if len(n.Specs) > 0 {
+				return convertTypeSpec(n.Specs[0].(*ast.TypeSpec), stats)
+			}
 		}
+		return nil
 
 	case *ast.FuncDecl:
-		stats.Constructs["FuncDecl"]++
-		data := map[string]interface{}{
-			"Name": n.Name.Name,
-			"Type": convertToXLang(n.Type, stats),
-		}
 		if n.Recv != nil {
-			data["Recv"] = convertToXLang(n.Recv, stats)
+			// Method declaration
+			stats.Constructs["xnkMethodDecl"]++
+			return convertMethod(n, stats)
+		} else {
+			// Function declaration
+			stats.Constructs["xnkFuncDecl"]++
+			return convertFunc(n, stats)
 		}
-		if n.Body != nil {
-			data["Body"] = convertToXLang(n.Body, stats)
-		}
-		// Handle type parameters (Go 1.18+)
-		if n.Type != nil && n.Type.TypeParams != nil {
-			data["TypeParams"] = convertToXLang(n.Type.TypeParams, stats)
-		}
-		return XLangNode{Kind: "FuncDecl", Data: data}
-
-	// ========== Specifications ==========
-	case *ast.ImportSpec:
-		stats.Constructs["Import"]++
-		name := ""
-		if n.Name != nil {
-			name = n.Name.Name
-		}
-		return XLangNode{Kind: "Import", Data: map[string]interface{}{
-			"Path": n.Path.Value,
-			"Name": name,
-		}}
-
-	case *ast.TypeSpec:
-		stats.Constructs["TypeSpec"]++
-		data := map[string]interface{}{
-			"Name": n.Name.Name,
-			"Type": convertToXLang(n.Type, stats),
-		}
-		// Handle type parameters (Go 1.18+ generics)
-		if n.TypeParams != nil {
-			data["TypeParams"] = convertToXLang(n.TypeParams, stats)
-		}
-		return XLangNode{Kind: "TypeSpec", Data: data}
-
-	case *ast.ValueSpec:
-		stats.Constructs["ValueSpec"]++
-		names := make([]string, len(n.Names))
-		for i, name := range n.Names {
-			names[i] = name.Name
-		}
-		data := map[string]interface{}{
-			"Names": names,
-		}
-		if n.Type != nil {
-			data["Type"] = convertToXLang(n.Type, stats)
-		}
-		if len(n.Values) > 0 {
-			data["Values"] = convertToXLangList(n.Values, stats)
-		}
-		return XLangNode{Kind: "ValueSpec", Data: data}
-
-	// ========== Type Expressions ==========
-	case *ast.StructType:
-		stats.Constructs["StructType"]++
-		return XLangNode{Kind: "StructType", Data: map[string]interface{}{
-			"Fields": convertToXLang(n.Fields, stats),
-		}}
-
-	case *ast.InterfaceType:
-		stats.Constructs["InterfaceType"]++
-		return XLangNode{Kind: "InterfaceType", Data: map[string]interface{}{
-			"Methods": convertToXLang(n.Methods, stats),
-		}}
-
-	case *ast.FuncType:
-		stats.Constructs["FuncType"]++
-		data := map[string]interface{}{}
-		if n.Params != nil {
-			data["Params"] = convertToXLang(n.Params, stats)
-		}
-		if n.Results != nil {
-			data["Results"] = convertToXLang(n.Results, stats)
-		}
-		if n.TypeParams != nil {
-			data["TypeParams"] = convertToXLang(n.TypeParams, stats)
-		}
-		return XLangNode{Kind: "FuncType", Data: data}
-
-	case *ast.ArrayType:
-		stats.Constructs["ArrayType"]++
-		data := map[string]interface{}{
-			"Elt": convertToXLang(n.Elt, stats),
-		}
-		if n.Len != nil {
-			data["Len"] = convertToXLang(n.Len, stats)
-		}
-		return XLangNode{Kind: "ArrayType", Data: data}
-
-	case *ast.MapType:
-		stats.Constructs["MapType"]++
-		return XLangNode{Kind: "MapType", Data: map[string]interface{}{
-			"Key":   convertToXLang(n.Key, stats),
-			"Value": convertToXLang(n.Value, stats),
-		}}
-
-	case *ast.ChanType:
-		stats.Constructs["ChanType"]++
-		return XLangNode{Kind: "ChanType", Data: map[string]interface{}{
-			"Dir":   int(n.Dir),
-			"Value": convertToXLang(n.Value, stats),
-		}}
-
-	case *ast.StarExpr:
-		stats.Constructs["StarExpr"]++
-		return XLangNode{Kind: "StarExpr", Data: map[string]interface{}{
-			"X": convertToXLang(n.X, stats),
-		}}
-
-	case *ast.Ellipsis:
-		stats.Constructs["Ellipsis"]++
-		data := map[string]interface{}{}
-		if n.Elt != nil {
-			data["Elt"] = convertToXLang(n.Elt, stats)
-		}
-		return XLangNode{Kind: "Ellipsis", Data: data}
-
-	// ========== Field and Field List ==========
-	case *ast.FieldList:
-		if n == nil {
-			return XLangNode{Kind: "FieldList", Data: nil}
-		}
-		fields := make([]XLangNode, len(n.List))
-		for i, field := range n.List {
-			fields[i] = convertToXLang(field, stats)
-		}
-		return XLangNode{Kind: "FieldList", Data: fields}
-
-	case *ast.Field:
-		stats.Constructs["Field"]++
-		names := make([]string, len(n.Names))
-		for i, name := range n.Names {
-			names[i] = name.Name
-		}
-		data := map[string]interface{}{
-			"Names": names,
-		}
-		if n.Type != nil {
-			data["Type"] = convertToXLang(n.Type, stats)
-		}
-		if n.Tag != nil {
-			data["Tag"] = n.Tag.Value
-		}
-		return XLangNode{Kind: "Field", Data: data}
 
 	// ========== Statements ==========
-	case *ast.BadStmt:
-		stats.Constructs["BadStmt"]++
-		return XLangNode{Kind: "BadStmt", Data: "syntax error"}
-
-	case *ast.DeclStmt:
-		stats.Constructs["DeclStmt"]++
-		return XLangNode{Kind: "DeclStmt", Data: convertToXLang(n.Decl, stats)}
-
-	case *ast.EmptyStmt:
-		stats.Constructs["EmptyStmt"]++
-		return XLangNode{Kind: "EmptyStmt", Data: nil}
-
-	case *ast.LabeledStmt:
-		stats.Constructs["LabeledStmt"]++
-		return XLangNode{Kind: "LabeledStmt", Data: map[string]interface{}{
-			"Label": n.Label.Name,
-			"Stmt":  convertToXLang(n.Stmt, stats),
-		}}
-
-	case *ast.ExprStmt:
-		stats.Constructs["ExprStmt"]++
-		return XLangNode{Kind: "ExprStmt", Data: convertToXLang(n.X, stats)}
-
-	case *ast.SendStmt:
-		stats.Constructs["SendStmt"]++
-		return XLangNode{Kind: "SendStmt", Data: map[string]interface{}{
-			"Chan":  convertToXLang(n.Chan, stats),
-			"Value": convertToXLang(n.Value, stats),
-		}}
-
-	case *ast.IncDecStmt:
-		stats.Constructs["IncDecStmt"]++
-		return XLangNode{Kind: "IncDecStmt", Data: map[string]interface{}{
-			"X":   convertToXLang(n.X, stats),
-			"Tok": n.Tok.String(),
-		}}
+	case *ast.BlockStmt:
+		stats.Constructs["xnkBlockStmt"]++
+		stmts := []interface{}{}
+		for _, stmt := range n.List {
+			converted := convertToXLang(stmt, stats)
+			if converted != nil {
+				stmts = append(stmts, converted)
+			}
+		}
+		return map[string]interface{}{
+			"kind":      "xnkBlockStmt",
+			"blockBody": stmts,
+		}
 
 	case *ast.AssignStmt:
-		stats.Constructs["AssignStmt"]++
-		return XLangNode{Kind: "AssignStmt", Data: map[string]interface{}{
-			"Lhs": convertToXLangList(n.Lhs, stats),
-			"Rhs": convertToXLangList(n.Rhs, stats),
-			"Tok": n.Tok.String(),
-		}}
-
-	case *ast.GoStmt:
-		stats.Constructs["GoStmt"]++
-		return XLangNode{Kind: "GoStmt", Data: map[string]interface{}{
-			"Call": convertToXLang(n.Call, stats),
-		}}
-
-	case *ast.DeferStmt:
-		stats.Constructs["DeferStmt"]++
-		return XLangNode{Kind: "DeferStmt", Data: map[string]interface{}{
-			"Call": convertToXLang(n.Call, stats),
-		}}
-
-	case *ast.ReturnStmt:
-		stats.Constructs["ReturnStmt"]++
-		return XLangNode{Kind: "ReturnStmt", Data: convertToXLangList(n.Results, stats)}
-
-	case *ast.BranchStmt:
-		stats.Constructs["BranchStmt"]++
-		data := map[string]interface{}{
-			"Tok": n.Tok.String(),
+		stats.Constructs["xnkAsgn"]++
+		if n.Tok == token.DEFINE {
+			// Short variable declaration :=
+			if len(n.Lhs) > 0 && len(n.Rhs) > 0 {
+				lhs := n.Lhs[0]
+				if ident, ok := lhs.(*ast.Ident); ok {
+					return map[string]interface{}{
+						"kind":        "xnkVarDecl",
+						"declName":    ident.Name,
+						"declType":    nil,
+						"initializer": convertToXLang(n.Rhs[0], stats),
+					}
+				}
+			}
 		}
-		if n.Label != nil {
-			data["Label"] = convertToXLang(n.Label, stats)
+		// Regular assignment
+		if len(n.Lhs) > 0 && len(n.Rhs) > 0 {
+			return map[string]interface{}{
+				"kind":       "xnkAsgn",
+				"asgnLeft":   convertToXLang(n.Lhs[0], stats),
+				"asgnRight":  convertToXLang(n.Rhs[0], stats),
+			}
 		}
-		return XLangNode{Kind: "BranchStmt", Data: data}
-
-	case *ast.BlockStmt:
-		stats.Constructs["BlockStmt"]++
-		return XLangNode{Kind: "BlockStmt", Data: convertToXLangList(n.List, stats)}
+		return nil
 
 	case *ast.IfStmt:
-		stats.Constructs["IfStmt"]++
-		data := map[string]interface{}{
-			"Cond": convertToXLang(n.Cond, stats),
-			"Body": convertToXLang(n.Body, stats),
-		}
-		if n.Init != nil {
-			data["Init"] = convertToXLang(n.Init, stats)
+		stats.Constructs["xnkIfStmt"]++
+		result := map[string]interface{}{
+			"kind":        "xnkIfStmt",
+			"ifCondition": convertToXLang(n.Cond, stats),
+			"ifBody":      convertToXLang(n.Body, stats),
+			"elseBody":    nil,
 		}
 		if n.Else != nil {
-			data["Else"] = convertToXLang(n.Else, stats)
+			result["elseBody"] = convertToXLang(n.Else, stats)
 		}
-		return XLangNode{Kind: "IfStmt", Data: data}
-
-	case *ast.CaseClause:
-		stats.Constructs["CaseClause"]++
-		data := map[string]interface{}{
-			"Body": convertToXLangList(n.Body, stats),
-		}
-		if len(n.List) > 0 {
-			data["List"] = convertToXLangList(n.List, stats)
-		}
-		return XLangNode{Kind: "CaseClause", Data: data}
-
-	case *ast.SwitchStmt:
-		stats.Constructs["SwitchStmt"]++
-		data := map[string]interface{}{
-			"Body": convertToXLang(n.Body, stats),
-		}
-		if n.Init != nil {
-			data["Init"] = convertToXLang(n.Init, stats)
-		}
-		if n.Tag != nil {
-			data["Tag"] = convertToXLang(n.Tag, stats)
-		}
-		return XLangNode{Kind: "SwitchStmt", Data: data}
-
-	case *ast.TypeSwitchStmt:
-		stats.Constructs["TypeSwitchStmt"]++
-		data := map[string]interface{}{
-			"Assign": convertToXLang(n.Assign, stats),
-			"Body":   convertToXLang(n.Body, stats),
-		}
-		if n.Init != nil {
-			data["Init"] = convertToXLang(n.Init, stats)
-		}
-		return XLangNode{Kind: "TypeSwitchStmt", Data: data}
-
-	case *ast.CommClause:
-		stats.Constructs["CommClause"]++
-		data := map[string]interface{}{
-			"Body": convertToXLangList(n.Body, stats),
-		}
-		if n.Comm != nil {
-			data["Comm"] = convertToXLang(n.Comm, stats)
-		}
-		return XLangNode{Kind: "CommClause", Data: data}
-
-	case *ast.SelectStmt:
-		stats.Constructs["SelectStmt"]++
-		return XLangNode{Kind: "SelectStmt", Data: map[string]interface{}{
-			"Body": convertToXLang(n.Body, stats),
-		}}
+		return result
 
 	case *ast.ForStmt:
-		stats.Constructs["ForStmt"]++
-		data := map[string]interface{}{
-			"Body": convertToXLang(n.Body, stats),
+		if n.Init == nil && n.Post == nil {
+			// While-style loop
+			stats.Constructs["xnkWhileStmt"]++
+			cond := convertToXLang(n.Cond, stats)
+			if cond == nil {
+				// Infinite loop: for { }
+				cond = map[string]interface{}{
+					"kind":      "xnkBoolLit",
+					"boolValue": true,
+				}
+			}
+			return map[string]interface{}{
+				"kind":           "xnkWhileStmt",
+				"whileCondition": cond,
+				"whileBody":      convertToXLang(n.Body, stats),
+			}
+		} else {
+			// C-style for loop
+			stats.Constructs["xnkForStmt"]++
+			return map[string]interface{}{
+				"kind":         "xnkForStmt",
+				"forInit":      convertToXLang(n.Init, stats),
+				"forCond":      convertToXLang(n.Cond, stats),
+				"forIncrement": convertToXLang(n.Post, stats),
+				"forBody":      convertToXLang(n.Body, stats),
+			}
 		}
-		if n.Init != nil {
-			data["Init"] = convertToXLang(n.Init, stats)
-		}
-		if n.Cond != nil {
-			data["Cond"] = convertToXLang(n.Cond, stats)
-		}
-		if n.Post != nil {
-			data["Post"] = convertToXLang(n.Post, stats)
-		}
-		return XLangNode{Kind: "ForStmt", Data: data}
 
 	case *ast.RangeStmt:
-		stats.Constructs["RangeStmt"]++
-		data := map[string]interface{}{
-			"X":    convertToXLang(n.X, stats),
-			"Body": convertToXLang(n.Body, stats),
-			"Tok":  n.Tok.String(),
+		stats.Constructs["xnkForeachStmt"]++
+		key := convertToXLang(n.Key, stats)
+		if key == nil {
+			key = map[string]interface{}{
+				"kind":      "xnkIdentifier",
+				"identName": "_",
+			}
 		}
-		if n.Key != nil {
-			data["Key"] = convertToXLang(n.Key, stats)
+		return map[string]interface{}{
+			"kind":        "xnkForeachStmt",
+			"foreachVar":  key,
+			"foreachIter": convertToXLang(n.X, stats),
+			"foreachBody": convertToXLang(n.Body, stats),
 		}
-		if n.Value != nil {
-			data["Value"] = convertToXLang(n.Value, stats)
+
+	case *ast.ReturnStmt:
+		stats.Constructs["xnkReturnStmt"]++
+		var returnExpr interface{} = nil
+		if len(n.Results) > 0 {
+			if len(n.Results) == 1 {
+				returnExpr = convertToXLang(n.Results[0], stats)
+			} else {
+				// Multiple return values - use tuple
+				elements := []interface{}{}
+				for _, result := range n.Results {
+					elements = append(elements, convertToXLang(result, stats))
+				}
+				returnExpr = map[string]interface{}{
+					"kind":     "xnkTupleExpr",
+					"elements": elements,
+				}
+			}
 		}
-		return XLangNode{Kind: "RangeStmt", Data: data}
+		return map[string]interface{}{
+			"kind":       "xnkReturnStmt",
+			"returnExpr": returnExpr,
+		}
+
+	case *ast.SwitchStmt:
+		stats.Constructs["xnkSwitchStmt"]++
+		cases := []interface{}{}
+		if n.Body != nil {
+			for _, stmt := range n.Body.List {
+				if caseClause, ok := stmt.(*ast.CaseClause); ok {
+					cases = append(cases, convertCaseClause(caseClause, stats))
+				}
+			}
+		}
+		return map[string]interface{}{
+			"kind":        "xnkSwitchStmt",
+			"switchExpr":  convertToXLang(n.Tag, stats),
+			"switchCases": cases,
+		}
+
+	case *ast.DeferStmt:
+		stats.Constructs["xnkDeferStmt"]++
+		return map[string]interface{}{
+			"kind":       "xnkDeferStmt",
+			"staticBody": convertToXLang(n.Call, stats),
+		}
+
+	case *ast.GoStmt:
+		// Go statement - mark as goroutine via metadata
+		stats.Constructs["xnkCallExpr(goroutine)"]++
+		callExpr := convertToXLang(n.Call, stats)
+		if callExpr != nil {
+			callExpr["isGoroutine"] = true
+		}
+		return callExpr
+
+	case *ast.ExprStmt:
+		// Expression as statement
+		return convertToXLang(n.X, stats)
+
+	case *ast.BranchStmt:
+		switch n.Tok {
+		case token.BREAK:
+			stats.Constructs["xnkBreakStmt"]++
+			return map[string]interface{}{
+				"kind":  "xnkBreakStmt",
+				"label": nil,
+			}
+		case token.CONTINUE:
+			stats.Constructs["xnkContinueStmt"]++
+			return map[string]interface{}{
+				"kind":  "xnkContinueStmt",
+				"label": nil,
+			}
+		case token.GOTO:
+			stats.Constructs["xnkGotoStmt"]++
+			label := ""
+			if n.Label != nil {
+				label = n.Label.Name
+			}
+			return map[string]interface{}{
+				"kind":      "xnkGotoStmt",
+				"gotoLabel": label,
+			}
+		}
+		return nil
+
+	case *ast.LabeledStmt:
+		stats.Constructs["xnkLabeledStmt"]++
+		return map[string]interface{}{
+			"kind":        "xnkLabeledStmt",
+			"labelName":   n.Label.Name,
+			"labeledStmt": convertToXLang(n.Stmt, stats),
+		}
+
+	case *ast.IncDecStmt:
+		// Convert to unary expression
+		stats.Constructs["xnkUnaryExpr"]++
+		op := "++"
+		if n.Tok == token.DEC {
+			op = "--"
+		}
+		return map[string]interface{}{
+			"kind":         "xnkUnaryExpr",
+			"unaryOp":      op,
+			"unaryOperand": convertToXLang(n.X, stats),
+		}
 
 	// ========== Expressions ==========
-	case *ast.BadExpr:
-		stats.Constructs["BadExpr"]++
-		return XLangNode{Kind: "BadExpr", Data: "syntax error"}
-
 	case *ast.Ident:
-		stats.Constructs["Ident"]++
-		return XLangNode{Kind: "Ident", Data: n.Name}
+		stats.Constructs["xnkIdentifier"]++
+		return map[string]interface{}{
+			"kind":      "xnkIdentifier",
+			"identName": n.Name,
+		}
 
 	case *ast.BasicLit:
-		stats.Constructs["BasicLit"]++
-		return XLangNode{Kind: "BasicLit", Data: map[string]interface{}{
-			"Kind":  n.Kind.String(),
-			"Value": n.Value,
-		}}
-
-	case *ast.FuncLit:
-		stats.Constructs["FuncLit"]++
-		return XLangNode{Kind: "FuncLit", Data: map[string]interface{}{
-			"Type": convertToXLang(n.Type, stats),
-			"Body": convertToXLang(n.Body, stats),
-		}}
-
-	case *ast.CompositeLit:
-		stats.Constructs["CompositeLit"]++
-		data := map[string]interface{}{
-			"Elts": convertToXLangList(n.Elts, stats),
+		switch n.Kind {
+		case token.INT:
+			stats.Constructs["xnkIntLit"]++
+			return map[string]interface{}{
+				"kind":         "xnkIntLit",
+				"literalValue": n.Value,
+			}
+		case token.FLOAT:
+			stats.Constructs["xnkFloatLit"]++
+			return map[string]interface{}{
+				"kind":         "xnkFloatLit",
+				"literalValue": n.Value,
+			}
+		case token.STRING:
+			stats.Constructs["xnkStringLit"]++
+			return map[string]interface{}{
+				"kind":         "xnkStringLit",
+				"literalValue": strings.Trim(n.Value, `"`),
+			}
+		case token.CHAR:
+			stats.Constructs["xnkCharLit"]++
+			return map[string]interface{}{
+				"kind":         "xnkCharLit",
+				"literalValue": strings.Trim(n.Value, `'`),
+			}
 		}
-		if n.Type != nil {
-			data["Type"] = convertToXLang(n.Type, stats)
-		}
-		return XLangNode{Kind: "CompositeLit", Data: data}
-
-	case *ast.ParenExpr:
-		stats.Constructs["ParenExpr"]++
-		return XLangNode{Kind: "ParenExpr", Data: map[string]interface{}{
-			"X": convertToXLang(n.X, stats),
-		}}
-
-	case *ast.SelectorExpr:
-		stats.Constructs["SelectorExpr"]++
-		return XLangNode{Kind: "SelectorExpr", Data: map[string]interface{}{
-			"X":   convertToXLang(n.X, stats),
-			"Sel": n.Sel.Name,
-		}}
-
-	case *ast.IndexExpr:
-		stats.Constructs["IndexExpr"]++
-		return XLangNode{Kind: "IndexExpr", Data: map[string]interface{}{
-			"X":     convertToXLang(n.X, stats),
-			"Index": convertToXLang(n.Index, stats),
-		}}
-
-	case *ast.IndexListExpr:
-		stats.Constructs["IndexListExpr"]++
-		return XLangNode{Kind: "IndexListExpr", Data: map[string]interface{}{
-			"X":       convertToXLang(n.X, stats),
-			"Indices": convertToXLangList(n.Indices, stats),
-		}}
-
-	case *ast.SliceExpr:
-		stats.Constructs["SliceExpr"]++
-		data := map[string]interface{}{
-			"X": convertToXLang(n.X, stats),
-		}
-		if n.Low != nil {
-			data["Low"] = convertToXLang(n.Low, stats)
-		}
-		if n.High != nil {
-			data["High"] = convertToXLang(n.High, stats)
-		}
-		if n.Max != nil {
-			data["Max"] = convertToXLang(n.Max, stats)
-		}
-		data["Slice3"] = n.Slice3
-		return XLangNode{Kind: "SliceExpr", Data: data}
-
-	case *ast.TypeAssertExpr:
-		stats.Constructs["TypeAssertExpr"]++
-		data := map[string]interface{}{
-			"X": convertToXLang(n.X, stats),
-		}
-		if n.Type != nil {
-			data["Type"] = convertToXLang(n.Type, stats)
-		}
-		return XLangNode{Kind: "TypeAssertExpr", Data: data}
-
-	case *ast.CallExpr:
-		stats.Constructs["CallExpr"]++
-		return XLangNode{Kind: "CallExpr", Data: map[string]interface{}{
-			"Fun":      convertToXLang(n.Fun, stats),
-			"Args":     convertToXLangList(n.Args, stats),
-			"Ellipsis": n.Ellipsis != token.NoPos,
-		}}
-
-	case *ast.UnaryExpr:
-		stats.Constructs["UnaryExpr"]++
-		return XLangNode{Kind: "UnaryExpr", Data: map[string]interface{}{
-			"Op": n.Op.String(),
-			"X":  convertToXLang(n.X, stats),
-		}}
+		return nil
 
 	case *ast.BinaryExpr:
-		stats.Constructs["BinaryExpr"]++
-		return XLangNode{Kind: "BinaryExpr", Data: map[string]interface{}{
-			"X":  convertToXLang(n.X, stats),
-			"Op": n.Op.String(),
-			"Y":  convertToXLang(n.Y, stats),
-		}}
-
-	case *ast.KeyValueExpr:
-		stats.Constructs["KeyValueExpr"]++
-		return XLangNode{Kind: "KeyValueExpr", Data: map[string]interface{}{
-			"Key":   convertToXLang(n.Key, stats),
-			"Value": convertToXLang(n.Value, stats),
-		}}
-
-	// ========== Comments ==========
-	case *ast.Comment:
-		stats.Constructs["Comment"]++
-		return XLangNode{Kind: "Comment", Data: map[string]interface{}{
-			"Text": n.Text,
-		}}
-
-	case *ast.CommentGroup:
-		stats.Constructs["CommentGroup"]++
-		comments := make([]string, len(n.List))
-		for i, comment := range n.List {
-			comments[i] = comment.Text
+		stats.Constructs["xnkBinaryExpr"]++
+		return map[string]interface{}{
+			"kind":        "xnkBinaryExpr",
+			"binaryLeft":  convertToXLang(n.X, stats),
+			"binaryOp":    n.Op.String(),
+			"binaryRight": convertToXLang(n.Y, stats),
 		}
-		return XLangNode{Kind: "CommentGroup", Data: map[string]interface{}{
-			"List": comments,
-		}}
+
+	case *ast.UnaryExpr:
+		if n.Op == token.AND {
+			// Address-of operator
+			stats.Constructs["xnkRefExpr"]++
+			return map[string]interface{}{
+				"kind":    "xnkRefExpr",
+				"refExpr": convertToXLang(n.X, stats),
+			}
+		}
+		stats.Constructs["xnkUnaryExpr"]++
+		return map[string]interface{}{
+			"kind":         "xnkUnaryExpr",
+			"unaryOp":      n.Op.String(),
+			"unaryOperand": convertToXLang(n.X, stats),
+		}
+
+	case *ast.CallExpr:
+		stats.Constructs["xnkCallExpr"]++
+		args := []interface{}{}
+		for _, arg := range n.Args {
+			args = append(args, convertToXLang(arg, stats))
+		}
+		return map[string]interface{}{
+			"kind":   "xnkCallExpr",
+			"callee": convertToXLang(n.Fun, stats),
+			"args":   args,
+		}
+
+	case *ast.SelectorExpr:
+		stats.Constructs["xnkMemberAccessExpr"]++
+		return map[string]interface{}{
+			"kind":       "xnkMemberAccessExpr",
+			"memberExpr": convertToXLang(n.X, stats),
+			"memberName": n.Sel.Name,
+		}
+
+	case *ast.IndexExpr:
+		stats.Constructs["xnkIndexExpr"]++
+		return map[string]interface{}{
+			"kind":       "xnkIndexExpr",
+			"indexExpr":  convertToXLang(n.X, stats),
+			"indexArgs":  []interface{}{convertToXLang(n.Index, stats)},
+		}
+
+	case *ast.SliceExpr:
+		stats.Constructs["xnkSliceExpr"]++
+		return map[string]interface{}{
+			"kind":       "xnkSliceExpr",
+			"sliceExpr":  convertToXLang(n.X, stats),
+			"sliceStart": convertToXLang(n.Low, stats),
+			"sliceEnd":   convertToXLang(n.High, stats),
+			"sliceStep":  nil,
+		}
+
+	case *ast.CompositeLit:
+		// Determine type of composite literal
+		if n.Type != nil {
+			typeStr := fmt.Sprintf("%v", n.Type)
+			if strings.HasPrefix(typeStr, "map[") {
+				stats.Constructs["xnkMapLiteral"]++
+				entries := []interface{}{}
+				for _, elt := range n.Elts {
+					if kv, ok := elt.(*ast.KeyValueExpr); ok {
+						entries = append(entries, map[string]interface{}{
+							"kind":  "xnkDictEntry",
+							"key":   convertToXLang(kv.Key, stats),
+							"value": convertToXLang(kv.Value, stats),
+						})
+					}
+				}
+				return map[string]interface{}{
+					"kind":    "xnkMapLiteral",
+					"entries": entries,
+				}
+			}
+		}
+		// Array/slice literal
+		stats.Constructs["xnkArrayLiteral"]++
+		elements := []interface{}{}
+		for _, elt := range n.Elts {
+			elements = append(elements, convertToXLang(elt, stats))
+		}
+		return map[string]interface{}{
+			"kind":     "xnkArrayLiteral",
+			"elements": elements,
+		}
+
+	case *ast.FuncLit:
+		stats.Constructs["xnkLambdaExpr"]++
+		return map[string]interface{}{
+			"kind":       "xnkLambdaExpr",
+			"lambdaParams": convertParams(n.Type.Params, stats),
+			"lambdaReturnType": convertReturnType(n.Type.Results, stats),
+			"lambdaBody": convertToXLang(n.Body, stats),
+		}
+
+	case *ast.TypeAssertExpr:
+		stats.Constructs["xnkTypeAssertion"]++
+		return map[string]interface{}{
+			"kind":       "xnkTypeAssertion",
+			"assertExpr": convertToXLang(n.X, stats),
+			"assertType": convertType(n.Type, stats),
+		}
+
+	case *ast.StarExpr:
+		// Could be pointer dereference or pointer type
+		stats.Constructs["xnkUnaryExpr(*)"]++
+		return map[string]interface{}{
+			"kind":         "xnkUnaryExpr",
+			"unaryOp":      "*",
+			"unaryOperand": convertToXLang(n.X, stats),
+		}
+
+	case *ast.ParenExpr:
+		// Transparent - just return inner expression
+		return convertToXLang(n.X, stats)
 
 	case nil:
-		return XLangNode{Kind: "Nil", Data: nil}
+		return nil
 
 	default:
 		stats.Constructs["Unhandled"]++
-		return XLangNode{Kind: "Unhandled", Data: fmt.Sprintf("%T", n)}
+		return map[string]interface{}{
+			"kind":       "xnkUnknown",
+			"syntaxKind": fmt.Sprintf("%T", n),
+		}
 	}
 
-	return XLangNode{Kind: "Unknown", Data: nil}
+	return nil
 }
 
-func convertToXLangList(nodes interface{}, stats *Statistics) []XLangNode {
-	switch n := nodes.(type) {
-	case []ast.Stmt:
-		stmts := make([]XLangNode, len(n))
-		for i, stmt := range n {
-			stmts[i] = convertToXLang(stmt, stats)
-		}
-		return stmts
-	case []ast.Expr:
-		exprs := make([]XLangNode, len(n))
-		for i, expr := range n {
-			exprs[i] = convertToXLang(expr, stats)
-		}
-		return exprs
-	case []ast.Decl:
-		decls := make([]XLangNode, len(n))
-		for i, decl := range n {
-			decls[i] = convertToXLang(decl, stats)
-		}
-		return decls
-	case []*ast.ImportSpec:
-		imports := make([]XLangNode, len(n))
-		for i, imp := range n {
-			imports[i] = convertToXLang(imp, stats)
-		}
-		return imports
-	case []ast.Spec:
-		specs := make([]XLangNode, len(n))
-		for i, spec := range n {
-			specs[i] = convertToXLang(spec, stats)
-		}
-		return specs
+func convertFunc(n *ast.FuncDecl, stats *Statistics) map[string]interface{} {
+	return map[string]interface{}{
+		"kind":       "xnkFuncDecl",
+		"funcName":   n.Name.Name,
+		"params":     convertParams(n.Type.Params, stats),
+		"returnType": convertReturnType(n.Type.Results, stats),
+		"body":       convertToXLang(n.Body, stats),
+		"isAsync":    false,
 	}
-	return []XLangNode{}
 }
 
-func convertCommentGroups(groups []*ast.CommentGroup, stats *Statistics) []XLangNode {
-	if groups == nil {
+func convertMethod(n *ast.FuncDecl, stats *Statistics) map[string]interface{} {
+	receiver := convertParams(n.Recv, stats)
+	var receiverNode interface{} = nil
+	if len(receiver) > 0 {
+		receiverNode = receiver[0]
+	}
+
+	return map[string]interface{}{
+		"kind":         "xnkMethodDecl",
+		"receiver":     receiverNode,
+		"methodName":   n.Name.Name,
+		"mparams":      convertParams(n.Type.Params, stats),
+		"mreturnType":  convertReturnType(n.Type.Results, stats),
+		"mbody":        convertToXLang(n.Body, stats),
+		"methodIsAsync": false,
+	}
+}
+
+func convertParams(fields *ast.FieldList, stats *Statistics) []interface{} {
+	if fields == nil {
+		return []interface{}{}
+	}
+
+	params := []interface{}{}
+	for _, field := range fields.List {
+		fieldType := convertType(field.Type, stats)
+		if len(field.Names) == 0 {
+			// Unnamed parameter
+			params = append(params, map[string]interface{}{
+				"kind":         "xnkParameter",
+				"paramName":    "",
+				"paramType":    fieldType,
+				"defaultValue": nil,
+			})
+		} else {
+			for _, name := range field.Names {
+				params = append(params, map[string]interface{}{
+					"kind":         "xnkParameter",
+					"paramName":    name.Name,
+					"paramType":    fieldType,
+					"defaultValue": nil,
+				})
+			}
+		}
+	}
+	return params
+}
+
+func convertReturnType(fields *ast.FieldList, stats *Statistics) interface{} {
+	if fields == nil || len(fields.List) == 0 {
 		return nil
 	}
-	result := make([]XLangNode, len(groups))
-	for i, group := range groups {
-		result[i] = convertToXLang(group, stats)
+
+	if len(fields.List) == 1 && len(fields.List[0].Names) == 0 {
+		// Single unnamed return
+		return convertType(fields.List[0].Type, stats)
 	}
-	return result
+
+	// Multiple returns or named returns - use tuple
+	elements := []interface{}{}
+	for _, field := range fields.List {
+		elements = append(elements, convertType(field.Type, stats))
+	}
+	return map[string]interface{}{
+		"kind":     "xnkTupleExpr",
+		"elements": elements,
+	}
+}
+
+func convertType(typ ast.Expr, stats *Statistics) interface{} {
+	if typ == nil {
+		return nil
+	}
+
+	switch t := typ.(type) {
+	case *ast.Ident:
+		return map[string]interface{}{
+			"kind":     "xnkNamedType",
+			"typeName": t.Name,
+		}
+	case *ast.StarExpr:
+		return map[string]interface{}{
+			"kind":         "xnkPointerType",
+			"referentType": convertType(t.X, stats),
+		}
+	case *ast.ArrayType:
+		return map[string]interface{}{
+			"kind":        "xnkArrayType",
+			"elementType": convertType(t.Elt, stats),
+			"arraySize":   convertToXLang(t.Len, stats),
+		}
+	case *ast.MapType:
+		return map[string]interface{}{
+			"kind":      "xnkMapType",
+			"keyType":   convertType(t.Key, stats),
+			"valueType": convertType(t.Value, stats),
+		}
+	case *ast.SelectorExpr:
+		return map[string]interface{}{
+			"kind":     "xnkNamedType",
+			"typeName": fmt.Sprintf("%v.%v", t.X, t.Sel),
+		}
+	default:
+		return map[string]interface{}{
+			"kind":     "xnkNamedType",
+			"typeName": fmt.Sprintf("%v", t),
+		}
+	}
+}
+
+func convertValueSpec(spec *ast.ValueSpec, isConst bool, stats *Statistics) map[string]interface{} {
+	kind := "xnkVarDecl"
+	if isConst {
+		kind = "xnkConstDecl"
+		stats.Constructs["xnkConstDecl"]++
+	} else {
+		stats.Constructs["xnkVarDecl"]++
+	}
+
+	name := ""
+	if len(spec.Names) > 0 {
+		name = spec.Names[0].Name
+	}
+
+	var initializer interface{} = nil
+	if len(spec.Values) > 0 {
+		initializer = convertToXLang(spec.Values[0], stats)
+	}
+
+	return map[string]interface{}{
+		"kind":        kind,
+		"declName":    name,
+		"declType":    convertType(spec.Type, stats),
+		"initializer": initializer,
+	}
+}
+
+func convertTypeSpec(spec *ast.TypeSpec, stats *Statistics) map[string]interface{} {
+	switch t := spec.Type.(type) {
+	case *ast.StructType:
+		stats.Constructs["xnkStructDecl"]++
+		members := []interface{}{}
+		if t.Fields != nil {
+			for _, field := range t.Fields.List {
+				fieldType := convertType(field.Type, stats)
+				if len(field.Names) == 0 {
+					// Anonymous/embedded field
+					members = append(members, map[string]interface{}{
+						"kind":             "xnkFieldDecl",
+						"fieldName":        "",
+						"fieldType":        fieldType,
+						"fieldInitializer": nil,
+					})
+				} else {
+					for _, name := range field.Names {
+						members = append(members, map[string]interface{}{
+							"kind":             "xnkFieldDecl",
+							"fieldName":        name.Name,
+							"fieldType":        fieldType,
+							"fieldInitializer": nil,
+						})
+					}
+				}
+			}
+		}
+		return map[string]interface{}{
+			"kind":         "xnkStructDecl",
+			"typeNameDecl": spec.Name.Name,
+			"baseTypes":    []interface{}{},
+			"members":      members,
+		}
+
+	case *ast.InterfaceType:
+		stats.Constructs["xnkInterfaceDecl"]++
+		members := []interface{}{}
+		if t.Methods != nil {
+			for _, method := range t.Methods.List {
+				if len(method.Names) > 0 {
+					// Method signature
+					if funcType, ok := method.Type.(*ast.FuncType); ok {
+						members = append(members, map[string]interface{}{
+							"kind":          "xnkMethodDecl",
+							"methodName":    method.Names[0].Name,
+							"mparams":       convertParams(funcType.Params, stats),
+							"mreturnType":   convertReturnType(funcType.Results, stats),
+							"mbody":         nil,
+							"methodIsAsync": false,
+						})
+					}
+				} else {
+					// Embedded interface
+					// Add to baseTypes instead
+				}
+			}
+		}
+		return map[string]interface{}{
+			"kind":         "xnkInterfaceDecl",
+			"typeNameDecl": spec.Name.Name,
+			"baseTypes":    []interface{}{},
+			"members":      members,
+		}
+
+	default:
+		// Type alias
+		stats.Constructs["xnkTypeAlias"]++
+		return map[string]interface{}{
+			"kind":        "xnkTypeAlias",
+			"aliasName":   spec.Name.Name,
+			"aliasTarget": convertType(spec.Type, stats),
+		}
+	}
+}
+
+func convertCaseClause(clause *ast.CaseClause, stats *Statistics) map[string]interface{} {
+	values := []interface{}{}
+	for _, expr := range clause.List {
+		values = append(values, convertToXLang(expr, stats))
+	}
+
+	body := []interface{}{}
+	for _, stmt := range clause.Body {
+		body = append(body, convertToXLang(stmt, stats))
+	}
+
+	// If no values, it's the default case
+	if len(values) == 0 {
+		return map[string]interface{}{
+			"kind":        "xnkDefaultClause",
+			"defaultBody": map[string]interface{}{
+				"kind":      "xnkBlockStmt",
+				"blockBody": body,
+			},
+		}
+	}
+
+	return map[string]interface{}{
+		"kind":       "xnkCaseClause",
+		"caseValues": values,
+		"caseBody": map[string]interface{}{
+			"kind":      "xnkBlockStmt",
+			"blockBody": body,
+		},
+		"caseFallthrough": false,
+	}
 }
 
 func printStatistics(stats *Statistics) {
-	fmt.Println("\nGo AST Node Statistics:")
-	fmt.Println("=======================")
+	fmt.Println("\nXLang Node Statistics:")
+	fmt.Println("======================")
 	for construct, count := range stats.Constructs {
-		fmt.Printf("%-20s: %d\n", construct, count)
+		fmt.Printf("%-25s: %d\n", construct, count)
 	}
-	fmt.Printf("\nTotal node types: %d\n", len(stats.Constructs))
+	fmt.Printf("\nTotal XLang node types: %d\n", len(stats.Constructs))
 }
