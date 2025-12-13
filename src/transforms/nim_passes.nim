@@ -109,7 +109,7 @@ proc buildNimPassRegistry*(): Table[TransformPassID, TransformPass] =
   return reg
 
 let nimDefaultPassIDs = @[tpForToWhile, tpDoWhileToWhile, tpTernaryToIf, tpInterfaceToConcept, tpPropertyToProcs, tpSwitchFallthrough,
-                         tpNullCoalesce, tpMultipleCatch, tpDestructuring, tpListComprehension, tpStringInterpolation, tpNormalizeSimple,
+                         tpNullCoalesce, tpMultipleCatch, tpDestructuring, tpListComprehension, tpNormalizeSimple,
                          tpWithToDefer, tpAsyncNormalization, tpUnionToVariant, tpLinqToSequtils, tpOperatorOverload, tpPatternMatching,
                          tpDecoratorAttribute, tpExtensionMethods, tpLambdaNormalization, tpEnumNormalization, tpSafeNavigation,
                          tpResourceToDefer, tpThrowExpression, tpGeneratorExpressions]

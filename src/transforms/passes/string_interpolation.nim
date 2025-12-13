@@ -1,20 +1,49 @@
 ## String Interpolation Transformation
 ##
-## Transforms string interpolation/template strings to concatenation or format calls
+## Transforms string interpolation/template strings to string concatenation.
+## This pass is for target languages that don't have native string interpolation.
+## Languages like Nim with strformat should skip this pass.
 ##
 ## Examples:
 ## - Python f"Hello {name}, you are {age} years old"
 ## - JavaScript `Hello ${name}, you are ${age} years old`
 ## - C# $"Hello {name}, you are {age} years old"
 ##
-## Transforms to either:
+## Transforms to:
 ## - String concatenation: "Hello " & name & ", you are " & $age & " years old"
-## - Or strformat: fmt"Hello {name}, you are {age} years old"  (more idiomatic)
+## - Non-string expressions automatically get $ for stringification
 
 import ../../../xlangtypes
 import options, sequtils
 
 proc transformStringInterpolation*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.}
+
+proc needsStringification(node: XLangNode): bool =
+  ## Check if a node needs $ for string conversion
+  ## String literals and explicit string operations don't need it
+  case node.kind
+  of xnkStringLit:
+    return false
+  of xnkBinaryExpr:
+    # If it's string concatenation, assume it's already a string
+    return node.binaryOp != "&"
+  of xnkCallExpr:
+    # Assume function calls might not return strings
+    return true
+  else:
+    # Idents, literals, etc. - likely need stringification if not already a string
+    return true
+
+proc wrapWithStringify(node: XLangNode): XLangNode =
+  ## Wrap a node with $ operator for stringification if needed
+  if needsStringification(node):
+    return XLangNode(
+      kind: xnkUnaryExpr,
+      unaryOp: "$",
+      unaryOperand: node
+    )
+  else:
+    return node
 
 proc transformStringInterpolationHelper(node: XLangNode): XLangNode =
   ## Helper that recursively transforms string interpolations in any expression context
@@ -22,6 +51,7 @@ proc transformStringInterpolationHelper(node: XLangNode): XLangNode =
   of xnkStringInterpolation:
     # Strategy: Build concatenation chain with & operator
     # f"Hello {name}!" → "Hello " & name & "!"
+    # f"Count: {n}" → "Count: " & $n  (auto-stringification)
 
     if node.interpParts.len == 0:
       # Empty interpolation, return empty string
@@ -31,16 +61,27 @@ proc transformStringInterpolationHelper(node: XLangNode): XLangNode =
       # Single string literal, no interpolation
       return node.interpParts[0]
 
-    # Build concatenation chain (recursively transform parts that might contain interpolations)
+    # Build concatenation chain, skipping empty strings and handling stringification
     var parts: seq[XLangNode] = @[]
 
     for i, part in node.interpParts:
       if node.interpIsExpr[i]:
-        # Expression - recursively transform it
-        parts.add(transformStringInterpolationHelper(part))
+        # Expression - recursively transform it and wrap with $ if needed
+        let transformed = transformStringInterpolationHelper(part)
+        parts.add(wrapWithStringify(transformed))
       else:
-        # String literal part
-        parts.add(part)
+        # String literal part - skip if empty
+        if part.kind == xnkStringLit and part.literalValue.len > 0:
+          parts.add(part)
+        elif part.kind != xnkStringLit:
+          # Non-string-lit parts (shouldn't happen but be safe)
+          parts.add(part)
+
+    # Handle edge cases
+    if parts.len == 0:
+      return XLangNode(kind: xnkStringLit, literalValue: "")
+    if parts.len == 1:
+      return parts[0]
 
     # Create chain of binary & operations
     result = parts[0]
@@ -121,6 +162,7 @@ proc transformStringInterpolationHelper(node: XLangNode): XLangNode =
     result = node
 
 proc transformStringInterpolation*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
-  ## Transform string interpolation into Nim string concatenation
+  ## Transform string interpolation into string concatenation with & operator
+  ## Automatically adds $ operator for non-string expressions
   ## Recursively handles interpolations in all expression contexts
   result = transformStringInterpolationHelper(node)
