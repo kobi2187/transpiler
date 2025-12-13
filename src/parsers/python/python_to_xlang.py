@@ -366,7 +366,85 @@ def convert_to_xlang(node: Union[ast.AST, List[ast.AST]], stats: Statistics) -> 
             "name": node.arg,
             "annotation": convert_to_xlang(node.annotation, stats).to_dict() if node.annotation else None
         })
-    
+
+    # Async iteration
+    elif isinstance(node, ast.AsyncFor):
+        return XLangNode("xnkForeachStmt", {
+            "variable": convert_to_xlang(node.target, stats).to_dict(),
+            "iterable": convert_to_xlang(node.iter, stats).to_dict(),
+            "body": [convert_to_xlang(n, stats).to_dict() for n in node.body],
+            "orelse": [convert_to_xlang(n, stats).to_dict() for n in node.orelse] if node.orelse else [],
+            "isAsync": True
+        })
+
+    elif isinstance(node, ast.AsyncWith):
+        return XLangNode("xnkWithStmt", {
+            "items": [convert_to_xlang(item, stats).to_dict() for item in node.items],
+            "body": [convert_to_xlang(n, stats).to_dict() for n in node.body],
+            "isAsync": True
+        })
+
+    # Delete statement
+    elif isinstance(node, ast.Delete):
+        return XLangNode("xnkDeleteStmt", {
+            "targets": [convert_to_xlang(t, stats).to_dict() for t in node.targets]
+        })
+
+    # Pattern matching (Python 3.10+)
+    elif isinstance(node, ast.Match):
+        return XLangNode("xnkMatchStmt", {
+            "subject": convert_to_xlang(node.subject, stats).to_dict(),
+            "cases": [convert_to_xlang(case, stats).to_dict() for case in node.cases]
+        })
+
+    elif hasattr(ast, 'match_case') and isinstance(node, ast.match_case):
+        return XLangNode("xnkMatchCase", {
+            "pattern": convert_to_xlang(node.pattern, stats).to_dict(),
+            "guard": convert_to_xlang(node.guard, stats).to_dict() if node.guard else None,
+            "body": [convert_to_xlang(n, stats).to_dict() for n in node.body]
+        })
+
+    # Exception groups (Python 3.11+)
+    elif isinstance(node, ast.TryStar) if hasattr(ast, 'TryStar') else False:
+        return XLangNode("xnkTryStmt", {
+            "body": [convert_to_xlang(n, stats).to_dict() for n in node.body],
+            "handlers": [convert_to_xlang(h, stats).to_dict() for h in node.handlers],
+            "orelse": [convert_to_xlang(n, stats).to_dict() for n in node.orelse] if node.orelse else [],
+            "finalbody": [convert_to_xlang(n, stats).to_dict() for n in node.finalbody] if node.finalbody else [],
+            "isExceptionGroup": True
+        })
+
+    # Boolean operations (and/or)
+    elif isinstance(node, ast.BoolOp):
+        return XLangNode("xnkBoolOpExpr", {
+            "operator": "and" if isinstance(node.op, ast.And) else "or",
+            "values": [convert_to_xlang(v, stats).to_dict() for v in node.values]
+        })
+
+    # Walrus operator (Python 3.8+)
+    elif isinstance(node, ast.NamedExpr) if hasattr(ast, 'NamedExpr') else False:
+        return XLangNode("xnkNamedExpr", {
+            "target": convert_to_xlang(node.target, stats).to_dict(),
+            "value": convert_to_xlang(node.value, stats).to_dict()
+        })
+
+    # F-strings
+    elif isinstance(node, ast.JoinedStr):
+        return XLangNode("xnkFStringExpr", {
+            "values": [convert_to_xlang(v, stats).to_dict() for v in node.values]
+        })
+
+    elif isinstance(node, ast.FormattedValue):
+        return XLangNode("xnkFormattedValue", {
+            "value": convert_to_xlang(node.value, stats).to_dict(),
+            "conversion": node.conversion,
+            "format_spec": convert_to_xlang(node.format_spec, stats).to_dict() if node.format_spec else None
+        })
+
+    # Ellipsis literal (...)
+    elif isinstance(node, ast.Ellipsis) or (isinstance(node, ast.Constant) and node.value is ...):
+        return XLangNode("xnkEllipsisLit", {})
+
     else:
         return XLangNode("xnkUnknown", {"pythonType": type(node).__name__})
 
