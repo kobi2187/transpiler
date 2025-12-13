@@ -14,7 +14,7 @@
 ##   for handler in clickHandlers: handler(this, EventArgs())
 ##   clickHandlers.add(onButtonClick)
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 import strutils
 

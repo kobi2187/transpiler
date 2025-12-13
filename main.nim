@@ -75,18 +75,11 @@ proc main() =
   let errorCollector = newErrorCollector()
 
   # Create and register transform passes once (global for all files)
-  var passManager: PassManager = nil
+  var passManager: PassManager2 = nil
   if not skipTransforms:
-    passManager = newPassManager()
+    passManager = newPassManager2()
     registerNimPasses(passManager)
     passManager.errorCollector = errorCollector
-
-    if verbose:
-      echo "DEBUG: Initialized PassManager with ", passManager.listPasses().len, " passes"
-      echo "  Registered passes:"
-      for passDesc in passManager.listPasses():
-        echo "    ", passDesc
-      echo ""
 
   # Process each xljs file
   for inputFile in xlsjFiles:
@@ -122,7 +115,7 @@ proc main() =
       try:
         if verbose:
           echo "DEBUG: About to run passes on AST..."
-        xlangAst = passManager.runPasses(xlangAst)
+        xlangAst = passManager.run(xlangAst)
 
         if verbose:
           echo "DEBUG: After transformations, AST kind: ", xlangAst.kind

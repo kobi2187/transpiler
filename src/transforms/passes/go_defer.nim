@@ -24,7 +24,7 @@
 ## For top-level function defers, they're equivalent.
 ## For defers inside nested blocks, we need to track scope.
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 
 proc transformGoDefer*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =

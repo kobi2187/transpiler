@@ -11,7 +11,7 @@
 ## defer: f.close()
 ## process(f)
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 import strutils
 

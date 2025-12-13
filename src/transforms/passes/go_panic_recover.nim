@@ -16,7 +16,7 @@
 ##   except Exception as e:
 ##     echo "Recovered: ", e.msg
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 import strutils
 

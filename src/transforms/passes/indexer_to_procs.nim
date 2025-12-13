@@ -12,7 +12,7 @@
 ##   proc `[]`(self: MyClass, i: int): int = data[i]
 ##   proc `[]=`(self: var MyClass, i: int, value: int) = data[i] = value
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 
 proc transformIndexerToProcs*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.}

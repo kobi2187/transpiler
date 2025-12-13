@@ -13,7 +13,7 @@
 ##   defer: file.close()
 ##   # use file
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 
 proc transformCSharpUsing*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =

@@ -2,7 +2,7 @@
 
 
 import ../../xlangtypes
-import sets
+import sets, hashes
 
 
 type TransformPassID* = enum
@@ -57,3 +57,11 @@ type TransformPass* = ref object
     operatesOnKinds*: HashSet[XLangNodeKind] 
     transform*: proc(node: XLangNode): XLangNode
 
+proc newTransformPass*(tp: TransformPassID, p: proc(node: XLangNode): XLangNode, kinds: seq[XLangNodeKind]) : TransformPass = 
+    new result
+    result.id = tp
+    result.transform = p
+    result.operatesOnKinds = kinds.toHashSet()
+
+
+    

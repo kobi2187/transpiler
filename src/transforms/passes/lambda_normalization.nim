@@ -10,7 +10,7 @@
 ##
 ## Nim: proc(x, y: int): int = x + y
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 import strutils
 

@@ -11,7 +11,7 @@
 ## - String concatenation: "Hello " & name & ", you are " & $age & " years old"
 ## - Or strformat: fmt"Hello {name}, you are {age} years old"  (more idiomatic)
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options, sequtils
 
 proc transformStringInterpolation*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.}

@@ -20,7 +20,7 @@
 ##   # Forward methods from Flyer
 ##   proc fly(self: Bird) = self.flyerMixin.fly()
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 import strutils
 import sequtils

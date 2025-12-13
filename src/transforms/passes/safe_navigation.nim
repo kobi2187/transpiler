@@ -9,7 +9,7 @@
 ##   C#: obj?.Method()
 ##   → if obj != nil: obj.Method() else: nil
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options, sequtils
 
 proc transformSafeNavigation*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.}

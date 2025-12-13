@@ -20,7 +20,7 @@
 ##   let result = resultOpt.get
 ##   # use result
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 import strutils
 

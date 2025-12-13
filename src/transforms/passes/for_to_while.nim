@@ -3,7 +3,7 @@
 ## Transforms: for (init; condition; update) body
 ## Into:       init; while condition: body; update
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 
 proc transformForToWhile*(node: XLangNode): XLangNode =

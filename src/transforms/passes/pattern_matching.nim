@@ -21,7 +21,7 @@
 ##     case (x, 0): f"on x-axis at {x}"
 ##     case _: "somewhere else"
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 import strutils
 

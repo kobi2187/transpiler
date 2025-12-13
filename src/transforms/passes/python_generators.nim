@@ -19,7 +19,7 @@
 ##       b = a + b
 ##       a = temp
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 import strutils
 

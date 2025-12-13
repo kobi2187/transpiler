@@ -6,7 +6,7 @@
 ##
 ## Because JS/Python style destructuring needs to be explicit in Nim
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 import sequtils
 import strutils

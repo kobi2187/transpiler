@@ -13,7 +13,7 @@
 ##     r.read(p: var seq[byte]): int
 ##   # Types must explicitly match the concept
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 import strutils
 

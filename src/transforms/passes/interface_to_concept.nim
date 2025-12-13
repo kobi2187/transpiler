@@ -3,7 +3,7 @@
 ## Transforms: interface Drawable { proc draw() }
 ## Into:       type Drawable = concept x { x.draw() }
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 
 proc transformInterfaceToConcept*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =

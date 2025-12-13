@@ -15,7 +15,7 @@
 ##   →
 ##   proc getUsers() {.httpGet: "/users".}
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 import strutils
 import tables

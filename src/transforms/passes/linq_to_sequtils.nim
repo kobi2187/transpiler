@@ -8,7 +8,7 @@
 ## - numbers.OrderBy(x => x) → numbers.sorted()
 ## - people.GroupBy(p => p.City) → for loop with Table grouping
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 import strutils
 import tables

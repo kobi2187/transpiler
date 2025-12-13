@@ -3,7 +3,7 @@
 ## Transforms: do { body } while (condition)
 ## Into:       while true: body; if not condition: break
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 
 proc transformDoWhileToWhile*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =

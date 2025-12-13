@@ -5,7 +5,7 @@
 ## - Normalize empty blocks
 ## - Clean up redundant constructs
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 
 proc transformNormalizeSimple*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =

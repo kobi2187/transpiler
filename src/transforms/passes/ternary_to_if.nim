@@ -3,7 +3,7 @@
 ## Transforms: condition ? valueA : valueB
 ## Into:       if condition: valueA else: valueB
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 
 proc transformTernaryToIf*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =

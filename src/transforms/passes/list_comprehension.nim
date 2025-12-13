@@ -13,7 +13,7 @@
 ##       result.add(x * x)
 ##   result
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 import strutils
 

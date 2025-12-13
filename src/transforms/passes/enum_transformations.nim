@@ -23,7 +23,7 @@
 ##   type Color = enum
 ##     red, green, blue
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 import strutils
 

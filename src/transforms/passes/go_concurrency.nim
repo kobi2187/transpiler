@@ -18,7 +18,7 @@
 ##   asyncCheck myFunc()          // Async task
 ##   # Use AsyncChannel for communication
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 import strutils
 

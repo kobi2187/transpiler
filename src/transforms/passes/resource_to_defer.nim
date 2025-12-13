@@ -12,7 +12,7 @@
 ##   defer: f.close()
 ##   # body
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 
 proc transformResourceToDefer*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =

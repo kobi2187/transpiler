@@ -4,7 +4,7 @@
 ## Into:       proc Age(): T = {...}
 ##             proc `Age=`(value: T) = {...}
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 
 proc transformPropertyHelper(node: XLangNode): XLangNode =

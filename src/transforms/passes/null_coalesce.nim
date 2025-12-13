@@ -6,7 +6,7 @@
 ##
 ## Because Nim doesn't have these C# operators
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 
 proc transformNullCoalesce*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =

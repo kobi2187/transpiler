@@ -12,7 +12,7 @@
 ##   →   if data == nil: raise newException(InvalidOperationException, "")
 ##       return data
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 
 proc transformThrowExpression*(node: XLangNode): XLangNode {.gcsafe.}

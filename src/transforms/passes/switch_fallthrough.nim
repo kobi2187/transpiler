@@ -3,7 +3,7 @@
 ## Transforms: switch with fallthrough → if-elif chain
 ## Because Nim's case statement doesn't support fallthrough
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 
 proc mergeBlocks(body1, body2: XLangNode): XLangNode =

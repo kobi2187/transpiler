@@ -10,7 +10,7 @@
 ##   proc greet(name: string, age: int): string =
 ##     return "Hello " & name & ", you are " & $age
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 import strutils
 import tables

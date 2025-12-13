@@ -24,7 +24,7 @@ type
     maxIterations*: int
     errorCollector*: ErrorCollector
 
-proc newPassManager2*(maxIterations: int = 1000,
+proc newPassManager2*(maxIterations: int = 10000,
                       errorCollector: ErrorCollector = nil): PassManager2 =
   ## Create a new simplified pass manager
   PassManager2(
@@ -96,3 +96,4 @@ proc run*(pm: PassManager2, root: var XLangNode): XLangNode =
       break
 
   result = root
+

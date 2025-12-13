@@ -12,7 +12,7 @@
 ##   C#: str.WordCount()
 ##   Nim: str.wordCount() or wordCount(str)
 
-import ../../xlangtypes
+import ../../../xlangtypes
 import options
 import strutils
 
