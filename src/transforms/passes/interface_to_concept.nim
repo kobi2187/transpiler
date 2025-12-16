@@ -9,7 +9,7 @@ import options
 proc transformInterfaceToConcept*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform interface declarations into Nim concepts
   ## This is needed because Nim doesn't have interfaces
-  if node.kind != xnkInterfaceDecl:
+  if node.kind != xnkExternal_Interface:
     return node
 
   # Nim concepts require method calls to be demonstrated
@@ -19,7 +19,7 @@ proc transformInterfaceToConcept*(node: XLangNode): XLangNode {.noSideEffect, gc
   var conceptBody: seq[XLangNode] = @[]
 
   # Process each member of the interface
-  for member in node.members:
+  for member in node.extInterfaceMembers:
     if member.kind in {xnkFuncDecl, xnkMethodDecl}:
       # Create a method call requirement: x.methodName(args)
       var callArgs: seq[XLangNode] = @[]
@@ -45,7 +45,7 @@ proc transformInterfaceToConcept*(node: XLangNode): XLangNode {.noSideEffect, gc
 
   result = XLangNode(
     kind: xnkConceptDef,
-    conceptName: node.typeNameDecl,
+    conceptName: node.extInterfaceName,
     conceptBody: XLangNode(
       kind: xnkBlockStmt,
       blockBody: conceptBody

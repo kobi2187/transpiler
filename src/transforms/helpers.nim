@@ -8,9 +8,7 @@ import apply_to_kids
 proc applyToKids*(node: var XLangNode, p: proc (x: var XLangNode))=
   visit(node, p)
 
-
 proc traverseTree*(node: var XLangNode, p:( proc(node: var XLangNode) : void) )=
-  p node
   applyToKids(node, p)
 
 proc printTree*(root: var XLangNode, indent: int = 0) =

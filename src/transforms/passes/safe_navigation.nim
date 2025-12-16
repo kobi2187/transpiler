@@ -17,10 +17,10 @@ proc transformSafeNavigation*(node: XLangNode): XLangNode {.noSideEffect, gcsafe
 proc transformSafeNavigationHelper(node: XLangNode): XLangNode =
   ## Recursively transform safe navigation expressions
   case node.kind
-  of xnkSafeNavigationExpr:
+  of xnkExternal_SafeNavigation:
     # a?.b → if a != nil: a.b else: nil
-    let obj = transformSafeNavigationHelper(node.safeNavObject)
-    let memberName = node.safeNavMember
+    let obj = transformSafeNavigationHelper(node.extSafeNavObject)
+    let memberName = node.extSafeNavMember
 
     # Create: obj != nil ? obj.member : nil
     result = XLangNode(

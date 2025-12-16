@@ -6,19 +6,19 @@
 import ../../../xlangtypes
 import options
 
-proc transformDoWhileToWhile*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformDoWhileToWhile*(node: XLangNode): XLangNode {.gcsafe.} =
   ## Transform do-while loops into while-true loops with break
   ## This is needed because Nim doesn't have do-while loops
-  if node.kind != xnkDoWhileStmt:
+  if node.kind != xnkExternal_DoWhile:
     return node
 
   # Get the body statements
   var bodyStmts: seq[XLangNode] = @[]
-  if node.whileBody.kind == xnkBlockStmt:
-    for s in node.whileBody.blockBody:
+  if node.extDoWhileBody.kind == xnkBlockStmt:
+    for s in node.extDoWhileBody.blockBody:
       bodyStmts.add(s)
   else:
-    bodyStmts.add(node.whileBody)
+    bodyStmts.add(node.extDoWhileBody)
 
   # Create: if not condition: break
   let breakStmt = XLangNode(
@@ -26,7 +26,7 @@ proc transformDoWhileToWhile*(node: XLangNode): XLangNode {.noSideEffect, gcsafe
     ifCondition: XLangNode(
       kind: xnkUnaryExpr,
       unaryOp: "not",
-      unaryOperand: node.whileCondition
+      unaryOperand: node.extDoWhileCondition
     ),
     ifBody: XLangNode(
       kind: xnkBlockStmt,

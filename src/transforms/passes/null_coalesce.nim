@@ -10,49 +10,25 @@ import ../../../xlangtypes
 import options
 
 proc transformNullCoalesce*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
-  ## Transform null coalescing and safe navigation operators
+  ## Transform null coalescing operator
   case node.kind
-  of xnkNullCoalesceExpr:
+  of xnkExternal_NullCoalesce:
     # a ?? b  →  if a != nil: a else: b
     result = XLangNode(
       kind: xnkIfStmt,
       ifCondition: XLangNode(
         kind: xnkBinaryExpr,
         binaryOp: "!=",
-        binaryLeft: node.nullCoalesceLeft,
+        binaryLeft: node.extNullCoalesceLeft,
         binaryRight: XLangNode(kind: xnkNoneLit)
       ),
       ifBody: XLangNode(
         kind: xnkBlockStmt,
-        blockBody: @[node.nullCoalesceLeft]
+        blockBody: @[node.extNullCoalesceLeft]
       ),
       elseBody: some(XLangNode(
         kind: xnkBlockStmt,
-        blockBody: @[node.nullCoalesceRight]
-      ))
-    )
-
-  of xnkSafeNavigationExpr:
-    # user?.Name  →  if user != nil: user.Name else: nil
-    result = XLangNode(
-      kind: xnkIfStmt,
-      ifCondition: XLangNode(
-        kind: xnkBinaryExpr,
-        binaryOp: "!=",
-        binaryLeft: node.safeNavObject,
-        binaryRight: XLangNode(kind: xnkNoneLit)
-      ),
-      ifBody: XLangNode(
-        kind: xnkBlockStmt,
-        blockBody: @[XLangNode(
-          kind: xnkMemberAccessExpr,
-          memberExpr: node.safeNavObject,
-          memberName: node.safeNavMember
-        )]
-      ),
-      elseBody: some(XLangNode(
-        kind: xnkBlockStmt,
-        blockBody: @[XLangNode(kind: xnkNoneLit)]
+        blockBody: @[node.extNullCoalesceRight]
       ))
     )
 

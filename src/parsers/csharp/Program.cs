@@ -514,24 +514,45 @@ partial class Program
 
     static JObject ConvertFor(ForStatementSyntax forStmt)
     {
+        // Convert declaration to init expression if present
+        JToken initExpr = JValue.CreateNull();
+        if (forStmt.Declaration != null)
+        {
+            var firstVar = forStmt.Declaration.Variables.FirstOrDefault();
+            if (firstVar != null)
+            {
+                initExpr = new JObject
+                {
+                    ["kind"] = "xnkVarDecl",
+                    ["declName"] = firstVar.Identifier.Text,
+                    ["declType"] = new JObject
+                    {
+                        ["kind"] = "xnkNamedType",
+                        ["typeName"] = forStmt.Declaration.Type.ToString()
+                    },
+                    ["initializer"] = firstVar.Initializer != null ? ConvertExpression(firstVar.Initializer.Value) : JValue.CreateNull()
+                };
+            }
+        }
+        else if (forStmt.Initializers.Any())
+        {
+            initExpr = ConvertExpression(forStmt.Initializers.First());
+        }
+
+        // Convert incrementors - take first one for simple case
+        JToken incrExpr = JValue.CreateNull();
+        if (forStmt.Incrementors.Any())
+        {
+            incrExpr = ConvertExpression(forStmt.Incrementors.First());
+        }
+
         return new JObject
         {
-            ["kind"] = "xnkForStmt",
-            ["declaration"] = forStmt.Declaration != null
-                ? new JObject
-                {
-                    ["type"] = forStmt.Declaration.Type.ToString(),
-                    ["variables"] = new JArray(forStmt.Declaration.Variables.Select(v => new JObject
-                    {
-                        ["name"] = v.Identifier.Text,
-                        ["initializer"] = v.Initializer != null ? ConvertExpression(v.Initializer.Value) : JValue.CreateNull()
-                    }))
-                }
-                : JValue.CreateNull(),
-            ["initializers"] = new JArray(forStmt.Initializers.Select(ConvertExpression)),
-            ["condition"] = forStmt.Condition != null ? ConvertExpression(forStmt.Condition) : JValue.CreateNull(),
-            ["incrementors"] = new JArray(forStmt.Incrementors.Select(ConvertExpression)),
-            ["body"] = ConvertStatement(forStmt.Statement)
+            ["kind"] = "xnkExternal_ForStmt",
+            ["extForInit"] = initExpr,
+            ["extForCond"] = forStmt.Condition != null ? ConvertExpression(forStmt.Condition) : JValue.CreateNull(),
+            ["extForIncrement"] = incrExpr,
+            ["extForBody"] = ConvertStatement(forStmt.Statement)
         };
     }
 
@@ -616,28 +637,28 @@ partial class Program
     {
         var result = new JObject
         {
-            ["kind"] = "xnkPropertyDecl",
-            ["propName"] = property.Identifier.Text
+            ["kind"] = "xnkExternal_Property",
+            ["extPropName"] = property.Identifier.Text
         };
 
-        // propType as XLangNode (NamedType)
-        result["propType"] = new JObject
+        // extPropType as XLangNode (NamedType)
+        result["extPropType"] = new JObject
         {
             ["kind"] = "xnkNamedType",
             ["typeName"] = property.Type.ToString()
         };
 
-        // getter and setter as Option[XLangNode]
+        // extPropGetter and extPropSetter as Option[XLangNode]
         var getAccessor = property.AccessorList?.Accessors.FirstOrDefault(a => a.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.GetAccessorDeclaration);
         if (getAccessor != null && getAccessor.Body != null)
         {
-            result["getter"] = ConvertBlock(getAccessor.Body);
+            result["extPropGetter"] = ConvertBlock(getAccessor.Body);
         }
 
         var setAccessor = property.AccessorList?.Accessors.FirstOrDefault(a => a.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.SetAccessorDeclaration);
         if (setAccessor != null && setAccessor.Body != null)
         {
-            result["setter"] = ConvertBlock(setAccessor.Body);
+            result["extPropSetter"] = ConvertBlock(setAccessor.Body);
         }
 
         return result;

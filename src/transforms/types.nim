@@ -12,7 +12,7 @@ type TransformPassID* = enum
     tpForToWhile = "for-to-while"
     tpDoWhileToWhile = "dowhile-to-while"
     tpTernaryToIf = "ternary-to-if"
-    tpInterfaceToConcept = "interface-to-concept"
+    tpNimInterfaceToConcept = "nim-interface-to-concept"
     tpPropertyToProcs = "property-to-procs"
     tpSwitchFallthrough = "switch-fallthrough"
     tpNullCoalesce = "null-coalesce"
@@ -48,6 +48,15 @@ type TransformPassID* = enum
     tpIndexerToProcs = "indexer-to-procs"
     tpGeneratorExpressions = "generator-expressions"
     tpThrowExpression = "throw-expression"
+    tpResourceToTryFinally = "resource-to-try-finally"  # Alternative to defer for targets without it
+    tpSwitchExprToCase = "switch-expr-to-case"
+    tpStackAllocToSeq = "stackalloc-to-seq"
+    tpConversionOpToProc = "conversion-op-to-proc"
+    tpCheckedToBlock = "checked-to-block"
+    tpFixedToBlock = "fixed-to-block"
+    tpLocalFunctionToProc = "local-function-to-proc"
+    tpUnsafeToNimBlock = "unsafe-to-nim-block"
+    tpDelegateToProcType = "delegate-to-proc-type"
     # Add more passes here as they are implemented
 
 type TransformPass* = ref object

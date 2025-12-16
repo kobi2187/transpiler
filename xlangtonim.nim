@@ -535,21 +535,21 @@ proc conv_xnkWhileStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 proc conv_xnkForStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
   # Handle C-style or for-in style
-  if node.forInit.isSome() and node.forCond.isSome() and node.forIncrement.isSome():
+  if node.extForInit.isSome() and node.extForCond.isSome() and node.extForIncrement.isSome():
     result = newStmtList()
-    result.add(convertToNimAST(node.forInit.get, ctx))
+    result.add(convertToNimAST(node.extForInit.get, ctx))
     let whileStmt = newNimNode(nnkWhileStmt)
-    whileStmt.add(convertToNimAST(node.forCond.get, ctx))
+    whileStmt.add(convertToNimAST(node.extForCond.get, ctx))
     let body = newStmtList()
-    body.add(convertToNimAST(node.forBody.get, ctx))
-    body.add(convertToNimAST(node.forIncrement.get, ctx))
+    body.add(convertToNimAST(node.extForBody.get, ctx))
+    body.add(convertToNimAST(node.extForIncrement.get, ctx))
     whileStmt.add(body)
     result.add(whileStmt)
   else:
     # fallback: map to a simple for stmt if a foreach-like structure exists
     result = newNimNode(nnkForStmt)
-    if node.forBody.isSome():
-      result.add(convertToNimAST(node.forBody.get, ctx))
+    if node.extForBody.isSome():
+      result.add(convertToNimAST(node.extForBody.get, ctx))
     else:
       result.add(newEmptyNode())
 
@@ -1081,19 +1081,19 @@ proc conv_xnkDestructorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode 
 proc conv_xnkDelegateDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result = newNimNode(nnkTypeSection)
   let typeDef = newNimNode(nnkTypeDef)
-  typeDef.add(newIdentNode(node.delegateName))
+  typeDef.add(newIdentNode(node.extDelegateName))
   typeDef.add(newEmptyNode())
 
   # Create proc type
   let procTy = newNimNode(nnkProcTy)
   let formalParams = newNimNode(nnkFormalParams)
 
-  if node.delegateReturnType.isSome():
-    formalParams.add(convertToNimAST(node.delegateReturnType.get, ctx))
+  if node.extDelegateReturnType.isSome():
+    formalParams.add(convertToNimAST(node.extDelegateReturnType.get, ctx))
   else:
     formalParams.add(newEmptyNode())  # void
 
-  for param in node.delegateParams:
+  for param in node.extDelegateParams:
     formalParams.add(convertToNimAST(param, ctx))
 
   procTy.add(formalParams)
@@ -1114,7 +1114,7 @@ proc conv_xnkOperatorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result = newNimNode(nnkProcDef)
 
   # Operator name with backticks (e.g., `+`, `-`, `*`)
-  result.add(newIdentNode("`" & node.operatorSymbol & "`"))
+  result.add(newIdentNode("`" & node.extOperatorSymbol & "`"))
 
   # Empty term-rewriting template
   result.add(newEmptyNode())
@@ -1126,10 +1126,10 @@ proc conv_xnkOperatorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
   let formalParams = newNimNode(nnkFormalParams)
 
   # Return type
-  formalParams.add(convertToNimAST(node.operatorReturnType, ctx))
+  formalParams.add(convertToNimAST(node.extOperatorReturnType, ctx))
 
   # Parameters
-  for param in node.operatorParams:
+  for param in node.extOperatorParams:
     formalParams.add(convertToNimAST(param, ctx))
 
   result.add(formalParams)
@@ -1142,7 +1142,7 @@ proc conv_xnkOperatorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
   # Body
   let body = newNimNode(nnkStmtList)
-  if node.operatorBody.kind == xnkBlockStmt:
+  if node.extOperatorBody.kind == xnkBlockStmt:
     for stmt in node.operatorBody.blockBody:
       body.add(convertToNimAST(stmt, ctx))
   else:
@@ -1788,6 +1788,11 @@ proc conv_xnkAsgn(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 #TODO: support all LOWERED (after transforms) xlangtypes node kinds
 proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode =
+  # Check for nil node
+  if node.isNil:
+    echo "WARNING: convertToNimAST called with nil node"
+    return newNimNode(nnkDiscardStmt)
+
   # Create temporary context if none provided (for backward compatibility)
   let context = if ctx.isNil: newContext() else: ctx
 
@@ -2159,6 +2164,27 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
   of xnkDictEntry:
     result = conv_xnkDictEntry(node, ctx)
 
+  # ==========================================================================
+  # External/Source-Specific Kinds - These must be lowered by passes
+  # ==========================================================================
+  # External kinds should never reach the converter. If they do, it means
+  # the lowering passes didn't run or failed to transform them.
+  of xnkExternal_Property, xnkExternal_Indexer, xnkExternal_Event,
+     xnkExternal_Delegate, xnkExternal_Operator, xnkExternal_ConversionOp,
+     xnkExternal_Resource, xnkExternal_Fixed, xnkExternal_Lock,
+     xnkExternal_Unsafe, xnkExternal_Checked, xnkExternal_SafeNavigation,
+     xnkExternal_NullCoalesce, xnkExternal_ThrowExpr, xnkExternal_SwitchExpr,
+     xnkExternal_StackAlloc, xnkExternal_StringInterp, xnkExternal_Ternary,
+     xnkExternal_DoWhile, xnkExternal_ForStmt, xnkExternal_Interface,
+     xnkExternal_Generator, xnkExternal_Comprehension, xnkExternal_With,
+     xnkExternal_Destructure, xnkExternal_Await, xnkExternal_LocalFunction,
+     # Additional external kinds
+     xnkExternal_ExtensionMethod, xnkExternal_FallthroughCase,
+     xnkExternal_Unless, xnkExternal_Until, xnkExternal_Pass,
+     xnkExternal_Channel, xnkExternal_Goroutine, xnkExternal_GoDefer,
+     xnkExternal_GoSelect:
+    # External kinds must be lowered before reaching the converter
+    assert false, $node.kind & " should have been lowered by transformation passes"
 
   # else:
   #   raise newException(ValueError, "Unsupported XLang node kind: " & $node.kind)

@@ -148,7 +148,7 @@ partial class Program
     }
     static JObject ConvertUsing(UsingStatementSyntax usingStmt)
     {
-        // Convert C# using to unified xnkResourceStmt
+        // Convert C# using to external resource statement
         var resourceItems = new JArray();
 
         if (usingStmt.Declaration != null)
@@ -191,27 +191,27 @@ partial class Program
 
         return new JObject
         {
-            ["kind"] = "xnkResourceStmt",
-            ["resourceItems"] = resourceItems,
-            ["resourceBody"] = ConvertStatement(usingStmt.Statement)
+            ["kind"] = "xnkExternal_Resource",
+            ["extResourceItems"] = resourceItems,
+            ["extResourceBody"] = ConvertStatement(usingStmt.Statement)
         };
     }
     static JObject ConvertLock(LockStatementSyntax lockStmt)
     {
         return new JObject
         {
-            ["kind"] = "xnkLockStmt",
-            ["lockExpr"] = ConvertExpression(lockStmt.Expression),
-            ["lockBody"] = ConvertStatement(lockStmt.Statement)
+            ["kind"] = "xnkExternal_Lock",
+            ["extLockExpr"] = ConvertExpression(lockStmt.Expression),
+            ["extLockBody"] = ConvertStatement(lockStmt.Statement)
         };
     }
     static JObject ConvertDo(DoStatementSyntax doStmt)
     {
         return new JObject
         {
-            ["kind"] = "xnkDoWhileStmt",
-            ["whileCondition"] = ConvertExpression(doStmt.Condition),
-            ["whileBody"] = ConvertStatement(doStmt.Statement)
+            ["kind"] = "xnkExternal_DoWhile",
+            ["extDoWhileCondition"] = ConvertExpression(doStmt.Condition),
+            ["extDoWhileBody"] = ConvertStatement(doStmt.Statement)
         };
     }
     static JObject ConvertYield(YieldStatementSyntax yieldStmt)
@@ -239,10 +239,10 @@ partial class Program
     {
         return new JObject
         {
-            ["kind"] = "xnkTernaryExpr",
-            ["ternaryCondition"] = ConvertExpression(conditional.Condition),
-            ["ternaryThen"] = ConvertExpression(conditional.WhenTrue),
-            ["ternaryElse"] = ConvertExpression(conditional.WhenFalse)
+            ["kind"] = "xnkExternal_Ternary",
+            ["extTernaryCondition"] = ConvertExpression(conditional.Condition),
+            ["extTernaryThen"] = ConvertExpression(conditional.WhenTrue),
+            ["extTernaryElse"] = ConvertExpression(conditional.WhenFalse)
         };
     }
     static JObject ConvertPredefinedType(PredefinedTypeSyntax predefinedType)
@@ -286,13 +286,13 @@ partial class Program
     {
         return new JObject
         {
-            ["kind"] = "xnkStringInterpolation",
-            ["interpParts"] = new JArray(interpolated.Contents.Select(c =>
+            ["kind"] = "xnkExternal_StringInterp",
+            ["extInterpParts"] = new JArray(interpolated.Contents.Select(c =>
                 c is InterpolatedStringTextSyntax text
                     ? (JObject)new JObject { ["kind"] = "xnkStringLit", ["literalValue"] = text.TextToken.ValueText }
                     : ConvertExpression(((InterpolationSyntax)c).Expression)
             )),
-            ["interpIsExpr"] = new JArray(interpolated.Contents.Select(c => c is InterpolationSyntax))
+            ["extInterpIsExpr"] = new JArray(interpolated.Contents.Select(c => c is InterpolationSyntax))
         };
     }
     static JObject ConvertGenericName(GenericNameSyntax genericName)
@@ -329,20 +329,20 @@ partial class Program
     }
     static JObject ConvertConditionalAccess(ConditionalAccessExpressionSyntax condAccess)
     {
-        // C# ?. operator → xnkSafeNavigationExpr (xnkConditionalAccessExpr was duplicate)
+        // C# ?. operator → xnkExternal_SafeNavigation
         return new JObject
         {
-            ["kind"] = "xnkSafeNavigationExpr",
-            ["safeNavObject"] = ConvertExpression(condAccess.Expression),
-            ["safeNavMember"] = condAccess.WhenNotNull.ToString()
+            ["kind"] = "xnkExternal_SafeNavigation",
+            ["extSafeNavObject"] = ConvertExpression(condAccess.Expression),
+            ["extSafeNavMember"] = condAccess.WhenNotNull.ToString()
         };
     }
     static JObject ConvertThrowExpression(ThrowExpressionSyntax throwExpr)
     {
         return new JObject
         {
-            ["kind"] = "xnkThrowExpr",
-            ["throwExprValue"] = ConvertExpression(throwExpr.Expression)
+            ["kind"] = "xnkExternal_ThrowExpr",
+            ["extThrowExprValue"] = ConvertExpression(throwExpr.Expression)
         };
     }
     static JObject ConvertLambda(LambdaExpressionSyntax lambda)
@@ -399,8 +399,8 @@ partial class Program
     {
         return new JObject
         {
-            ["kind"] = "xnkAwaitExpr",
-            ["awaitExpr"] = ConvertExpression(awaitExpr.Expression)
+            ["kind"] = "xnkExternal_Await",
+            ["extAwaitExpr"] = ConvertExpression(awaitExpr.Expression)
         };
     }
     static JObject ConvertAnonymousMethodExpression(AnonymousMethodExpressionSyntax anonymousMethod)
@@ -678,13 +678,13 @@ partial class Program
     {
         return new JObject
         {
-            ["kind"] = "xnkStackAllocExpr",
-            ["stackAllocType"] = new JObject
+            ["kind"] = "xnkExternal_StackAlloc",
+            ["extStackAllocType"] = new JObject
             {
                 ["kind"] = "xnkNamedType",
                 ["typeName"] = stackAlloc.Type.ToString()
             },
-            ["stackAllocSize"] = stackAlloc.Initializer != null
+            ["extStackAllocSize"] = stackAlloc.Initializer != null
         ? ConvertInitializer(stackAlloc.Initializer)
         : JValue.CreateNull()
         };
@@ -712,11 +712,47 @@ partial class Program
     }
     static JObject ConvertSwitchExpression(SwitchExpressionSyntax switchExpr)
     {
+        var arms = switchExpr.Arms.Select(arm =>
+        {
+            // Convert pattern to expression form for matching
+            // For constant patterns (e.g., 1, "foo"), extract the expression
+            // For discard patterns (_), use identifier "_"
+            JObject patternExpr;
+            if (arm.Pattern is ConstantPatternSyntax constantPattern)
+            {
+                patternExpr = ConvertExpression(constantPattern.Expression);
+            }
+            else if (arm.Pattern is DiscardPatternSyntax)
+            {
+                patternExpr = new JObject
+                {
+                    ["kind"] = "xnkIdentifier",
+                    ["identName"] = "_"
+                };
+            }
+            else
+            {
+                // For other patterns, convert to string representation
+                patternExpr = new JObject
+                {
+                    ["kind"] = "xnkIdentifier",
+                    ["identName"] = arm.Pattern.ToString()
+                };
+            }
+
+            return new JObject
+            {
+                ["kind"] = "xnkSwitchCase",
+                ["switchCaseConditions"] = new JArray { patternExpr },
+                ["switchCaseBody"] = ConvertExpression(arm.Expression)
+            };
+        });
+
         return new JObject
         {
-            ["kind"] = "xnkSwitchExpr",
-            ["switchExprValue"] = ConvertExpression(switchExpr.GoverningExpression),
-            ["switchExprArms"] = new JArray(switchExpr.Arms.Select(arm => ConvertExpression(arm.Expression)))
+            ["kind"] = "xnkExternal_SwitchExpr",
+            ["extSwitchExprValue"] = ConvertExpression(switchExpr.GoverningExpression),
+            ["extSwitchExprArms"] = new JArray(arms)
         };
     }
     static JObject ConvertRefExpression(RefExpressionSyntax refExpr)
@@ -766,8 +802,8 @@ partial class Program
     {
         return new JObject
         {
-            ["kind"] = "xnkFixedStmt",
-            ["fixedDeclarations"] = new JArray(fixedStmt.Declaration.Variables.Select(v => new JObject
+            ["kind"] = "xnkExternal_Fixed",
+            ["extFixedDeclarations"] = new JArray(fixedStmt.Declaration.Variables.Select(v => new JObject
             {
                 ["kind"] = "xnkVarDecl",
                 ["declName"] = v.Identifier.Text,
@@ -778,16 +814,16 @@ partial class Program
                 },
                 ["initializer"] = v.Initializer != null ? ConvertExpression(v.Initializer.Value) : JValue.CreateNull()
             })),
-            ["fixedBody"] = ConvertStatement(fixedStmt.Statement)
+            ["extFixedBody"] = ConvertStatement(fixedStmt.Statement)
         };
     }
     static JObject ConvertLocalFunctionStatement(LocalFunctionStatementSyntax localFunc)
     {
         return new JObject
         {
-            ["kind"] = "xnkLocalFunctionStmt",
-            ["localFuncName"] = localFunc.Identifier.Text,
-            ["localFuncParams"] = new JArray(localFunc.ParameterList.Parameters.Select(p => new JObject
+            ["kind"] = "xnkExternal_LocalFunction",
+            ["extLocalFuncName"] = localFunc.Identifier.Text,
+            ["extLocalFuncParams"] = new JArray(localFunc.ParameterList.Parameters.Select(p => new JObject
             {
                 ["kind"] = "xnkParameter",
                 ["paramName"] = p.Identifier.Text,
@@ -798,29 +834,29 @@ partial class Program
                 },
                 ["defaultValue"] = JValue.CreateNull()
             })),
-            ["localFuncReturnType"] = new JObject
+            ["extLocalFuncReturnType"] = new JObject
             {
                 ["kind"] = "xnkNamedType",
                 ["typeName"] = localFunc.ReturnType.ToString()
             },
-            ["localFuncBody"] = localFunc.Body != null ? ConvertBlock(localFunc.Body) : JValue.CreateNull()
+            ["extLocalFuncBody"] = localFunc.Body != null ? ConvertBlock(localFunc.Body) : JValue.CreateNull()
         };
     }
     static JObject ConvertUnsafeStatement(UnsafeStatementSyntax unsafeStmt)
     {
         return new JObject
         {
-            ["kind"] = "xnkUnsafeStmt",
-            ["unsafeBody"] = ConvertBlock(unsafeStmt.Block)
+            ["kind"] = "xnkExternal_Unsafe",
+            ["extUnsafeBody"] = ConvertBlock(unsafeStmt.Block)
         };
     }
     static JObject ConvertCheckedStatement(CheckedStatementSyntax checkedStmt)
     {
         return new JObject
         {
-            ["kind"] = "xnkCheckedStmt",
-            ["checkedIsChecked"] = checkedStmt.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.CheckedStatement,
-            ["checkedBody"] = ConvertBlock(checkedStmt.Block)
+            ["kind"] = "xnkExternal_Checked",
+            ["extCheckedIsChecked"] = checkedStmt.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.CheckedStatement,
+            ["extCheckedBody"] = ConvertBlock(checkedStmt.Block)
         };
     }
     // Type declaration converters
@@ -842,16 +878,16 @@ partial class Program
     {
         return new JObject
         {
-            ["kind"] = "xnkInterfaceDecl",
-            ["typeNameDecl"] = interfaceDecl.Identifier.Text,
-            ["baseTypes"] = interfaceDecl.BaseList != null
+            ["kind"] = "xnkExternal_Interface",
+            ["extInterfaceName"] = interfaceDecl.Identifier.Text,
+            ["extInterfaceBaseTypes"] = interfaceDecl.BaseList != null
                 ? new JArray(interfaceDecl.BaseList.Types.Select(t => new JObject
                 {
                     ["kind"] = "xnkNamedType",
                     ["typeName"] = t.Type.ToString()
                 }))
                 : new JArray(),
-            ["members"] = new JArray(interfaceDecl.Members.Select(m => ConvertMemberDeclaration(m)))
+            ["extInterfaceMembers"] = new JArray(interfaceDecl.Members.Select(m => ConvertMemberDeclaration(m)))
         };
     }
     static JObject ConvertStruct(StructDeclarationSyntax structDecl)
@@ -874,9 +910,9 @@ partial class Program
     {
         return new JObject
         {
-            ["kind"] = "xnkDelegateDecl",
-            ["delegateName"] = delegateDecl.Identifier.Text,
-            ["delegateParams"] = new JArray(delegateDecl.ParameterList.Parameters.Select(p => new JObject
+            ["kind"] = "xnkExternal_Delegate",
+            ["extDelegateName"] = delegateDecl.Identifier.Text,
+            ["extDelegateParams"] = new JArray(delegateDecl.ParameterList.Parameters.Select(p => new JObject
             {
                 ["kind"] = "xnkParameter",
                 ["paramName"] = p.Identifier.Text,
@@ -886,7 +922,7 @@ partial class Program
                     ["typeName"] = p.Type?.ToString() ?? "auto"
                 }
             })),
-            ["delegateReturnType"] = new JObject
+            ["extDelegateReturnType"] = new JObject
             {
                 ["kind"] = "xnkNamedType",
                 ["typeName"] = delegateDecl.ReturnType.ToString()
@@ -898,9 +934,9 @@ partial class Program
     {
         return new JObject
         {
-            ["kind"] = "xnkOperatorDecl",
-            ["operatorSymbol"] = operatorDecl.OperatorToken.Text,
-            ["operatorParams"] = new JArray(operatorDecl.ParameterList.Parameters.Select(p => new JObject
+            ["kind"] = "xnkExternal_Operator",
+            ["extOperatorSymbol"] = operatorDecl.OperatorToken.Text,
+            ["extOperatorParams"] = new JArray(operatorDecl.ParameterList.Parameters.Select(p => new JObject
             {
                 ["kind"] = "xnkParameter",
                 ["paramName"] = p.Identifier.Text,
@@ -911,33 +947,33 @@ partial class Program
                 },
                 ["defaultValue"] = JValue.CreateNull()
             })),
-            ["operatorReturnType"] = new JObject
+            ["extOperatorReturnType"] = new JObject
             {
                 ["kind"] = "xnkNamedType",
                 ["typeName"] = operatorDecl.ReturnType.ToString()
             },
-            ["operatorBody"] = operatorDecl.Body != null ? ConvertBlock(operatorDecl.Body) : JValue.CreateNull()
+            ["extOperatorBody"] = operatorDecl.Body != null ? ConvertBlock(operatorDecl.Body) : JValue.CreateNull()
         };
     }
     static JObject ConvertConversionOperator(ConversionOperatorDeclarationSyntax conversionOp)
     {
         return new JObject
         {
-            ["kind"] = "xnkConversionOperatorDecl",
-            ["conversionIsImplicit"] = conversionOp.ImplicitOrExplicitKeyword.Text == "implicit",
-            ["conversionFromType"] = conversionOp.ParameterList.Parameters.Count > 0
+            ["kind"] = "xnkExternal_ConversionOp",
+            ["extConversionIsImplicit"] = conversionOp.ImplicitOrExplicitKeyword.Text == "implicit",
+            ["extConversionFromType"] = conversionOp.ParameterList.Parameters.Count > 0
                 ? new JObject
                 {
                     ["kind"] = "xnkNamedType",
                     ["typeName"] = conversionOp.ParameterList.Parameters[0].Type?.ToString() ?? "unknown"
                 }
                 : new JObject { ["kind"] = "xnkNamedType", ["typeName"] = "unknown" },
-            ["conversionToType"] = new JObject
+            ["extConversionToType"] = new JObject
             {
                 ["kind"] = "xnkNamedType",
                 ["typeName"] = conversionOp.Type.ToString()
             },
-            ["conversionBody"] = conversionOp.Body != null ? ConvertBlock(conversionOp.Body) : JValue.CreateNull()
+            ["extConversionBody"] = conversionOp.Body != null ? ConvertBlock(conversionOp.Body) : JValue.CreateNull()
         };
     }
     static JObject ConvertIndexer(IndexerDeclarationSyntax indexer)
@@ -947,13 +983,13 @@ partial class Program
 
         return new JObject
         {
-            ["kind"] = "xnkIndexerDecl",
-            ["indexerType"] = new JObject
+            ["kind"] = "xnkExternal_Indexer",
+            ["extIndexerType"] = new JObject
             {
                 ["kind"] = "xnkNamedType",
                 ["typeName"] = indexer.Type.ToString()
             },
-            ["indexerParams"] = new JArray(indexer.ParameterList.Parameters.Select(p => new JObject
+            ["extIndexerParams"] = new JArray(indexer.ParameterList.Parameters.Select(p => new JObject
             {
                 ["kind"] = "xnkParameter",
                 ["paramName"] = p.Identifier.Text,
@@ -964,10 +1000,10 @@ partial class Program
                 },
                 ["defaultValue"] = JValue.CreateNull()
             })),
-            ["indexerGetter"] = getAccessor != null && getAccessor.Body != null
+            ["extIndexerGetter"] = getAccessor != null && getAccessor.Body != null
                 ? ConvertBlock(getAccessor.Body)
                 : JValue.CreateNull(),
-            ["indexerSetter"] = setAccessor != null && setAccessor.Body != null
+            ["extIndexerSetter"] = setAccessor != null && setAccessor.Body != null
                 ? ConvertBlock(setAccessor.Body)
                 : JValue.CreateNull()
         };
@@ -986,14 +1022,13 @@ partial class Program
         var firstVar = eventField.Declaration.Variables[0];
         return new JObject
         {
-            ["kind"] = "xnkEventDecl",
-            ["eventName"] = firstVar.Identifier.Text,
-            ["eventType"] = new JObject
+            ["kind"] = "xnkExternal_Event",
+            ["extEventName"] = firstVar.Identifier.Text,
+            ["extEventType"] = new JObject
             {
                 ["kind"] = "xnkNamedType",
                 ["typeName"] = eventField.Declaration.Type.ToString()
-            },
-            ["modifiers"] = string.Join(" ", eventField.Modifiers.Select(m => m.Text))
+            }
         };
     }
     static JObject ConvertEventDeclaration(EventDeclarationSyntax eventDecl)
@@ -1002,18 +1037,17 @@ partial class Program
         var removeAccessor = eventDecl.AccessorList?.Accessors.FirstOrDefault(a => a.IsKind(SyntaxKind.RemoveAccessorDeclaration));
         return new JObject
         {
-            ["kind"] = "xnkEventDecl",
-            ["eventName"] = eventDecl.Identifier.Text,
-            ["eventType"] = new JObject
+            ["kind"] = "xnkExternal_Event",
+            ["extEventName"] = eventDecl.Identifier.Text,
+            ["extEventType"] = new JObject
             {
                 ["kind"] = "xnkNamedType",
                 ["typeName"] = eventDecl.Type.ToString()
             },
-            ["modifiers"] = string.Join(" ", eventDecl.Modifiers.Select(m => m.Text)),
-            ["addAccessor"] = addAccessor != null
+            ["extEventAdd"] = addAccessor != null
         ? (addAccessor.Body != null ? ConvertBlock(addAccessor.Body) : (addAccessor.ExpressionBody != null ? ConvertExpression(addAccessor.ExpressionBody.Expression) : JValue.CreateNull()))
         : JValue.CreateNull(),
-            ["removeAccessor"] = removeAccessor != null
+            ["extEventRemove"] = removeAccessor != null
         ? (removeAccessor.Body != null ? ConvertBlock(removeAccessor.Body) : (removeAccessor.ExpressionBody != null ? ConvertExpression(removeAccessor.ExpressionBody.Expression) : JValue.CreateNull()))
         : JValue.CreateNull()
         };

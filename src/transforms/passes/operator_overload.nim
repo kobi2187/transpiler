@@ -104,6 +104,26 @@ proc buildOperatorNode*(k: XLangNodeKind, src: XLangNode, opSymbol: string): XLa
 proc transformOperatorOverload*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Normalize operator overload definitions to Nim syntax
   case node.kind
+  of xnkExternal_Operator:
+    # C# operator overload → Nim proc with operator name
+    # C#: public static Type operator+(Type a, Type b) { }
+    # Nim: proc `+`(a, b: Type): Type =
+
+    # Determine body - use empty block for abstract/interface declarations
+    let actualBody = if node.extOperatorBody.isNone:
+      XLangNode(kind: xnkBlockStmt, blockBody: @[])
+    else:
+      node.extOperatorBody.get
+
+    result = XLangNode(
+      kind: xnkFuncDecl,
+      funcName: "`" & node.extOperatorSymbol & "`",
+      params: node.extOperatorParams,
+      returnType: some(node.extOperatorReturnType),
+      body: actualBody,
+      isAsync: false
+    )
+
   of xnkFuncDecl, xnkMethodDecl:
     # Check if this is an operator overload
     if not isOperatorOverload(node.funcName):

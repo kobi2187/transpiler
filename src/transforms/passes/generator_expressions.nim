@@ -28,21 +28,21 @@ proc genGeneratorName(): string =
 
 proc buildGeneratorIterator(node: XLangNode): XLangNode =
   ## Convert generator expression to iterator
-  ## node is xnkGeneratorExpr with genExpr, genFor, genIf
+  ## node is xnkExternal_Generator with extGenExpr, extGenFor, extGenIf
 
   let iterName = genGeneratorName()
 
   # Build body with nested for loops and if filters
   var body: XLangNode = XLangNode(
     kind: xnkIteratorYield,
-    iteratorYieldValue: some(node.genExpr)
+    iteratorYieldValue: some(node.extGenExpr)
   )
 
   # Wrap in if filters (innermost first)
-  for i in countdown(node.genIf.len - 1, 0):
+  for i in countdown(node.extGenIf.len - 1, 0):
     body = XLangNode(
       kind: xnkIfStmt,
-      ifCondition: node.genIf[i],
+      ifCondition: node.extGenIf[i],
       ifBody: XLangNode(
         kind: xnkBlockStmt,
         blockBody: @[body]
@@ -51,8 +51,8 @@ proc buildGeneratorIterator(node: XLangNode): XLangNode =
     )
 
   # Wrap in for loops (outermost last)
-  for i in countdown(node.genFor.len - 1, 0):
-    let forClause = node.genFor[i]  # xnkCompFor node
+  for i in countdown(node.extGenFor.len - 1, 0):
+    let forClause = node.extGenFor[i]  # xnkCompFor node
     assert forClause.kind == xnkCompFor
 
     # Create loop variable(s)
@@ -93,7 +93,7 @@ proc buildGeneratorIterator(node: XLangNode): XLangNode =
 proc transformGeneratorExpressionsHelper(node: XLangNode, hoistedIterators: var seq[XLangNode]): XLangNode =
   ## Transform generator expressions, collecting hoisted iterators
   case node.kind
-  of xnkGeneratorExpr:
+  of xnkExternal_Generator:
     # Convert to iterator and hoist
     let iterNode = buildGeneratorIterator(node)
     hoistedIterators.add(iterNode)

@@ -17,12 +17,21 @@ import helpers
 
 
 type
+  PassManagerResult* = object
+    ## Result of running the pass manager
+    success*: bool
+    iterations*: int
+    loopWarning*: bool
+    loopKinds*: seq[XLangNodeKind]
+    maxIterationsReached*: bool
+
   PassManager2* = ref object
     ## Simplified pass manager using fixed-point iteration
     kindToTransform*: Table[XLangNodeKind, TransformPass]
     activeKinds*: HashSet[XLangNodeKind]
     maxIterations*: int
     errorCollector*: ErrorCollector
+    result*: PassManagerResult
 
 proc newPassManager2*(maxIterations: int = 10000,
                       errorCollector: ErrorCollector = nil): PassManager2 =
@@ -31,7 +40,8 @@ proc newPassManager2*(maxIterations: int = 10000,
     kindToTransform: initTable[XLangNodeKind, TransformPass](), # 1:1 mapping
     activeKinds: initHashSet[XLangNodeKind](),
     maxIterations: maxIterations,
-    errorCollector: if errorCollector != nil: errorCollector else: newErrorCollector()
+    errorCollector: if errorCollector != nil: errorCollector else: newErrorCollector(),
+    result: PassManagerResult(success: true, iterations: 0, loopWarning: false, loopKinds: @[], maxIterationsReached: false)
   )
 
 # [v]
@@ -53,7 +63,6 @@ proc applyTransform*(pm: PassManager2, node: var XLangNode,
 
   let transform = pm.kindToTransform.getOrDefault(kind, nil)
   if transform != nil:
-    echo "Applying transform ", transform.id, " to ", node.kind
     node = transform.transform(node)
     counter.inc()
 
@@ -61,6 +70,10 @@ proc run*(pm: PassManager2, root: var XLangNode): XLangNode =
   ## Run the pass manager on the given AST until fixed point is reached
   var counter = 1  # Initialize to 1 to enter the loop
   var iterations = 0
+  const loopWarningThreshold = 20
+
+  # Reset result
+  pm.result = PassManagerResult(success: true, iterations: 0, loopWarning: false, loopKinds: @[], maxIterationsReached: false)
 
   while counter > 0 and iterations < pm.maxIterations:
     counter = 0
@@ -76,24 +89,28 @@ proc run*(pm: PassManager2, root: var XLangNode): XLangNode =
     let unusedKinds = pm.activeKinds - treeKinds
 
     if applicableKinds.len == 0:
-      echo "PassManager2: No applicable transforms in iteration ", iterations
       break
 
-    echo "PassManager2: Iteration ", iterations, " - applicable: ", applicableKinds.len,
-         ", unused: ", unusedKinds.len, " kinds"
+    # Detect potential infinite loop after threshold iterations
+    if iterations == loopWarningThreshold and applicableKinds.len > 0:
+      pm.result.loopWarning = true
+      for kind in applicableKinds:
+        pm.result.loopKinds.add(kind)
 
     # Traverse entire tree and apply only applicable transforms
     traverseTree(root, proc(node: var XLangNode) =
       applyTransform(pm, node, counter, applicableKinds))
 
     if iterations >= pm.maxIterations:
+      pm.result.maxIterationsReached = true
+      pm.result.success = false
       pm.errorCollector.addError(tekTransformLimitReachedError,
         "PassManager2: Max iterations reached")
       break
 
     if counter == 0:
-      echo "PassManager2: Fixed point reached after ", iterations, " iterations"
       break
 
+  pm.result.iterations = iterations
   result = root
 

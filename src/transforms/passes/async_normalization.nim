@@ -23,12 +23,14 @@ proc transformAsyncNormalization*(node: XLangNode): XLangNode {.noSideEffect, gc
     else:
       result = node
 
-  of xnkAwaitExpr:
+  of xnkExternal_Await:
     # await expr → Nim's await expr
+    # Convert from external await to common await expression
     # Nim's await is a template that works with Future[T]
-    # No transformation needed, just pass through
-    # The XLang → Nim converter will emit: await awaitExpr
-    result = node
+    result = XLangNode(
+      kind: xnkAwaitExpr,
+      awaitExpr: node.extAwaitExpr
+    )
 
   of xnkIteratorYield, xnkYieldStmt:
     # Python's yield in async context → Nim's yield

@@ -17,7 +17,7 @@ import strutils
 
 proc transformWithToDefer*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform with statements to defer pattern
-  if node.kind != xnkWithStmt:
+  if node.kind != xnkExternal_With:
     return node
 
   # Python's with statement:
@@ -32,7 +32,7 @@ proc transformWithToDefer*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} 
   var stmts: seq[XLangNode] = @[]
 
   # Process each with item (Python allows: with a as x, b as y:)
-  for item in node.items:
+  for item in node.extWithItems:
     let contextExpr = item.contextExpr
 
     if item.asExpr.isSome:
@@ -101,11 +101,11 @@ proc transformWithToDefer*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} 
 
   # 3. Add the body statements
   # If body is a block, unwrap its statements
-  if node.withBody.kind == xnkBlockStmt:
-    for stmt in node.withBody.blockBody:
+  if node.extWithBody.kind == xnkBlockStmt:
+    for stmt in node.extWithBody.blockBody:
       stmts.add(stmt)
   else:
-    stmts.add(node.withBody)
+    stmts.add(node.extWithBody)
 
   # Wrap everything in a block
   result = XLangNode(

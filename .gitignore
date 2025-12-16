@@ -1,3 +1,10 @@
+
+# Ignore all files with no extension that are executable
+*
+!*.*
+!*/
+**/bin/*
+
 # Nim build artifacts
 nimcache/
 *.exe
@@ -13,6 +20,8 @@ nimcache/
 *.deps.json
 *.runtimeconfig.json
 
+
+*.json
 # Compiled binaries
 transpile
 src/xlang/xlang_to_nim
@@ -22,9 +31,17 @@ src/parsers/*/*.exe
 src/parsers/*/*_json_to_xlang
 !src/parsers/*/*_json_to_xlang.nim
 
+
 # Output
 output/
 *.bak
+icu4_n/
+
+*.txt
+*.md
+test*
+
+
 
 # IDE
 .vscode/

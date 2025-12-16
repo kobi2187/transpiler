@@ -22,7 +22,7 @@ proc convertIndexerDecl(node: XLangNode): seq[XLangNode] =
   result = @[]
 
   # Create getter proc: proc `[]`(self: T, params...): ReturnType
-  if node.indexerGetter.isSome():
+  if node.extIndexerGetter.isSome():
     let getter = XLangNode(kind: xnkFuncDecl)
     getter.funcName = "[]"  # Will be backtick-quoted in xlangtonim
     getter.params = @[]
@@ -40,17 +40,17 @@ proc convertIndexerDecl(node: XLangNode): seq[XLangNode] =
     getter.params.add(selfParam)
 
     # Add index parameters
-    for param in node.indexerParams:
+    for param in node.extIndexerParams:
       getter.params.add(param)
 
-    getter.returnType = some(node.indexerType)
-    getter.body = node.indexerGetter.get
+    getter.returnType = some(node.extIndexerType)
+    getter.body = node.extIndexerGetter.get
     getter.isAsync = false
 
     result.add(getter)
 
   # Create setter proc: proc `[]=`(self: var T, params..., value: ReturnType)
-  if node.indexerSetter.isSome():
+  if node.extIndexerSetter.isSome():
     let setter = XLangNode(kind: xnkFuncDecl)
     setter.funcName = "[]="
     setter.params = @[]
@@ -71,27 +71,27 @@ proc convertIndexerDecl(node: XLangNode): seq[XLangNode] =
     setter.params.add(selfParam)
 
     # Add index parameters
-    for param in node.indexerParams:
+    for param in node.extIndexerParams:
       setter.params.add(param)
 
     # Add value parameter
     let valueParam = XLangNode(
       kind: xnkParameter,
       paramName: "value",
-      paramType: some(node.indexerType),
+      paramType: some(node.extIndexerType),
       defaultValue: none(XLangNode)
     )
     setter.params.add(valueParam)
 
     setter.returnType = none(XLangNode)  # void
-    setter.body = node.indexerSetter.get
+    setter.body = node.extIndexerSetter.get
     setter.isAsync = false
 
     result.add(setter)
 
 proc transformIndexerHelper(node: XLangNode): seq[XLangNode] =
   ## Transform a node, potentially splitting indexers into multiple procs
-  if node.kind == xnkIndexerDecl:
+  if node.kind == xnkExternal_Indexer:
     return convertIndexerDecl(node)
   else:
     return @[node]
@@ -110,13 +110,15 @@ proc transformIndexerToProcs*(node: XLangNode): XLangNode =
     result = node
     result.members = newMembers
 
-  of xnkIndexerDecl:
-    # Standalone indexer (shouldn't happen, but handle it)
+  of xnkExternal_Indexer:
+    # Standalone indexer (abstract/interface member with no body)
     let procs = convertIndexerDecl(node)
     if procs.len > 0:
       result = procs[0]  # Return first proc
     else:
-      result = node
+      # No getter or setter - this is an abstract indexer declaration
+      # Convert to empty statement to remove it
+      result = XLangNode(kind: xnkEmptyStmt)
 
   else:
     result = node

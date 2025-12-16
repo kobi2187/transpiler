@@ -1,210 +1,142 @@
-import macros
+## Unit tests for transformation passes
+## Tests that each transform correctly eliminates its external kind
+
+import std/json
+import std/tables
+import std/strutils
+import jsontoxlangtypes
 import xlangtypes
-import src/transforms/pass_manager
+import src/transforms/helpers
+import src/transforms/pass_manager2
 import src/transforms/nim_passes
-import src/transforms/for_to_while
-import src/transforms/dowhile_to_while
-import src/transforms/ternary_to_if
-import xlangtonim_complete
-import options
+import src/transforms/types
+import sets
 
-## Test Transformation Passes
-## Validates that XLang transformations work correctly
-
-proc testForToWhile() =
-  echo "=== Test 1: C-Style For → While ==="
-  echo ""
-
-  # Create: for (i = 0; i < 10; i++) { echo i }
-  let forLoop = XLangNode(
-    kind: xnkForStmt,
-    forInit: some(XLangNode(
-      kind: xnkVarDecl,
-      varName: "i",
-      varValue: some(XLangNode(kind: xnkIntLit, literalValue: "0"))
-    )),
-    forCondition: some(XLangNode(
-      kind: xnkBinaryExpr,
-      binaryOp: "<",
-      binaryLeft: XLangNode(kind: xnkIdentifier, identName: "i"),
-      binaryRight: XLangNode(kind: xnkIntLit, literalValue: "10")
-    )),
-    forUpdate: some(XLangNode(
-      kind: xnkCallExpr,
-      callFunc: XLangNode(kind: xnkIdentifier, identName: "inc"),
-      callArgs: @[XLangNode(kind: xnkIdentifier, identName: "i")]
-    )),
-    forBody: XLangNode(
-      kind: xnkBlockStmt,
-      blockBody: @[
-        XLangNode(
-          kind: xnkCallExpr,
-          callFunc: XLangNode(kind: xnkIdentifier, identName: "echo"),
-          callArgs: @[XLangNode(kind: xnkIdentifier, identName: "i")]
-        )
+# Test samples for each external kind
+const testSamples = {
+  "xnkExternal_Property": """{
+    "kind": "xnkExternal_Property",
+    "extPropName": "Age",
+    "extPropType": {"kind": "xnkNamedType", "typeName": "int"},
+    "extPropGetter": {
+      "kind": "xnkBlockStmt",
+      "blockBody": [
+        {"kind": "xnkReturnStmt", "returnExpr": {"kind": "xnkIdentifier", "identName": "age"}}
       ]
-    )
-  )
+    }
+  }""",
 
-  echo "Original XLang: for (i = 0; i < 10; i++) {...}"
-  let transformed = transformForToWhile(forLoop)
-  echo "Transformed to: ", transformed.kind
+  "xnkExternal_ForStmt": """{
+    "kind": "xnkExternal_ForStmt",
+    "extForInit": {"kind": "xnkVarDecl", "declName": "i", "declType": {"kind": "xnkNamedType", "typeName": "int"}, "initializer": {"kind": "xnkIntLit", "literalValue": "0"}},
+    "extForCond": {"kind": "xnkBinaryExpr", "binaryOp": "<", "binaryLeft": {"kind": "xnkIdentifier", "identName": "i"}, "binaryRight": {"kind": "xnkIntLit", "literalValue": "10"}},
+    "extForIncrement": {"kind": "xnkAsgn", "asgnLeft": {"kind": "xnkIdentifier", "identName": "i"}, "asgnRight": {"kind": "xnkBinaryExpr", "binaryOp": "+", "binaryLeft": {"kind": "xnkIdentifier", "identName": "i"}, "binaryRight": {"kind": "xnkIntLit", "literalValue": "1"}}},
+    "extForBody": {"kind": "xnkBlockStmt", "blockBody": []}
+  }""",
 
-  # Convert to Nim AST to see the result
-  let nimAst = convertXLangToNim(transformed)
-  echo "Nim code:"
-  echo nimAst.repr
-  echo ""
+  "xnkExternal_DoWhile": """{
+    "kind": "xnkExternal_DoWhile",
+    "extDoWhileCondition": {"kind": "xnkBinaryExpr", "binaryOp": "<", "binaryLeft": {"kind": "xnkIdentifier", "identName": "x"}, "binaryRight": {"kind": "xnkIntLit", "literalValue": "10"}},
+    "extDoWhileBody": {"kind": "xnkBlockStmt", "blockBody": [
+      {"kind": "xnkAsgn", "asgnLeft": {"kind": "xnkIdentifier", "identName": "x"}, "asgnRight": {"kind": "xnkBinaryExpr", "binaryOp": "+", "binaryLeft": {"kind": "xnkIdentifier", "identName": "x"}, "binaryRight": {"kind": "xnkIntLit", "literalValue": "1"}}}
+    ]}
+  }""",
 
-proc testDoWhileToWhile() =
-  echo "=== Test 2: Do-While → While ==="
-  echo ""
+  "xnkExternal_Ternary": """{
+    "kind": "xnkExternal_Ternary",
+    "extTernaryCondition": {"kind": "xnkBinaryExpr", "binaryOp": ">", "binaryLeft": {"kind": "xnkIdentifier", "identName": "x"}, "binaryRight": {"kind": "xnkIntLit", "literalValue": "0"}},
+    "extTernaryThen": {"kind": "xnkStringLit", "literalValue": "positive"},
+    "extTernaryElse": {"kind": "xnkStringLit", "literalValue": "negative"}
+  }""",
 
-  # Create: do { echo i; inc i } while (i < 10)
-  let doWhile = XLangNode(
-    kind: xnkDoWhileStmt,
-    doWhileCondition: XLangNode(
-      kind: xnkBinaryExpr,
-      binaryOp: "<",
-      binaryLeft: XLangNode(kind: xnkIdentifier, identName: "i"),
-      binaryRight: XLangNode(kind: xnkIntLit, literalValue: "10")
-    ),
-    doWhileBody: XLangNode(
-      kind: xnkBlockStmt,
-      blockBody: @[
-        XLangNode(
-          kind: xnkCallExpr,
-          callFunc: XLangNode(kind: xnkIdentifier, identName: "echo"),
-          callArgs: @[XLangNode(kind: xnkIdentifier, identName: "i")]
-        ),
-        XLangNode(
-          kind: xnkCallExpr,
-          callFunc: XLangNode(kind: xnkIdentifier, identName: "inc"),
-          callArgs: @[XLangNode(kind: xnkIdentifier, identName: "i")]
-        )
-      ]
-    )
-  )
+  "xnkExternal_StringInterp": """{
+    "kind": "xnkExternal_StringInterp",
+    "extInterpParts": [
+      {"kind": "xnkStringLit", "literalValue": "Hello "},
+      {"kind": "xnkIdentifier", "identName": "name"},
+      {"kind": "xnkStringLit", "literalValue": "!"}
+    ],
+    "extInterpIsExpr": [false, true, false]
+  }"""
+}
 
-  echo "Original XLang: do {...} while (i < 10)"
-  let transformed = transformDoWhileToWhile(doWhile)
-  echo "Transformed to: ", transformed.kind
+proc testTransform(kindName: string, jsonSample: string, passId: TransformPassID): bool =
+  ## Test a single transform
+  ## Returns true if the external kind was successfully eliminated
+  echo "\n=== Testing ", passId, " on ", kindName, " ==="
 
-  let nimAst = convertXLangToNim(transformed)
-  echo "Nim code:"
-  echo nimAst.repr
-  echo ""
+  # Parse JSON to XLang
+  var node = jsonSample.parseJson().to(XLangNode)
+  echo "  Input kind: ", node.kind
 
-proc testTernaryToIf() =
-  echo "=== Test 3: Ternary → If Expression ==="
-  echo ""
+  # Collect kinds before transform
+  let kindsBefore = collectAllKinds(node)
+  echo "  Kinds before: ", kindsBefore
 
-  # Create: x > 5 ? "big" : "small"
-  let ternary = XLangNode(
-    kind: xnkTernaryExpr,
-    ternaryCondition: XLangNode(
-      kind: xnkBinaryExpr,
-      binaryOp: ">",
-      binaryLeft: XLangNode(kind: xnkIdentifier, identName: "x"),
-      binaryRight: XLangNode(kind: xnkIntLit, literalValue: "5")
-    ),
-    ternaryThen: XLangNode(kind: xnkStringLit, literalValue: "big"),
-    ternaryElse: XLangNode(kind: xnkStringLit, literalValue: "small")
-  )
+  # Apply transform directly
+  let registry = buildNimPassRegistry()
+  if not registry.hasKey(passId):
+    echo "  ❌ ERROR: Transform ", passId, " not found in registry"
+    return false
+  let transform = registry.getOrDefault(passId)
+  node = transform.transform(node)
 
-  echo "Original XLang: x > 5 ? \"big\" : \"small\""
-  let transformed = transformTernaryToIf(ternary)
-  echo "Transformed to: ", transformed.kind
+  echo "  Output kind: ", node.kind
 
-  let nimAst = convertXLangToNim(transformed)
-  echo "Nim code:"
-  echo nimAst.repr
-  echo ""
+  # Collect kinds after transform
+  let kindsAfter = collectAllKinds(node)
+  echo "  Kinds after: ", kindsAfter
 
-proc testPassManager() =
-  echo "=== Test 4: Pass Manager with Multiple Passes ==="
-  echo ""
+  # Check if external kind was eliminated
+  let externalKind = parseEnum[XLangNodeKind](kindName)
+  if externalKind in kindsAfter:
+    echo "  ❌ FAILED: External kind ", kindName, " still present after transform!"
+    return false
+  else:
+    echo "  ✓ PASSED: External kind ", kindName, " was eliminated"
+    return true
 
-  # Create a pass manager for Nim
-  let pm = createNimPassManager()
+proc main() =
+  echo "Running transformation pass tests..."
+  echo "===================================="
 
-  echo "Registered passes:"
-  for passDesc in pm.listPasses():
-    echo "  ", passDesc
+  var passed = 0
+  var failed = 0
 
-  let stats = pm.getStats()
-  echo ""
-  echo "Total passes: ", stats.total
-  echo "Enabled: ", stats.enabled
-  echo "Disabled: ", stats.disabled
-  echo ""
+  # Test each transform
+  if testTransform("xnkExternal_Property", testSamples[0][1], tpPropertyToProcs):
+    passed.inc()
+  else:
+    failed.inc()
 
-  # Create AST with multiple constructs that need transformation
-  # for (i = 0; i < 10; i++) { result = i > 5 ? "big" : "small" }
-  let complexAst = XLangNode(
-    kind: xnkForStmt,
-    forInit: some(XLangNode(
-      kind: xnkVarDecl,
-      varName: "i",
-      varValue: some(XLangNode(kind: xnkIntLit, literalValue: "0"))
-    )),
-    forCondition: some(XLangNode(
-      kind: xnkBinaryExpr,
-      binaryOp: "<",
-      binaryLeft: XLangNode(kind: xnkIdentifier, identName: "i"),
-      binaryRight: XLangNode(kind: xnkIntLit, literalValue: "10")
-    )),
-    forUpdate: some(XLangNode(
-      kind: xnkCallExpr,
-      callFunc: XLangNode(kind: xnkIdentifier, identName: "inc"),
-      callArgs: @[XLangNode(kind: xnkIdentifier, identName: "i")]
-    )),
-    forBody: XLangNode(
-      kind: xnkBlockStmt,
-      blockBody: @[
-        XLangNode(
-          kind: xnkBinaryExpr,
-          binaryOp: "=",
-          binaryLeft: XLangNode(kind: xnkIdentifier, identName: "result"),
-          binaryRight: XLangNode(
-            kind: xnkTernaryExpr,
-            ternaryCondition: XLangNode(
-              kind: xnkBinaryExpr,
-              binaryOp: ">",
-              binaryLeft: XLangNode(kind: xnkIdentifier, identName: "i"),
-              binaryRight: XLangNode(kind: xnkIntLit, literalValue: "5")
-            ),
-            ternaryThen: XLangNode(kind: xnkStringLit, literalValue: "big"),
-            ternaryElse: XLangNode(kind: xnkStringLit, literalValue: "small")
-          )
-        )
-      ]
-    )
-  )
+  if testTransform("xnkExternal_ForStmt", testSamples[1][1], tpForToWhile):
+    passed.inc()
+  else:
+    failed.inc()
 
-  echo "Original: for loop with ternary expression inside"
-  echo "Running all transformation passes..."
+  if testTransform("xnkExternal_DoWhile", testSamples[2][1], tpDoWhileToWhile):
+    passed.inc()
+  else:
+    failed.inc()
 
-  let transformed = pm.runPasses(complexAst)
-  echo "Transformation complete!"
-  echo ""
+  if testTransform("xnkExternal_Ternary", testSamples[3][1], tpTernaryToIf):
+    passed.inc()
+  else:
+    failed.inc()
 
-  let nimAst = convertXLangToNim(transformed)
-  echo "Final Nim code:"
-  echo nimAst.repr
-  echo ""
+  if testTransform("xnkExternal_StringInterp", testSamples[4][1], tpStringInterpolation):
+    passed.inc()
+  else:
+    failed.inc()
+
+  echo "\n===================================="
+  echo "Test Results:"
+  echo "  Passed: ", passed
+  echo "  Failed: ", failed
+  echo "  Total:  ", passed + failed
+
+  if failed > 0:
+    quit(1)
 
 when isMainModule:
-  echo "╔════════════════════════════════════════════════════════╗"
-  echo "║           XLang Transformation Pass Tests            ║"
-  echo "╚════════════════════════════════════════════════════════╝"
-  echo ""
-
-  testForToWhile()
-  testDoWhileToWhile()
-  testTernaryToIf()
-  testPassManager()
-
-  echo "╔════════════════════════════════════════════════════════╗"
-  echo "║          All Transformation Tests Complete            ║"
-  echo "╚════════════════════════════════════════════════════════╝"
+  main()

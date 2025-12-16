@@ -10,31 +10,33 @@ import options
 proc transformPropertyHelper(node: XLangNode): XLangNode =
   ## Transform a single property node
   case node.kind
-  of xnkPropertyDecl:
+  of xnkExternal_Property:
     let prop = node
     var procs: seq[XLangNode] = @[]
 
     # Create getter proc
-    if prop.getter != none(XLangNode):
+    if prop.extPropGetter.isSome():
       let getter = XLangNode(
         kind: xnkFuncDecl,
-        funcName: node.propName,
+        funcName: prop.extPropName,
         params: @[],  # No parameters for getter
-        returnType: node.propType,
-        body: prop.getter.get
+        returnType: prop.extPropType,
+        body: prop.extPropGetter.get,
+        isAsync: false
       )
       procs.add(getter)
 
     # Create setter proc
-    if prop.setter != none(XLangNode):
+    if prop.extPropSetter.isSome():
       # Nim uses `Name=` for setter procs
-      let setterName = "`" & node.propName & "=`"
+      let setterName = "`" & prop.extPropName & "=`"
 
       # Setter takes a value parameter
       let valueParam = XLangNode(
         kind: xnkParameter,
         paramName: "value",
-        paramType: prop.propType
+        paramType: prop.extPropType,
+        defaultValue: none(XLangNode)
       )
 
       let setter = XLangNode(
@@ -42,7 +44,8 @@ proc transformPropertyHelper(node: XLangNode): XLangNode =
         funcName: setterName,
         params: @[valueParam],
         returnType: none(XLangNode),  # Setters return void
-        body: prop.setter.get
+        body: prop.extPropSetter.get,
+        isAsync: false
       )
       procs.add(setter)
 
@@ -50,11 +53,11 @@ proc transformPropertyHelper(node: XLangNode): XLangNode =
     # If only one, return just that proc
     # If neither, convert to a simple field
     if procs.len == 0:
-      # No getter/setter - convert to field declaration
+      # No getter/setter - convert to field declaration (auto-property)
       result = XLangNode(
         kind: xnkFieldDecl,
-        fieldName: prop.propName,
-        fieldType: if prop.propType.isSome(): prop.propType.get() else: XLangNode(kind: xnkNamedType, typeName: "auto"),
+        fieldName: prop.extPropName,
+        fieldType: if prop.extPropType.isSome(): prop.extPropType.get else: XLangNode(kind: xnkNamedType, typeName: "auto"),
         fieldInitializer: none(XLangNode)
       )
     elif procs.len == 1:
@@ -80,7 +83,7 @@ proc transformPropertyToProcs*(node: XLangNode): XLangNode {.noSideEffect, gcsaf
     result = node
     result.members = newMembers
 
-  of xnkPropertyDecl:
+  of xnkExternal_Property:
     # Standalone property (shouldn't happen usually, but handle it)
     result = transformPropertyHelper(node)
 

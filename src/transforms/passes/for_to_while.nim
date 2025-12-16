@@ -9,7 +9,7 @@ import options
 proc transformForToWhile*(node: XLangNode): XLangNode =
   ## Transform C-style for loops into while loops
   ## This is needed because Nim doesn't have C-style for loops
-  if node.kind != xnkForStmt:
+  if node.kind != xnkExternal_ForStmt:
     return node
 
   # C-style for has: init, condition, update, body
@@ -18,26 +18,26 @@ proc transformForToWhile*(node: XLangNode): XLangNode =
   var stmts: seq[XLangNode] = @[]
 
   # Add initialization statement if present
-  if node.forInit.isSome:
-    stmts.add(node.forInit.get)
+  if node.extForInit.isSome:
+    stmts.add(node.extForInit.get)
 
   # Create while loop body and append update increment if present
   var bodyStmts: seq[XLangNode] = @[]
-  if node.forBody.isSome:
-    if node.forBody.get.kind == xnkBlockStmt:
-      bodyStmts = node.forBody.get.blockBody
+  if node.extForBody.isSome:
+    if node.extForBody.get.kind == xnkBlockStmt:
+      bodyStmts = node.extForBody.get.blockBody
     else:
-      bodyStmts.add(node.forBody.get)
-  # forIncrement holds the update expression in our types
-  if node.forIncrement.isSome:
-    bodyStmts.add(node.forIncrement.get)
+      bodyStmts.add(node.extForBody.get)
+  # extForIncrement holds the update expression in our types
+  if node.extForIncrement.isSome:
+    bodyStmts.add(node.extForIncrement.get)
 
   let whileBody = XLangNode(kind: xnkBlockStmt, blockBody: bodyStmts)
 
   let whileLoop = XLangNode(
     kind: xnkWhileStmt,
-    whileCondition: if node.forCond.isSome:
-                      node.forCond.get
+    whileCondition: if node.extForCond.isSome:
+                      node.extForCond.get
                     else:
                       # No condition means infinite loop
                       XLangNode(kind: xnkBoolLit, boolValue: true),

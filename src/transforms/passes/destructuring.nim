@@ -14,64 +14,62 @@ import strutils
 proc transformDestructuring*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform destructuring assignments into explicit assignments
   case node.kind
-  of xnkDestructureObj:
-    # {name, age} = person
-    # Transform to:
-    # let name = person.name
-    # let age = person.age
-
-    var declarations: seq[XLangNode] = @[]
-    for field in node.destructObjFields:
-      declarations.add(XLangNode(
-        kind: xnkLetDecl,
-        declName: field,
-        declType: none(XLangNode),
-        initializer: some(XLangNode(
-          kind: xnkMemberAccessExpr,
-          memberExpr: node.destructObjSource,
-          memberName: field
-        ))
-      ))
-
-    result = XLangNode(kind: xnkBlockStmt, blockBody: declarations)
-
-  of xnkDestructureArray:
-    # [first, second, ...rest] = array
-    # Transform to:
-    # let first = array[0]
-    # let second = array[1]
-    # let rest = array[2..^1]
-
+  of xnkExternal_Destructure:
+    # Unified external destructuring node
     var declarations: seq[XLangNode] = @[]
 
-    # Destructure indexed elements
-    for i, varName in node.destructArrayVars:
-      declarations.add(XLangNode(
-        kind: xnkLetDecl,
-        declName: varName,
-        declType: none(XLangNode),
-        initializer: some(XLangNode(
-          kind: xnkIndexExpr,
-          indexExpr: node.destructArraySource,
-          indexArgs: @[XLangNode(kind: xnkIntLit, literalValue: $i)]
+    if node.extDestructKind == "object":
+      # {name, age} = person
+      # Transform to:
+      # let name = person.name
+      # let age = person.age
+      for field in node.extDestructFields:
+        declarations.add(XLangNode(
+          kind: xnkLetDecl,
+          declName: field,
+          declType: none(XLangNode),
+          initializer: some(XLangNode(
+            kind: xnkMemberAccessExpr,
+            memberExpr: node.extDestructSource,
+            memberName: field
+          ))
         ))
-      ))
 
-    # Handle rest/spread operator if present
-    if node.destructArrayRest.isSome:
-      let startIdx = node.destructArrayVars.len
-      declarations.add(XLangNode(
-        kind: xnkLetDecl,
-        declName: node.destructArrayRest.get,
-        declType: none(XLangNode),
-        initializer: some(XLangNode(
-          kind: xnkSliceExpr,
-          sliceExpr: node.destructArraySource,
-          sliceStart: some(XLangNode(kind: xnkIntLit, literalValue: $startIdx)),
-          sliceEnd: none(XLangNode),  # To end of array (^1 in Nim)
-          sliceStep: none(XLangNode)
+    elif node.extDestructKind == "array":
+      # [first, second, ...rest] = array
+      # Transform to:
+      # let first = array[0]
+      # let second = array[1]
+      # let rest = array[2..^1]
+
+      # Destructure indexed elements
+      for i, varName in node.extDestructVars:
+        declarations.add(XLangNode(
+          kind: xnkLetDecl,
+          declName: varName,
+          declType: none(XLangNode),
+          initializer: some(XLangNode(
+            kind: xnkIndexExpr,
+            indexExpr: node.extDestructSource,
+            indexArgs: @[XLangNode(kind: xnkIntLit, literalValue: $i)]
+          ))
         ))
-      ))
+
+      # Handle rest/spread operator if present
+      if node.extDestructRest.isSome:
+        let startIdx = node.extDestructVars.len
+        declarations.add(XLangNode(
+          kind: xnkLetDecl,
+          declName: node.extDestructRest.get,
+          declType: none(XLangNode),
+          initializer: some(XLangNode(
+            kind: xnkSliceExpr,
+            sliceExpr: node.extDestructSource,
+            sliceStart: some(XLangNode(kind: xnkIntLit, literalValue: $startIdx)),
+            sliceEnd: none(XLangNode),  # To end of array (^1 in Nim)
+            sliceStep: none(XLangNode)
+          ))
+        ))
 
     result = XLangNode(kind: xnkBlockStmt, blockBody: declarations)
 

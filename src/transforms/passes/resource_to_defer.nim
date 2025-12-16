@@ -18,13 +18,13 @@ import options
 proc transformResourceToDefer*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform unified resource statements to defer pattern
 
-  if node.kind != xnkResourceStmt:
+  if node.kind != xnkExternal_Resource:
     return node
 
   var stmts: seq[XLangNode] = @[]
 
   # Process each resource item
-  for item in node.resourceItems:
+  for item in node.extResourceItems:
     let resourceExpr = item.resourceExpr
 
     # Determine variable name
@@ -79,11 +79,11 @@ proc transformResourceToDefer*(node: XLangNode): XLangNode {.noSideEffect, gcsaf
     ))
 
   # 3. Add body
-  if node.resourceBody.kind == xnkBlockStmt:
-    for stmt in node.resourceBody.blockBody:
+  if node.extResourceBody.kind == xnkBlockStmt:
+    for stmt in node.extResourceBody.blockBody:
       stmts.add(stmt)
   else:
-    stmts.add(node.resourceBody)
+    stmts.add(node.extResourceBody)
 
   # Wrap in block
   result = XLangNode(

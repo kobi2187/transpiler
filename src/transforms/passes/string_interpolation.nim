@@ -48,24 +48,24 @@ proc wrapWithStringify(node: XLangNode): XLangNode =
 proc transformStringInterpolationHelper(node: XLangNode): XLangNode =
   ## Helper that recursively transforms string interpolations in any expression context
   case node.kind
-  of xnkStringInterpolation:
+  of xnkExternal_StringInterp:
     # Strategy: Build concatenation chain with & operator
     # f"Hello {name}!" → "Hello " & name & "!"
     # f"Count: {n}" → "Count: " & $n  (auto-stringification)
 
-    if node.interpParts.len == 0:
+    if node.extInterpParts.len == 0:
       # Empty interpolation, return empty string
       return XLangNode(kind: xnkStringLit, literalValue: "")
 
-    if node.interpParts.len == 1 and not node.interpIsExpr[0]:
+    if node.extInterpParts.len == 1 and not node.extInterpIsExpr[0]:
       # Single string literal, no interpolation
-      return node.interpParts[0]
+      return node.extInterpParts[0]
 
     # Build concatenation chain, skipping empty strings and handling stringification
     var parts: seq[XLangNode] = @[]
 
-    for i, part in node.interpParts:
-      if node.interpIsExpr[i]:
+    for i, part in node.extInterpParts:
+      if node.extInterpIsExpr[i]:
         # Expression - recursively transform it and wrap with $ if needed
         let transformed = transformStringInterpolationHelper(part)
         parts.add(wrapWithStringify(transformed))

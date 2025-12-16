@@ -52,11 +52,11 @@ proc transformEventDeclaration*(node: XLangNode): XLangNode =
   ## C#: public event DelegateType EventName;
   ## Nim: var eventNameHandlers: seq[DelegateType] = @[]
 
-  if node.kind != xnkEventDecl:
+  if node.kind != xnkExternal_Event:
     return node
 
-  let eventName = node.eventName
-  let eventType = node.eventType
+  let eventName = node.extEventName
+  let eventType = node.extEventType
 
   # Create a seq variable to hold event handlers
   let handlerListName = eventName & "Handlers"
@@ -310,7 +310,7 @@ proc transformCSharpEvents*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.}
   of xnkDelegateDecl:
     return transformDelegate(node)
 
-  of xnkEventDecl:
+  of xnkExternal_Event:
     return transformEventDeclaration(node)
 
   of xnkBinaryExpr:

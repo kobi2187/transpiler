@@ -26,7 +26,7 @@ proc genUniqueName(prefix: string): string =
 
 proc transformListComprehension*(node: XLangNode): XLangNode {.gcsafe.} =
   ## Transform list comprehensions into for loops with collection
-  if node.kind != xnkComprehensionExpr:
+  if node.kind != xnkExternal_Comprehension:
     return node
 
   # [expr for var in iter if cond]
@@ -48,12 +48,12 @@ proc transformListComprehension*(node: XLangNode): XLangNode {.gcsafe.} =
       memberExpr: XLangNode(kind: xnkIdentifier, identName: resultVar),
       memberName: "add"
     ),
-    args: @[node.compExpr]
+    args: @[node.extCompExpr]
   )
 
   # Wrap in if statements for all conditions (from innermost out)
   var bodyStmt: XLangNode = addCall
-  for condition in node.compIf:
+  for condition in node.extCompIf:
     bodyStmt = XLangNode(
       kind: xnkIfStmt,
       ifCondition: condition,
@@ -64,8 +64,8 @@ proc transformListComprehension*(node: XLangNode): XLangNode {.gcsafe.} =
   # Build nested for loops (from innermost out)
   # Python allows: [x+y for x in a for y in b]
   # Process in reverse order so innermost is built first
-  for i in countdown(node.fors.len - 1, 0):
-    let forNode = node.fors[i]
+  for i in countdown(node.extCompFors.len - 1, 0):
+    let forNode = node.extCompFors[i]
     let (vars, iter) = (forNode.vars, forNode.iter)
 
     # For single variable: for x in iter

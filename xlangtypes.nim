@@ -28,31 +28,30 @@ type
 
     # Declarations
     xnkFuncDecl, xnkMethodDecl, xnkIteratorDecl, xnkClassDecl, xnkStructDecl, xnkInterfaceDecl
-    xnkEnumDecl, xnkVarDecl, xnkConstDecl, xnkTypeDecl, xnkPropertyDecl, xnkLetDecl
-    xnkFieldDecl, xnkConstructorDecl, xnkDestructorDecl, xnkDelegateDecl, xnkEventDecl,
+    xnkEnumDecl, xnkVarDecl, xnkConstDecl, xnkTypeDecl, xnkLetDecl
+    xnkFieldDecl, xnkConstructorDecl, xnkDestructorDecl, 
     xnkModuleDecl, xnkTypeAlias, xnkAbstractDecl, xnkEnumMember,
-    xnkIndexerDecl, xnkOperatorDecl, xnkConversionOperatorDecl,
+    
     xnkAbstractType, xnkFunctionType, xnkMetadata,
     # C FFI and external declarations
     xnkLibDecl, xnkCFuncDecl, xnkExternalVar
 
     # Statements
-    xnkAsgn, xnkBlockStmt, xnkIfStmt, xnkSwitchStmt, xnkCaseClause, xnkDefaultClause, xnkForStmt, xnkWhileStmt
+    xnkAsgn, xnkBlockStmt, xnkIfStmt, xnkSwitchStmt, xnkCaseClause, xnkDefaultClause, xnkWhileStmt
     xnkDoWhileStmt, xnkForeachStmt, xnkTryStmt, xnkCatchStmt, xnkFinallyStmt
     xnkReturnStmt, xnkIteratorYield, xnkIteratorDelegate, xnkBreakStmt, xnkContinueStmt
     # Legacy (deprecated - unified into iterator nodes):
     xnkYieldStmt, xnkYieldExpr, xnkYieldFromStmt
-    xnkThrowStmt, xnkAssertStmt, xnkWithStmt, xnkPassStmt, xnkTypeSwitchStmt,
-    xnkResourceStmt, xnkResourceItem,  # Unified resource management (with/using)
+    xnkThrowStmt, xnkAssertStmt, xnkPassStmt, xnkTypeSwitchStmt,
+    xnkResourceItem,  # Unified resource management (with/using)
     xnkDiscardStmt, xnkCaseStmt, xnkRaiseStmt, xnkImportStmt, xnkExportStmt, xnkFromImportStmt, xnkTypeCaseClause, xnkWithItem,
-    xnkEmptyStmt, xnkLabeledStmt, xnkGotoStmt, xnkFixedStmt, xnkLockStmt, xnkUnsafeStmt, xnkCheckedStmt, xnkLocalFunctionStmt,
-    xnkUnlessStmt, xnkUntilStmt, xnkStaticAssert, xnkSwitchCase, xnkMixinDecl, xnkTemplateDecl, xnkMacroDecl, xnkInclude, xnkExtend
+    xnkEmptyStmt, xnkLabeledStmt, xnkGotoStmt,  xnkUnlessStmt, xnkUntilStmt, xnkStaticAssert, xnkSwitchCase, xnkMixinDecl, xnkTemplateDecl, xnkMacroDecl, xnkInclude, xnkExtend
     # Expressions
-    xnkBinaryExpr, xnkUnaryExpr, xnkTernaryExpr, xnkCallExpr, xnkThisCall, xnkBaseCall, xnkIndexExpr,
-     xnkSliceExpr, xnkMemberAccessExpr, xnkSafeNavigationExpr, xnkNullCoalesceExpr,
+    xnkBinaryExpr, xnkUnaryExpr, xnkCallExpr, xnkThisCall, xnkBaseCall, xnkIndexExpr,
+     xnkSliceExpr, xnkMemberAccessExpr,
       xnkLambdaExpr, xnkTypeAssertion, xnkCastExpr, xnkThisExpr, xnkBaseExpr, xnkRefExpr, xnkInstanceVar, xnkClassVar, xnkGlobalVar, xnkProcLiteral, xnkProcPointer, xnkNumberLit, xnkSymbolLit, xnkDynamicType,
-      xnkGeneratorExpr, xnkAwaitExpr, xnkStringInterpolation, xnkDotExpr, xnkBracketExpr, xnkCompFor,
-      xnkDefaultExpr, xnkTypeOfExpr, xnkSizeOfExpr, xnkCheckedExpr, xnkThrowExpr, xnkSwitchExpr, xnkStackAllocExpr, xnkImplicitArrayCreation
+      xnkDotExpr, xnkBracketExpr, xnkCompFor,
+      xnkDefaultExpr, xnkTypeOfExpr, xnkSizeOfExpr, xnkCheckedExpr,   xnkImplicitArrayCreation
     # Literals
     xnkIntLit, xnkFloatLit, xnkStringLit, xnkCharLit, xnkBoolLit, xnkNoneLit, xnkNilLit
 
@@ -74,9 +73,74 @@ type
 
     xnkMethodReference
     # Collection literals (renamed for clarity and consistency):
-    xnkSequenceLiteral, xnkSetLiteral, xnkMapLiteral, xnkArrayLiteral, xnkTupleExpr, xnkComprehensionExpr, xnkDictEntry
+    xnkSequenceLiteral, xnkSetLiteral, xnkMapLiteral, xnkArrayLiteral, xnkTupleExpr,  xnkDictEntry
     # Legacy (deprecated - renamed to *Literal):
     xnkListExpr, xnkSetExpr, xnkDictExpr, xnkArrayLit
+
+    # ==========================================================================
+    # External/Source-Specific Kinds (xnkExternal_*)
+    # ==========================================================================
+    # These are language-specific constructs that have no direct equivalent in the
+    # target language and MUST be lowered by transformation passes. The pass manager
+    # tracks only these kinds for elimination during fixed-point iteration.
+    #
+    # Naming: xnkExternal_<FeatureName>
+    # After lowering, these should be replaced with common kinds.
+    # ==========================================================================
+
+    # C# specific declarations
+    xnkExternal_Property        # C# property with getter/setter → lowered to procs
+    xnkExternal_Indexer         # C# indexer this[...] → lowered to [] procs
+    xnkExternal_Event           # C# event with add/remove → lowered to procs
+    xnkExternal_Delegate        # C# delegate type → lowered to proc type
+    xnkExternal_Operator        # C# operator overload → lowered to proc
+    xnkExternal_ConversionOp    # C# implicit/explicit conversion → lowered to converter
+
+    # C# specific statements
+    xnkExternal_Resource        # C# using / Java try-with-resources → lowered to try/finally
+    xnkExternal_Fixed           # C# fixed statement → lowered to ptr operations
+    xnkExternal_Lock            # C# lock statement → lowered to acquire/release
+    xnkExternal_Unsafe          # C# unsafe block → lowered to {.emit.} or removed
+    xnkExternal_Checked         # C# checked/unchecked → lowered or removed
+
+    # C# specific expressions
+    xnkExternal_SafeNavigation  # C# ?. operator → lowered to if-nil checks
+    xnkExternal_NullCoalesce    # C# ?? operator → lowered to if-nil-else
+    xnkExternal_ThrowExpr       # C# throw expression → lowered to raise
+    xnkExternal_SwitchExpr      # C# switch expression → lowered to case expression
+    xnkExternal_StackAlloc      # C# stackalloc → lowered to alloca or seq
+    xnkExternal_StringInterp    # C# $"..." / Python f"..." → lowered to strformat
+
+    # Cross-language constructs needing lowering
+    xnkExternal_Ternary         # C-style ternary ?: → lowered to if expression
+    xnkExternal_DoWhile         # do-while loop → lowered to while with flag
+    xnkExternal_ForStmt         # C-style for(;;) → lowered to while
+    xnkExternal_Interface       # Interface declaration → lowered to concept (Nim)
+    xnkExternal_Generator       # Python generator expression → lowered to iterator
+    xnkExternal_Comprehension   # Python list/dict/set comprehension → lowered to collect
+    xnkExternal_With            # Python with statement → lowered to try/finally
+    xnkExternal_Destructure     # JS/Python destructuring → lowered to individual assigns
+    xnkExternal_Await           # async/await → lowered to Future handling
+    xnkExternal_LocalFunction   # C# local function → lowered to nested proc or closure
+
+    # C# extension methods
+    xnkExternal_ExtensionMethod # C# extension method → raised to regular func with self param
+
+    # Switch/case with fallthrough
+    xnkExternal_FallthroughCase # Case clause with fallthrough → lowered to if-chain or state machine
+
+    # Ruby-specific constructs
+    xnkExternal_Unless          # Ruby unless → lowered to if not
+    xnkExternal_Until           # Ruby until → lowered to while not
+
+    # Python-specific constructs
+    xnkExternal_Pass            # Python pass → lowered to discard
+
+    # Go-specific constructs
+    xnkExternal_Channel         # Go channel → lowered to channel library calls
+    xnkExternal_Goroutine       # Go goroutine (go stmt) → lowered to spawn/async
+    xnkExternal_GoDefer         # Go defer (different semantics from Nim defer)
+    xnkExternal_GoSelect        # Go select statement → lowered to channel multiplexing
 
 
 
@@ -124,11 +188,11 @@ type
     of xnkTypeDecl:
       typeDefName*: string
       typeDefBody*: XLangNode
-    of xnkPropertyDecl:
-      propName*: string
-      propType*: Option[XLangNode]
-      getter*: Option[XLangNode]
-      setter*: Option[XLangNode]
+    # of xnkPropertyDecl:
+    #   propName*: string
+    #   propType*: Option[XLangNode]
+    #   getter*: Option[XLangNode]
+    #   setter*: Option[XLangNode]
     of xnkFieldDecl:
       fieldName*: string
       fieldType*: XLangNode
@@ -138,16 +202,16 @@ type
       constructorInitializers*: seq[XLangNode]
       constructorBody*: XLangNode
     of xnkDestructorDecl:
-      destructorBody*: XLangNode
-    of xnkDelegateDecl:
-      delegateName*: string
-      delegateParams*: seq[XLangNode]
-      delegateReturnType*: Option[XLangNode]
-    of xnkEventDecl:
-      eventName*: string
-      eventType*: XLangNode
-      addAccessor*: Option[XLangNode]
-      removeAccessor*: Option[XLangNode]
+      destructorBody*: Option[XLangNode]
+    # of xnkDelegateDecl:
+    #   delegateName*: string
+    #   delegateParams*: seq[XLangNode]
+    #   delegateReturnType*: Option[XLangNode]
+    # of xnkEventDecl:
+      # eventName*: string
+      # eventType*: XLangNode
+      # addAccessor*: Option[XLangNode]
+      # removeAccessor*: Option[XLangNode]
     of xnkAsgn:
       asgnLeft*: XLangNode
       asgnRight*: XLangNode
@@ -166,11 +230,11 @@ type
       caseFallthrough*: bool             # For Go's fallthrough keyword
     of xnkDefaultClause:
       defaultBody*: XLangNode
-    of xnkForStmt:
-      forInit*: Option[XLangNode]
-      forCond*: Option[XLangNode]
-      forIncrement*: Option[XLangNode]
-      forBody*: Option[XLangNode]
+    # of xnkForStmt:
+    #   forInit*: Option[XLangNode]
+    #   forCond*: Option[XLangNode]
+    #   forIncrement*: Option[XLangNode]
+    #   forBody*: Option[XLangNode]
     of xnkWhileStmt, xnkDoWhileStmt:
       whileCondition*: XLangNode
       whileBody*: XLangNode
@@ -211,16 +275,16 @@ type
       assertCond*: XLangNode
       assertMsg*: Option[XLangNode]
     
-    of xnkWithStmt:
-      items*: seq[XLangNode]
-      withBody*: XLangNode
+    # of xnkWithStmt:
+    #   items*: seq[XLangNode]
+    #   withBody*: XLangNode
     of xnkWithItem:
       contextExpr*: XLangNode
       asExpr*: Option[XLangNode]
-    of xnkResourceStmt:
-      ## Unified resource management: Python 'with', C# 'using', Java 'try-with-resources'
-      resourceItems*: seq[XLangNode]  # xnkResourceItem nodes
-      resourceBody*: XLangNode
+    # of xnkResourceStmt:
+    #   ## Unified resource management: Python 'with', C# 'using', Java 'try-with-resources'
+    #   resourceItems*: seq[XLangNode]  # xnkResourceItem nodes
+    #   resourceBody*: XLangNode
     of xnkResourceItem:
       ## Individual resource in a resource statement
       resourceExpr*: XLangNode           # Expression that acquires resource
@@ -239,10 +303,10 @@ type
     of xnkUnaryExpr:
       unaryOp*: string
       unaryOperand*: XLangNode
-    of xnkTernaryExpr:
-      ternaryCondition*: XLangNode
-      ternaryThen*: XLangNode
-      ternaryElse*: XLangNode
+    # of xnkTernaryExpr:
+    #   ternaryCondition*: XLangNode
+    #   ternaryThen*: XLangNode
+    #   ternaryElse*: XLangNode
     of xnkCallExpr:
       callee*: XLangNode
       args*: seq[XLangNode]
@@ -260,12 +324,12 @@ type
     of xnkMemberAccessExpr:
       memberExpr*: XLangNode
       memberName*: string
-    of xnkSafeNavigationExpr:
-      safeNavObject*: XLangNode
-      safeNavMember*: string             # For user?.Name
-    of xnkNullCoalesceExpr:
-      nullCoalesceLeft*: XLangNode       # Left side of ??
-      nullCoalesceRight*: XLangNode      # Right side of ??
+    # of xnkSafeNavigationExpr:
+    #   safeNavObject*: XLangNode
+    #   safeNavMember*: string             # For user?.Name
+    # of xnkNullCoalesceExpr:
+    #   nullCoalesceLeft*: XLangNode       # Left side of ??
+    #   nullCoalesceRight*: XLangNode      # Right side of ??
     of xnkLambdaExpr:
       lambdaParams*: seq[XLangNode]
       lambdaReturnType*: Option[XLangNode]
@@ -304,23 +368,23 @@ type
     of xnkDictEntry:
       key*: XLangNode
       value*: XLangNode
-    of xnkComprehensionExpr:
-      compExpr*: XLangNode
-      fors*: seq[XLangNode]
-      compIf*: seq[XLangNode]
+    # of xnkComprehensionExpr:
+    #   compExpr*: XLangNode
+    #   fors*: seq[XLangNode]
+    #   compIf*: seq[XLangNode]
     of xnkCompFor:
       vars*: seq[XLangNode]
       iter*: XLangNode
-    of xnkGeneratorExpr:
-      genExpr*: XLangNode
-      genFor*: seq[XLangNode]  # Each should be xnkCompFor
-      genIf*: seq[XLangNode]
-    of xnkAwaitExpr:
-      awaitExpr*: XLangNode
+    # of xnkGeneratorExpr:
+    #   genExpr*: XLangNode
+    #   genFor*: seq[XLangNode]  # Each should be xnkCompFor
+    #   genIf*: seq[XLangNode]
+    # of xnkAwaitExpr:
+    #   awaitExpr*: XLangNode
     # xnkYieldExpr handled above grouped with xnkYieldStmt
-    of xnkStringInterpolation:
-      interpParts*: seq[XLangNode]       # Mix of string literals and expressions
-      interpIsExpr*: seq[bool]           # True if corresponding part is expression
+    # of xnkStringInterpolation:
+    #   interpParts*: seq[XLangNode]       # Mix of string literals and expressions
+    #   interpIsExpr*: seq[bool]           # True if corresponding part is expression
     of xnkIntLit, xnkFloatLit, xnkStringLit, xnkCharLit:
       literalValue*: string
     of xnkBoolLit:
@@ -519,21 +583,21 @@ type
     of xnkMetadata:
       metadataEntries*: seq[XLangNode]
     # New C# constructs
-    of xnkIndexerDecl:
-      indexerParams*: seq[XLangNode]
-      indexerType*: XLangNode
-      indexerGetter*: Option[XLangNode]
-      indexerSetter*: Option[XLangNode]
-    of xnkOperatorDecl:
-      operatorSymbol*: string
-      operatorParams*: seq[XLangNode]
-      operatorReturnType*: XLangNode
-      operatorBody*: XLangNode
-    of xnkConversionOperatorDecl:
-      conversionIsImplicit*: bool
-      conversionFromType*: XLangNode
-      conversionToType*: XLangNode
-      conversionBody*: XLangNode
+    # of xnkIndexerDecl:
+    #   indexerParams*: seq[XLangNode]
+    #   indexerType*: XLangNode
+    #   indexerGetter*: Option[XLangNode]
+    #   indexerSetter*: Option[XLangNode]
+    # of xnkOperatorDecl:
+    #   operatorSymbol*: string
+    #   operatorParams*: seq[XLangNode]
+    #   operatorReturnType*: XLangNode
+    #   operatorBody*: XLangNode
+    # of xnkConversionOperatorDecl:
+    #   conversionIsImplicit*: bool
+    #   conversionFromType*: XLangNode
+    #   conversionToType*: XLangNode
+    #   conversionBody*: XLangNode
     of xnkBaseExpr:
       discard  # Represents "base" keyword
     of xnkRefExpr:
@@ -547,14 +611,14 @@ type
     of xnkCheckedExpr:
       checkedExpr*: XLangNode
       isChecked*: bool
-    of xnkThrowExpr:
-      throwExprValue*: XLangNode
-    of xnkSwitchExpr:
-      switchExprValue*: XLangNode
-      switchExprArms*: seq[XLangNode]
-    of xnkStackAllocExpr:
-      stackAllocType*: XLangNode
-      stackAllocSize*: Option[XLangNode]
+    # of xnkThrowExpr:
+    #   throwExprValue*: XLangNode
+    # of xnkSwitchExpr:
+    #   switchExprValue*: XLangNode
+    #   switchExprArms*: seq[XLangNode]
+    # of xnkStackAllocExpr:
+    #   stackAllocType*: XLangNode
+    #   stackAllocSize*: Option[XLangNode]
     of xnkImplicitArrayCreation:
       implicitArrayElements*: seq[XLangNode]
     of xnkEmptyStmt:
@@ -564,22 +628,22 @@ type
       labeledStmt*: XLangNode
     of xnkGotoStmt:
       gotoLabel*: string
-    of xnkFixedStmt:
-      fixedDeclarations*: seq[XLangNode]
-      fixedBody*: XLangNode
-    of xnkLockStmt:
-      lockExpr*: XLangNode
-      lockBody*: XLangNode
-    of xnkUnsafeStmt:
-      unsafeBody*: XLangNode
-    of xnkCheckedStmt:
-      checkedBody*: XLangNode
-      checkedIsChecked*: bool
-    of xnkLocalFunctionStmt:
-      localFuncName*: string
-      localFuncParams*: seq[XLangNode]
-      localFuncReturnType*: Option[XLangNode]
-      localFuncBody*: XLangNode
+    # of xnkFixedStmt:
+    #   fixedDeclarations*: seq[XLangNode]
+    #   fixedBody*: XLangNode
+    # of xnkLockStmt:
+    #   lockExpr*: XLangNode
+    #   lockBody*: XLangNode
+    # of xnkUnsafeStmt:
+    #   unsafeBody*: XLangNode
+    # of xnkCheckedStmt:
+    #   checkedBody*: XLangNode
+    #   checkedIsChecked*: bool
+    # of xnkLocalFunctionStmt:
+    #   localFuncName*: string
+    #   localFuncParams*: seq[XLangNode]
+    #   localFuncReturnType*: Option[XLangNode]
+    #   localFuncBody*: XLangNode
     of xnkQualifiedName:
       qualifiedLeft*: XLangNode
       qualifiedRight*: string
@@ -589,6 +653,215 @@ type
     of xnkGenericName:
       genericNameIdentifier*: string
       genericNameArgs*: seq[XLangNode]
+
+    # ==========================================================================
+    # External/Source-Specific Kind Fields
+    # ==========================================================================
+    # These share the same field structure as their common counterparts.
+    # The external prefix indicates they must be lowered by transformation passes.
+
+    # C# Property → shares fields with xnkPropertyDecl
+    of xnkExternal_Property:
+      extPropName*: string
+      extPropType*: Option[XLangNode]
+      extPropGetter*: Option[XLangNode]
+      extPropSetter*: Option[XLangNode]
+
+    # C# Indexer → shares fields with xnkIndexerDecl
+    of xnkExternal_Indexer:
+      extIndexerParams*: seq[XLangNode]
+      extIndexerType*: XLangNode
+      extIndexerGetter*: Option[XLangNode]
+      extIndexerSetter*: Option[XLangNode]
+
+    # C# Event → shares fields with xnkEventDecl
+    of xnkExternal_Event:
+      extEventName*: string
+      extEventType*: XLangNode
+      extEventAdd*: Option[XLangNode]
+      extEventRemove*: Option[XLangNode]
+
+    # C# Delegate → shares fields with xnkDelegateDecl
+    of xnkExternal_Delegate:
+      extDelegateName*: string
+      extDelegateParams*: seq[XLangNode]
+      extDelegateReturnType*: Option[XLangNode]
+
+    # C# Operator → shares fields with xnkOperatorDecl
+    of xnkExternal_Operator:
+      extOperatorSymbol*: string
+      extOperatorParams*: seq[XLangNode]
+      extOperatorReturnType*: XLangNode
+      extOperatorBody*: Option[XLangNode]
+
+    # C# Conversion Operator → shares fields with xnkConversionOperatorDecl
+    of xnkExternal_ConversionOp:
+      extConversionIsImplicit*: bool
+      extConversionFromType*: XLangNode
+      extConversionToType*: XLangNode
+      extConversionBody*: Option[XLangNode]
+
+    # C# using / Java try-with-resources → shares fields with xnkResourceStmt
+    of xnkExternal_Resource:
+      extResourceItems*: seq[XLangNode]
+      extResourceBody*: XLangNode
+
+    # C# fixed statement → shares fields with xnkFixedStmt
+    of xnkExternal_Fixed:
+      extFixedDeclarations*: seq[XLangNode]
+      extFixedBody*: XLangNode
+
+    # C# lock statement → shares fields with xnkLockStmt
+    of xnkExternal_Lock:
+      extLockExpr*: XLangNode
+      extLockBody*: XLangNode
+
+    # C# unsafe block → shares fields with xnkUnsafeStmt
+    of xnkExternal_Unsafe:
+      extUnsafeBody*: XLangNode
+
+    # C# checked/unchecked → shares fields with xnkCheckedStmt
+    of xnkExternal_Checked:
+      extCheckedBody*: XLangNode
+      extCheckedIsChecked*: bool
+
+    # C# ?. operator → shares fields with xnkSafeNavigationExpr
+    of xnkExternal_SafeNavigation:
+      extSafeNavObject*: XLangNode
+      extSafeNavMember*: string
+
+    # C# ?? operator → shares fields with xnkNullCoalesceExpr
+    of xnkExternal_NullCoalesce:
+      extNullCoalesceLeft*: XLangNode
+      extNullCoalesceRight*: XLangNode
+
+    # C# throw expression → shares fields with xnkThrowExpr
+    of xnkExternal_ThrowExpr:
+      extThrowExprValue*: XLangNode
+
+    # C# switch expression → shares fields with xnkSwitchExpr
+    of xnkExternal_SwitchExpr:
+      extSwitchExprValue*: XLangNode
+      extSwitchExprArms*: seq[XLangNode]
+
+    # C# stackalloc → shares fields with xnkStackAllocExpr
+    of xnkExternal_StackAlloc:
+      extStackAllocType*: XLangNode
+      extStackAllocSize*: Option[XLangNode]
+
+    # String interpolation → shares fields with xnkStringInterpolation
+    of xnkExternal_StringInterp:
+      extInterpParts*: seq[XLangNode]
+      extInterpIsExpr*: seq[bool]
+
+    # Ternary expression → shares fields with xnkTernaryExpr
+    of xnkExternal_Ternary:
+      extTernaryCondition*: XLangNode
+      extTernaryThen*: XLangNode
+      extTernaryElse*: XLangNode
+
+    # Do-while loop → shares fields with xnkDoWhileStmt
+    of xnkExternal_DoWhile:
+      extDoWhileCondition*: XLangNode
+      extDoWhileBody*: XLangNode
+
+    # C-style for loop → shares fields with xnkForStmt
+    of xnkExternal_ForStmt:
+      extForInit*: Option[XLangNode]
+      extForCond*: Option[XLangNode]
+      extForIncrement*: Option[XLangNode]
+      extForBody*: Option[XLangNode]
+
+    # Interface → shares fields with xnkInterfaceDecl
+    of xnkExternal_Interface:
+      extInterfaceName*: string
+      extInterfaceBaseTypes*: seq[XLangNode]
+      extInterfaceMembers*: seq[XLangNode]
+
+    # Generator expression → shares fields with xnkGeneratorExpr
+    of xnkExternal_Generator:
+      extGenExpr*: XLangNode
+      extGenFor*: seq[XLangNode]
+      extGenIf*: seq[XLangNode]
+
+    # List/dict/set comprehension → shares fields with xnkComprehensionExpr
+    of xnkExternal_Comprehension:
+      extCompExpr*: XLangNode
+      extCompFors*: seq[XLangNode]
+      extCompIf*: seq[XLangNode]
+
+    # Python with statement → shares fields with xnkWithStmt
+    of xnkExternal_With:
+      extWithItems*: seq[XLangNode]
+      extWithBody*: XLangNode
+
+    # Destructuring → combined destructure fields
+    of xnkExternal_Destructure:
+      extDestructKind*: string  # "object" or "array"
+      extDestructSource*: XLangNode
+      extDestructFields*: seq[string]  # for object destructure
+      extDestructVars*: seq[string]    # for array destructure
+      extDestructRest*: Option[string] # rest/spread variable
+
+    # Await expression → shares fields with xnkAwaitExpr
+    of xnkExternal_Await:
+      extAwaitExpr*: XLangNode
+
+    # Local function → shares fields with xnkLocalFunctionStmt
+    of xnkExternal_LocalFunction:
+      extLocalFuncName*: string
+      extLocalFuncParams*: seq[XLangNode]
+      extLocalFuncReturnType*: Option[XLangNode]
+      extLocalFuncBody*: Option[XLangNode]
+
+    # C# extension method
+    of xnkExternal_ExtensionMethod:
+      extExtMethodName*: string
+      extExtMethodParams*: seq[XLangNode]  # first param is 'this' type
+      extExtMethodReturnType*: Option[XLangNode]
+      extExtMethodBody*: XLangNode
+      extExtMethodIsStatic*: bool
+
+    # Switch case with fallthrough
+    of xnkExternal_FallthroughCase:
+      extFallthroughValues*: seq[XLangNode]  # case values
+      extFallthroughBody*: XLangNode
+      extFallthroughHasFallthrough*: bool    # true if falls through to next case
+
+    # Ruby unless
+    of xnkExternal_Unless:
+      extUnlessCondition*: XLangNode
+      extUnlessBody*: XLangNode
+      extUnlessElse*: Option[XLangNode]
+
+    # Ruby until
+    of xnkExternal_Until:
+      extUntilCondition*: XLangNode
+      extUntilBody*: XLangNode
+
+    # Python pass
+    of xnkExternal_Pass:
+      discard  # pass has no fields
+
+    # Go channel
+    of xnkExternal_Channel:
+      extChannelType*: XLangNode        # channel element type
+      extChannelBuffered*: bool
+      extChannelSize*: Option[XLangNode]
+
+    # Go goroutine
+    of xnkExternal_Goroutine:
+      extGoroutineCall*: XLangNode      # the function call to run
+
+    # Go defer (different from Nim defer - LIFO stack)
+    of xnkExternal_GoDefer:
+      extGoDeferCall*: XLangNode        # the deferred function call
+
+    # Go select
+    of xnkExternal_GoSelect:
+      extSelectCases*: seq[XLangNode]   # select cases (channel operations)
+      extSelectDefault*: Option[XLangNode]
+
     of xnkUnknown:
       unknownData*: string
     # else: discard
@@ -625,22 +898,14 @@ proc `$`*(node: XLangNode): string =
     result &= "(" & node.declName & ")"
   of xnkTypeDecl:
     result &= "(" & node.typeDefName & ")"
-  of xnkPropertyDecl:
-    result &= "(" & node.propName & ")"
   of xnkFieldDecl:
     result &= "(" & node.fieldName & ")"
-  of xnkDelegateDecl:
-    result &= "(" & node.delegateName & ")"
-  of xnkEventDecl:
-    result &= "(" & node.eventName & ")"
   of xnkBinaryExpr:
     result &= "(" & node.binaryOp & ")"
   of xnkUnaryExpr:
     result &= "(" & node.unaryOp & ")"
   of xnkMemberAccessExpr:
     result &= "(" & node.memberName & ")"
-  of xnkSafeNavigationExpr:
-    result &= "(" & node.safeNavMember & ")"
   of xnkIntLit, xnkFloatLit, xnkStringLit, xnkCharLit:
     result &= "(\"" & node.literalValue & "\")"
   of xnkBoolLit:
@@ -706,20 +971,12 @@ proc `$`*(node: XLangNode): string =
     result &= "(\"" & node.symbolValue & "\")"
   of xnkAbstractType:
     result &= "(" & node.abstractTypeName & ")"
-  of xnkOperatorDecl:
-    result &= "(" & node.operatorSymbol & ")"
-  of xnkConversionOperatorDecl:
-    result &= "(" & (if node.conversionIsImplicit: "implicit" else: "explicit") & ")"
   of xnkCheckedExpr:
     result &= "(" & (if node.isChecked: "checked" else: "unchecked") & ")"
   of xnkLabeledStmt:
     result &= "(" & node.labelName & ")"
   of xnkGotoStmt:
     result &= "(" & node.gotoLabel & ")"
-  of xnkCheckedStmt:
-    result &= "(" & (if node.checkedIsChecked: "checked" else: "unchecked") & ")"
-  of xnkLocalFunctionStmt:
-    result &= "(" & node.localFuncName & ")"
   of xnkQualifiedName:
     result &= "(" & node.qualifiedRight & ")"
   of xnkAliasQualifiedName:
@@ -752,36 +1009,102 @@ proc `$`*(node: XLangNode): string =
   of xnkResourceItem:
     if node.cleanupHint.isSome():
       result &= "(" & node.cleanupHint.get & ")"
-  of xnkStringInterpolation:
-    result &= "(" & $node.interpParts.len & " parts)"
+  of xnkExternal_StringInterp:
+    result &= "(" & $node.extInterpParts.len & " parts)"
   of xnkMethodReference:
     result &= "(" & node.refMethod & ")"
-  of xnkGeneratorExpr:
-    result &= "(" & $node.genFor.len & " for clause" & (if node.genFor.len != 1: "s" else: "") & ")"
+  of xnkExternal_Generator:
+    result &= "(" & $node.extGenFor.len & " for clause" & (if node.extGenFor.len != 1: "s" else: "") & ")"
+
+  # External kinds with name fields
+  of xnkExternal_Property:
+    result &= "(" & node.extPropName & ")"
+  of xnkExternal_Event:
+    result &= "(" & node.extEventName & ")"
+  of xnkExternal_Delegate:
+    result &= "(" & node.extDelegateName & ")"
+  of xnkExternal_Operator:
+    result &= "(" & node.extOperatorSymbol & ")"
+  of xnkExternal_ConversionOp:
+    result &= "(" & (if node.extConversionIsImplicit: "implicit" else: "explicit") & ")"
+  of xnkExternal_SafeNavigation:
+    result &= "(" & node.extSafeNavMember & ")"
+  of xnkExternal_Interface:
+    result &= "(" & node.extInterfaceName & ")"
+  of xnkExternal_LocalFunction:
+    result &= "(" & node.extLocalFuncName & ")"
+  of xnkExternal_Checked:
+    result &= "(" & (if node.extCheckedIsChecked: "checked" else: "unchecked") & ")"
+  of xnkExternal_ExtensionMethod:
+    result &= "(" & node.extExtMethodName & ")"
+  of xnkExternal_Channel:
+    result &= "(" & (if node.extChannelBuffered: "buffered" else: "unbuffered") & ")"
 
   # Statements and expressions with no meaningful string fields to display
   of xnkConstructorDecl, xnkDestructorDecl, xnkAsgn, xnkBlockStmt, xnkIfStmt,
-     xnkSwitchStmt, xnkCaseClause, xnkDefaultClause, xnkForStmt, xnkWhileStmt,
+     xnkSwitchStmt, xnkCaseClause, xnkDefaultClause, xnkWhileStmt,
      xnkDoWhileStmt, xnkForeachStmt, xnkTryStmt, xnkFinallyStmt,
      xnkReturnStmt, xnkIteratorYield, xnkIteratorDelegate,
      xnkYieldStmt, xnkYieldExpr, xnkYieldFromStmt,
-     xnkThrowStmt, xnkAssertStmt, xnkWithStmt, xnkPassStmt, xnkTypeSwitchStmt,
-     xnkResourceStmt, xnkWithItem, xnkDiscardStmt, xnkCaseStmt, xnkRaiseStmt,
-     xnkTypeCaseClause, xnkEmptyStmt, xnkFixedStmt, xnkLockStmt, xnkUnsafeStmt,
-     xnkUnlessStmt, xnkUntilStmt, xnkStaticAssert, xnkSwitchCase,
-     xnkInclude, xnkExtend, xnkTernaryExpr, xnkCallExpr, xnkThisCall, xnkBaseCall,
-     xnkIndexExpr, xnkSliceExpr, xnkNullCoalesceExpr, xnkLambdaExpr,
+     xnkThrowStmt, xnkAssertStmt,  xnkPassStmt, xnkTypeSwitchStmt,
+      xnkWithItem, xnkDiscardStmt, xnkCaseStmt, xnkRaiseStmt,
+     xnkTypeCaseClause, xnkEmptyStmt, 
+            xnkUnlessStmt, xnkUntilStmt, xnkStaticAssert, xnkSwitchCase,
+     xnkInclude, xnkExtend, xnkCallExpr, xnkThisCall, xnkBaseCall,
+     xnkIndexExpr, xnkSliceExpr, xnkLambdaExpr,
      xnkTypeAssertion, xnkCastExpr, xnkThisExpr, xnkBaseExpr, xnkRefExpr,
-     xnkProcLiteral, xnkDynamicType, xnkAwaitExpr,
+     xnkProcLiteral, xnkDynamicType, 
      xnkDotExpr, xnkBracketExpr, xnkCompFor, xnkDefaultExpr, xnkTypeOfExpr,
-     xnkSizeOfExpr, xnkThrowExpr, xnkSwitchExpr, xnkStackAllocExpr,
+     xnkSizeOfExpr,   
      xnkImplicitArrayCreation, xnkNoneLit, xnkNilLit, xnkArrayType, xnkMapType,
      xnkFuncType, xnkPointerType, xnkReferenceType, xnkUnionType,
      xnkIntersectionType, xnkDistinctType, xnkExport, xnkDecorator,
      xnkLambdaProc, xnkArrowFunc, xnkPragma, xnkStaticStmt, xnkDeferStmt,
      xnkTupleConstr, xnkTupleUnpacking, xnkUsingStmt, xnkSequenceLiteral,
      xnkSetLiteral, xnkMapLiteral, xnkArrayLiteral, xnkTupleExpr,
-     xnkComprehensionExpr, xnkDictEntry, xnkListExpr, xnkSetExpr, xnkDictExpr,
-     xnkArrayLit, xnkIndexerDecl, xnkFunctionType, xnkMetadata, xnkMixinDecl:
+      xnkDictEntry, xnkListExpr, xnkSetExpr, xnkDictExpr,
+     xnkArrayLit,  xnkFunctionType, xnkMetadata, xnkMixinDecl,     
+     xnkExternal_Indexer, xnkExternal_Resource, xnkExternal_Fixed,
+     xnkExternal_Lock, xnkExternal_Unsafe, xnkExternal_NullCoalesce,
+     xnkExternal_ThrowExpr, xnkExternal_SwitchExpr, xnkExternal_StackAlloc,
+     xnkExternal_Ternary, xnkExternal_DoWhile,
+     xnkExternal_ForStmt, xnkExternal_Comprehension,
+     xnkExternal_With, xnkExternal_Destructure, xnkExternal_Await,
+     xnkExternal_FallthroughCase, xnkExternal_Unless, xnkExternal_Until,
+     xnkExternal_Pass, xnkExternal_Goroutine, xnkExternal_GoDefer,
+     xnkExternal_GoSelect:
     discard
+    
+
+
+# ==========================================================================
+# External Kind Helpers
+# ==========================================================================
+
+const externalKinds*: set[XLangNodeKind] = {
+  xnkExternal_Property, xnkExternal_Indexer, xnkExternal_Event,
+  xnkExternal_Delegate, xnkExternal_Operator, xnkExternal_ConversionOp,
+  xnkExternal_Resource, xnkExternal_Fixed, xnkExternal_Lock,
+  xnkExternal_Unsafe, xnkExternal_Checked, xnkExternal_SafeNavigation,
+  xnkExternal_NullCoalesce, xnkExternal_ThrowExpr, xnkExternal_SwitchExpr,
+  xnkExternal_StackAlloc, xnkExternal_StringInterp, xnkExternal_Ternary,
+  xnkExternal_DoWhile, xnkExternal_ForStmt, xnkExternal_Interface,
+  xnkExternal_Generator, xnkExternal_Comprehension, xnkExternal_With,
+  xnkExternal_Destructure, xnkExternal_Await, xnkExternal_LocalFunction,
+  # Additional external kinds from audit
+  xnkExternal_ExtensionMethod,  # C# extension methods
+  xnkExternal_FallthroughCase,  # switch case with fallthrough
+  xnkExternal_Unless,           # Ruby unless
+  xnkExternal_Until,            # Ruby until
+  xnkExternal_Pass,             # Python pass statement
+  xnkExternal_Channel,          # Go channel
+  xnkExternal_Goroutine,        # Go goroutine
+  xnkExternal_GoDefer,          # Go defer
+  xnkExternal_GoSelect          # Go select
+}
+
+proc isExternalKind*(kind: XLangNodeKind): bool =
+  ## Returns true if the kind is an external/source-specific kind
+  ## that must be lowered by transformation passes.
+  kind in externalKinds
 

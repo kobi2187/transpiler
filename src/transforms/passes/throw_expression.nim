@@ -28,11 +28,11 @@ proc hoistThrowExpr(node: XLangNode, stmts: var seq[XLangNode]): XLangNode =
   ## Recursively find and hoist throw expressions
   ## Returns the transformed expression
   case node.kind
-  of xnkThrowExpr:
+  of xnkExternal_ThrowExpr:
     # Found a throw expression - create raise statement
     let raiseStmt = XLangNode(
       kind: xnkRaiseStmt,
-      raiseExpr: some(node.throwExprValue)
+      raiseExpr: some(node.extThrowExprValue)
     )
     stmts.add(raiseStmt)
 
@@ -107,6 +107,13 @@ proc hoistThrowExpr(node: XLangNode, stmts: var seq[XLangNode]): XLangNode =
 proc transformThrowExpression*(node: XLangNode): XLangNode =
   ## Transform throw expressions to statements
   case node.kind
+  of xnkExternal_ThrowExpr:
+    # Standalone throw expression → convert to raise statement
+    result = XLangNode(
+      kind: xnkRaiseStmt,
+      raiseExpr: some(node.extThrowExprValue)
+    )
+
   of xnkVarDecl, xnkLetDecl, xnkConstDecl:
     # x = y ?? throw exc
     if node.initializer.isSome():
