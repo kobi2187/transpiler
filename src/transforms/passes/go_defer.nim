@@ -94,9 +94,9 @@ proc collectDefers(node: XLangNode): seq[XLangNode] =
   of xnkWhileStmt, xnkDoWhileStmt:
     for d in collectDefers(node.whileBody): result.add(d)
 
-  of xnkForStmt:
-    if node.forBody.isSome:
-      for d in collectDefers(node.forBody.get): result.add(d)
+  of xnkExternal_ForStmt:
+    if node.extForBody.isSome:
+      for d in collectDefers(node.extForBody.get): result.add(d)
 
   of xnkForeachStmt:
     for d in collectDefers(node.foreachBody): result.add(d)

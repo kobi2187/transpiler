@@ -127,8 +127,8 @@ proc transformChannelSend*(chanExpr: XLangNode, valueExpr: XLangNode, model: Con
     )
 
     result = XLangNode(
-      kind: xnkAwaitExpr,
-      awaitExpr: sendCall
+      kind: xnkExternal_Await,
+      extAwaitExpr: sendCall
     )
 
 proc transformChannelReceive*(chanExpr: XLangNode, model: ConcurrencyModel = DEFAULT_MODEL): XLangNode =
@@ -161,8 +161,8 @@ proc transformChannelReceive*(chanExpr: XLangNode, model: ConcurrencyModel = DEF
     )
 
     result = XLangNode(
-      kind: xnkAwaitExpr,
-      awaitExpr: recvCall
+      kind: xnkExternal_Await,
+      extAwaitExpr: recvCall
     )
 
 proc transformSelectStatement*(node: XLangNode): XLangNode =

@@ -11,7 +11,7 @@ import options
 proc transformNormalizeSimple*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Perform simple normalizations
   case node.kind
-  of xnkPassStmt:
+  of xnkExternal_Pass:
     # Python's pass statement → Nim's discard
     # pass is just a placeholder, discard serves the same purpose
     result = XLangNode(
@@ -35,7 +35,7 @@ proc transformNormalizeSimple*(node: XLangNode): XLangNode {.noSideEffect, gcsaf
     else:
       result = node
 
-  of xnkWithStmt:
+  of xnkExternal_With:
     # Python's with statement → defer pattern (simplified version)
     # with resource as var:
     #   body
@@ -53,29 +53,29 @@ proc transformNormalizeSimple*(node: XLangNode): XLangNode {.noSideEffect, gcsaf
       ]
     )
 
-  of xnkUnlessStmt:
+  of xnkExternal_Unless:
     # Ruby: unless x → if not x
     result = XLangNode(
       kind: xnkIfStmt,
       ifCondition: XLangNode(
         kind: xnkUnaryExpr,
         unaryOp: "not",
-        unaryOperand: transformNormalizeSimple(node.unlessCondition)
+        unaryOperand: transformNormalizeSimple(node.extUnlessCondition)
       ),
-      ifBody: transformNormalizeSimple(node.unlessBody),
+      ifBody: transformNormalizeSimple(node.extUnlessBody),
       elseBody: none(XLangNode)
     )
 
-  of xnkUntilStmt:
+  of xnkExternal_Until:
     # repeat...until x → while not x
     result = XLangNode(
       kind: xnkWhileStmt,
       whileCondition: XLangNode(
         kind: xnkUnaryExpr,
         unaryOp: "not",
-        unaryOperand: transformNormalizeSimple(node.untilCondition)
+        unaryOperand: transformNormalizeSimple(node.extUntilCondition)
       ),
-      whileBody: transformNormalizeSimple(node.untilBody)
+      whileBody: transformNormalizeSimple(node.extUntilBody)
     )
 
   else:

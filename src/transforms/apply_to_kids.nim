@@ -52,10 +52,10 @@ proc visit*(node: var XLangNode, p: proc (x: var XLangNode)) =
   of xnkTypeDecl:
     visit node.typeDefBody, p
 
-  of xnkPropertyDecl:
-    if node.propType.isSome(): visit node.propType.get, p
-    if node.getter.isSome(): visit node.getter.get, p
-    if node.setter.isSome(): visit node.setter.get, p
+  of xnkExternal_Property:
+    if node.extPropType.isSome(): visit node.extPropType.get, p
+    if node.extPropGetter.isSome(): visit node.extPropGetter.get, p
+    if node.extPropSetter.isSome(): visit node.extPropSetter.get, p
 
   of xnkFieldDecl:
     visit node.fieldType, p
@@ -69,14 +69,14 @@ proc visit*(node: var XLangNode, p: proc (x: var XLangNode)) =
 
   of xnkDestructorDecl:
     if node.destructorBody.isSome(): visit node.destructorBody.get, p
-  of xnkDelegateDecl:
-    for item in node.delegateParams.mitems: visit item, p
-    if node.delegateReturnType.isSome(): visit node.delegateReturnType.get, p
+  of xnkExternal_Delegate:
+    for item in node.extDelegateParams.mitems: visit item, p
+    if node.extDelegateReturnType.isSome(): visit node.extDelegateReturnType.get, p
 
-  of xnkEventDecl:
-    visit node.eventType, p
-    if node.addAccessor.isSome(): visit node.addAccessor.get, p
-    if node.removeAccessor.isSome(): visit node.removeAccessor.get, p
+  of xnkExternal_Event:
+    visit node.extEventType, p
+    if node.extEventAdd.isSome(): visit node.extEventAdd.get, p
+    if node.extEventRemove.isSome(): visit node.extEventRemove.get, p
   of xnkAsgn:
     visit node.asgnLeft, p
     visit node.asgnRight, p
@@ -94,11 +94,11 @@ proc visit*(node: var XLangNode, p: proc (x: var XLangNode)) =
     visit node.caseBody, p
   of xnkDefaultClause:
     visit node.defaultBody, p
-  of xnkForStmt:
-    if node.forInit.isSome(): visit node.forInit.get, p
-    if node.forCond.isSome(): visit node.forCond.get, p
-    if node.forIncrement.isSome(): visit node.forIncrement.get, p
-    if node.forBody.isSome(): visit node.forBody.get, p
+  of xnkExternal_ForStmt:
+    if node.extForInit.isSome(): visit node.extForInit.get, p
+    if node.extForCond.isSome(): visit node.extForCond.get, p
+    if node.extForIncrement.isSome(): visit node.extForIncrement.get, p
+    if node.extForBody.isSome(): visit node.extForBody.get, p
   of xnkWhileStmt, xnkDoWhileStmt:
     visit node.whileCondition, p
     visit node.whileBody, p
@@ -135,19 +135,19 @@ proc visit*(node: var XLangNode, p: proc (x: var XLangNode)) =
     visit node.assertCond, p
     if node.assertMsg.isSome(): visit node.assertMsg.get, p
 
-  of xnkWithStmt:
-    for item in node.items.mitems: visit item, p
-    visit node.withBody, p
+  of xnkExternal_With:
+    for item in node.extWithItems.mitems: visit item, p
+    visit node.extWithBody, p
   of xnkWithItem:
     visit node.contextExpr, p
     if node.asExpr.isSome(): visit node.asExpr.get, p
-  of xnkResourceStmt:
-    for item in node.resourceItems.mitems: visit item, p
-    visit node.resourceBody, p
+  of xnkExternal_Resource:
+    for item in node.extResourceItems.mitems: visit item, p
+    visit node.extResourceBody, p
   of xnkResourceItem:
     visit node.resourceExpr, p
     if node.resourceVar.isSome(): visit node.resourceVar.get, p
-  of xnkPassStmt:
+  of xnkExternal_Pass:
     discard
   of xnkTypeSwitchStmt:
     visit node.typeSwitchExpr, p
@@ -159,10 +159,10 @@ proc visit*(node: var XLangNode, p: proc (x: var XLangNode)) =
     visit node.binaryRight, p
   of xnkUnaryExpr:
     visit node.unaryOperand, p
-  of xnkTernaryExpr:
-    visit node.ternaryCondition, p
-    visit node.ternaryThen, p
-    visit node.ternaryElse, p
+  of xnkExternal_Ternary:
+    visit node.extTernaryCondition, p
+    visit node.extTernaryThen, p
+    visit node.extTernaryElse, p
   of xnkCallExpr:
     visit node.callee, p
     for item in node.args.mitems: visit item, p
@@ -178,11 +178,11 @@ proc visit*(node: var XLangNode, p: proc (x: var XLangNode)) =
     if node.sliceStep.isSome(): visit node.sliceStep.get, p
   of xnkMemberAccessExpr:
     visit node.memberExpr, p
-  of xnkSafeNavigationExpr:
-    visit node.safeNavObject, p
-  of xnkNullCoalesceExpr:
-    visit node.nullCoalesceLeft, p
-    visit node.nullCoalesceRight, p
+  of xnkExternal_SafeNavigation:
+    visit node.extSafeNavObject, p
+  of xnkExternal_NullCoalesce:
+    visit node.extNullCoalesceLeft, p
+    visit node.extNullCoalesceRight, p
   of xnkLambdaExpr:
     for item in node.lambdaParams.mitems: visit item, p
     if node.lambdaReturnType.isSome(): visit node.lambdaReturnType.get, p
@@ -217,21 +217,21 @@ proc visit*(node: var XLangNode, p: proc (x: var XLangNode)) =
   of xnkDictEntry:
     visit node.key, p
     visit node.value, p
-  of xnkComprehensionExpr:
-    visit node.compExpr, p
-    for item in node.fors.mitems: visit item, p
-    for item in node.compIf.mitems: visit item, p
+  of xnkExternal_Comprehension:
+    visit node.extCompExpr, p
+    for item in node.extCompFors.mitems: visit item, p
+    for item in node.extCompIf.mitems: visit item, p
   of xnkCompFor:
     for item in node.vars.mitems: visit item, p
     visit node.iter, p
-  of xnkGeneratorExpr:
-    visit node.genExpr, p
-    for item in node.genFor.mitems: visit item, p  # Each is xnkCompFor
-    for item in node.genIf.mitems: visit item, p
-  of xnkAwaitExpr:
-    visit node.awaitExpr, p
-  of xnkStringInterpolation:
-    for item in node.interpParts.mitems: visit item, p
+  of xnkExternal_Generator:
+    visit node.extGenExpr, p
+    for item in node.extGenFor.mitems: visit item, p  # Each is xnkCompFor
+    for item in node.extGenIf.mitems: visit item, p
+  of xnkExternal_Await:
+    visit node.extAwaitExpr, p
+  of xnkExternal_StringInterp:
+    for item in node.extInterpParts.mitems: visit item, p
 
   of xnkIntLit, xnkFloatLit, xnkStringLit, xnkCharLit, xnkBoolLit, xnkNoneLit, xnkNilLit:
     discard
@@ -393,19 +393,19 @@ proc visit*(node: var XLangNode, p: proc (x: var XLangNode)) =
   of xnkMetadata:
     for item in node.metadataEntries.mitems: visit item, p
 
-  of xnkIndexerDecl:
-    for item in node.indexerParams.mitems: visit item, p
-    visit node.indexerType, p
-    if node.indexerGetter.isSome(): visit node.indexerGetter.get, p
-    if node.indexerSetter.isSome(): visit node.indexerSetter.get, p
-  of xnkOperatorDecl:
-    for item in node.operatorParams.mitems: visit item, p
-    visit node.operatorReturnType, p
-    visit node.operatorBody, p
-  of xnkConversionOperatorDecl:
-    visit node.conversionFromType, p
-    visit node.conversionToType, p
-    visit node.conversionBody, p
+  of xnkExternal_Indexer:
+    for item in node.extIndexerParams.mitems: visit item, p
+    visit node.extIndexerType, p
+    if node.extIndexerGetter.isSome(): visit node.extIndexerGetter.get, p
+    if node.extIndexerSetter.isSome(): visit node.extIndexerSetter.get, p
+  of xnkExternal_Operator:
+    for item in node.extOperatorParams.mitems: visit item, p
+    visit node.extOperatorReturnType, p
+    if node.extOperatorBody.isSome(): visit node.extOperatorBody.get, p
+  of xnkExternal_ConversionOp:
+    visit node.extConversionFromType, p
+    visit node.extConversionToType, p
+    if node.extConversionBody.isSome(): visit node.extConversionBody.get, p
   of xnkRefExpr:
     visit node.refExpr, p
   of xnkDefaultExpr:
@@ -416,14 +416,14 @@ proc visit*(node: var XLangNode, p: proc (x: var XLangNode)) =
     visit node.sizeOfType, p
   of xnkCheckedExpr:
     visit node.checkedExpr, p
-  of xnkThrowExpr:
-    visit node.throwExprValue, p
-  of xnkSwitchExpr:
-    visit node.switchExprValue, p
-    for item in node.switchExprArms.mitems: visit item, p
-  of xnkStackAllocExpr:
-    visit node.stackAllocType, p
-    if node.stackAllocSize.isSome(): visit node.stackAllocSize.get, p
+  of xnkExternal_ThrowExpr:
+    visit node.extThrowExprValue, p
+  of xnkExternal_SwitchExpr:
+    visit node.extSwitchExprValue, p
+    for item in node.extSwitchExprArms.mitems: visit item, p
+  of xnkExternal_StackAlloc:
+    visit node.extStackAllocType, p
+    if node.extStackAllocSize.isSome(): visit node.extStackAllocSize.get, p
   of xnkImplicitArrayCreation:
     for item in node.implicitArrayElements.mitems: visit item, p
 
@@ -433,20 +433,20 @@ proc visit*(node: var XLangNode, p: proc (x: var XLangNode)) =
     visit node.labeledStmt, p
   of xnkGotoStmt:
     discard
-  of xnkFixedStmt:
-    for item in node.fixedDeclarations.mitems: visit item, p
-    visit node.fixedBody, p
-  of xnkLockStmt:
-    visit node.lockExpr, p
-    visit node.lockBody, p
-  of xnkUnsafeStmt:
-    visit node.unsafeBody, p
-  of xnkCheckedStmt:
-    visit node.checkedBody, p
-  of xnkLocalFunctionStmt:
-    for item in node.localFuncParams.mitems: visit item, p
-    if node.localFuncReturnType.isSome(): visit node.localFuncReturnType.get, p
-    visit node.localFuncBody, p
+  of xnkExternal_Fixed:
+    for item in node.extFixedDeclarations.mitems: visit item, p
+    visit node.extFixedBody, p
+  of xnkExternal_Lock:
+    visit node.extLockExpr, p
+    visit node.extLockBody, p
+  of xnkExternal_Unsafe:
+    visit node.extUnsafeBody, p
+  of xnkExternal_Checked:
+    visit node.extCheckedBody, p
+  of xnkExternal_LocalFunction:
+    for item in node.extLocalFuncParams.mitems: visit item, p
+    if node.extLocalFuncReturnType.isSome(): visit node.extLocalFuncReturnType.get, p
+    if node.extLocalFuncBody.isSome(): visit node.extLocalFuncBody.get, p
 
   of xnkQualifiedName:
     visit node.qualifiedLeft, p
@@ -455,156 +455,8 @@ proc visit*(node: var XLangNode, p: proc (x: var XLangNode)) =
   of xnkGenericName:
     for item in node.genericNameArgs.mitems: visit item, p
 
-  # ==========================================================================
-  # External/Source-Specific Kinds
-  # ==========================================================================
-  of xnkExternal_Property:
-    if node.extPropType.isSome(): visit node.extPropType.get, p
-    if node.extPropGetter.isSome(): visit node.extPropGetter.get, p
-    if node.extPropSetter.isSome(): visit node.extPropSetter.get, p
-
-  of xnkExternal_Indexer:
-    for item in node.extIndexerParams.mitems: visit item, p
-    visit node.extIndexerType, p
-    if node.extIndexerGetter.isSome(): visit node.extIndexerGetter.get, p
-    if node.extIndexerSetter.isSome(): visit node.extIndexerSetter.get, p
-
-  of xnkExternal_Event:
-    visit node.extEventType, p
-    if node.extEventAdd.isSome(): visit node.extEventAdd.get, p
-    if node.extEventRemove.isSome(): visit node.extEventRemove.get, p
-
-  of xnkExternal_Delegate:
-    for item in node.extDelegateParams.mitems: visit item, p
-    if node.extDelegateReturnType.isSome(): visit node.extDelegateReturnType.get, p
-
-  of xnkExternal_Operator:
-    for item in node.extOperatorParams.mitems: visit item, p
-    visit node.extOperatorReturnType, p
-    if node.extOperatorBody.isSome(): visit node.extOperatorBody.get, p
-
-  of xnkExternal_ConversionOp:
-    visit node.extConversionFromType, p
-    visit node.extConversionToType, p
-    if node.extConversionBody.isSome(): visit node.extConversionBody.get, p
-
-  of xnkExternal_Resource:
-    for item in node.extResourceItems.mitems: visit item, p
-    visit node.extResourceBody, p
-
-  of xnkExternal_Fixed:
-    for item in node.extFixedDeclarations.mitems: visit item, p
-    visit node.extFixedBody, p
-
-  of xnkExternal_Lock:
-    visit node.extLockExpr, p
-    visit node.extLockBody, p
-
-  of xnkExternal_Unsafe:
-    visit node.extUnsafeBody, p
-
-  of xnkExternal_Checked:
-    visit node.extCheckedBody, p
-
-  of xnkExternal_SafeNavigation:
-    visit node.extSafeNavObject, p
-
-  of xnkExternal_NullCoalesce:
-    visit node.extNullCoalesceLeft, p
-    visit node.extNullCoalesceRight, p
-
-  of xnkExternal_ThrowExpr:
-    visit node.extThrowExprValue, p
-
-  of xnkExternal_SwitchExpr:
-    visit node.extSwitchExprValue, p
-    for item in node.extSwitchExprArms.mitems: visit item, p
-
-  of xnkExternal_StackAlloc:
-    visit node.extStackAllocType, p
-    if node.extStackAllocSize.isSome(): visit node.extStackAllocSize.get, p
-
-  of xnkExternal_StringInterp:
-    for item in node.extInterpParts.mitems: visit item, p
-
-  of xnkExternal_Ternary:
-    visit node.extTernaryCondition, p
-    visit node.extTernaryThen, p
-    visit node.extTernaryElse, p
-
-  of xnkExternal_DoWhile:
-    visit node.extDoWhileCondition, p
-    visit node.extDoWhileBody, p
-
-  of xnkExternal_ForStmt:
-    if node.extForInit.isSome(): visit node.extForInit.get, p
-    if node.extForCond.isSome(): visit node.extForCond.get, p
-    if node.extForIncrement.isSome(): visit node.extForIncrement.get, p
-    if node.extForBody.isSome(): visit node.extForBody.get, p
-
-  of xnkExternal_Interface:
-    for item in node.extInterfaceBaseTypes.mitems: visit item, p
-    for item in node.extInterfaceMembers.mitems: visit item, p
-
-  of xnkExternal_Generator:
-    visit node.extGenExpr, p
-    for item in node.extGenFor.mitems: visit item, p
-    for item in node.extGenIf.mitems: visit item, p
-
-  of xnkExternal_Comprehension:
-    visit node.extCompExpr, p
-    for item in node.extCompFors.mitems: visit item, p
-    for item in node.extCompIf.mitems: visit item, p
-
-  of xnkExternal_With:
-    for item in node.extWithItems.mitems: visit item, p
-    visit node.extWithBody, p
-
-  of xnkExternal_Destructure:
-    visit node.extDestructSource, p
-
-  of xnkExternal_Await:
-    visit node.extAwaitExpr, p
-
-  of xnkExternal_LocalFunction:
-    for item in node.extLocalFuncParams.mitems: visit item, p
-    if node.extLocalFuncReturnType.isSome(): visit node.extLocalFuncReturnType.get, p
-    if node.extLocalFuncBody.isSome(): visit node.extLocalFuncBody.get, p
-
-  of xnkExternal_ExtensionMethod:
-    for item in node.extExtMethodParams.mitems: visit item, p
-    if node.extExtMethodReturnType.isSome(): visit node.extExtMethodReturnType.get, p
-    visit node.extExtMethodBody, p
-
-  of xnkExternal_FallthroughCase:
-    for item in node.extFallthroughValues.mitems: visit item, p
-    visit node.extFallthroughBody, p
-
-  of xnkExternal_Unless:
-    visit node.extUnlessCondition, p
-    visit node.extUnlessBody, p
-    if node.extUnlessElse.isSome(): visit node.extUnlessElse.get, p
-
-  of xnkExternal_Until:
-    visit node.extUntilCondition, p
-    visit node.extUntilBody, p
-
-  of xnkExternal_Pass:
-    discard  # pass has no fields
-
-  of xnkExternal_Channel:
-    visit node.extChannelType, p
-    if node.extChannelSize.isSome(): visit node.extChannelSize.get, p
-
-  of xnkExternal_Goroutine:
-    visit node.extGoroutineCall, p
-
-  of xnkExternal_GoDefer:
-    visit node.extGoDeferCall, p
-
-  of xnkExternal_GoSelect:
-    for item in node.extSelectCases.mitems: visit item, p
-    if node.extSelectDefault.isSome(): visit node.extSelectDefault.get, p
-
   of xnkUnknown:
+    discard
+  else:
+    # External or unhandled kinds: no recursive child visitation by default
     discard

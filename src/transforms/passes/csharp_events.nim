@@ -24,13 +24,13 @@ proc transformDelegate*(node: XLangNode): XLangNode =
   ## C#: public delegate RetType DelegateName(params);
   ## Nim: type DelegateName = proc(params): RetType
 
-  if node.kind != xnkDelegateDecl:
+  if node.kind != xnkExternal_Delegate:
     return node
 
-  # Extract delegate signature
-  let delegateName = node.delegateName
-  let params = node.delegateParams
-  let returnType = node.delegateReturnType
+  # Extract delegate signature from external fields
+  let delegateName = node.extDelegateName
+  let params = node.extDelegateParams
+  let returnType = node.extDelegateReturnType
 
   # Create proc type alias
   # In Nim: type CallbackProc = proc(x: int): string
@@ -307,7 +307,7 @@ proc transformCSharpEvents*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.}
   ## Main event/delegate transformation
 
   case node.kind
-  of xnkDelegateDecl:
+  of xnkExternal_Delegate:
     return transformDelegate(node)
 
   of xnkExternal_Event:

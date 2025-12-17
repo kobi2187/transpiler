@@ -43,9 +43,9 @@ proc isGeneratorFunction(node: XLangNode): bool =
         return true
     of xnkWhileStmt, xnkDoWhileStmt:
       return hasYield(n.whileBody)
-    of xnkForStmt:
-      if n.forBody.isSome:
-        return hasYield(n.forBody.get)
+    of xnkExternal_ForStmt:
+      if n.extForBody.isSome:
+        return hasYield(n.extForBody.get)
       else:
         return false
     of xnkForeachStmt:
@@ -100,7 +100,7 @@ proc transformGeneratorExpression*(node: XLangNode): XLangNode =
   ## Python: squares = (x**2 for x in range(10))
   ## Nim: iterator squares(): int = (for x in 0..<10: yield x * x)
 
-  if node.kind != xnkGeneratorExpr:
+  if node.kind != xnkExternal_Generator:
     return node
 
   # Generator expressions are inline iterators

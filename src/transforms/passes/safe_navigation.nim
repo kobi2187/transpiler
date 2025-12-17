@@ -22,21 +22,21 @@ proc transformSafeNavigationHelper(node: XLangNode): XLangNode =
     let obj = transformSafeNavigationHelper(node.extSafeNavObject)
     let memberName = node.extSafeNavMember
 
-    # Create: obj != nil ? obj.member : nil
+    # Create: obj != nil ? obj.member : nil (use external ternary kind)
     result = XLangNode(
-      kind: xnkTernaryExpr,
-      ternaryCondition: XLangNode(
+      kind: xnkExternal_Ternary,
+      extTernaryCondition: XLangNode(
         kind: xnkBinaryExpr,
         binaryLeft: obj,
         binaryOp: "!=",
         binaryRight: XLangNode(kind: xnkNoneLit)
       ),
-      ternaryThen: XLangNode(
+      extTernaryThen: XLangNode(
         kind: xnkMemberAccessExpr,
         memberExpr: obj,
         memberName: memberName
       ),
-      ternaryElse: XLangNode(kind: xnkNoneLit)
+      extTernaryElse: XLangNode(kind: xnkNoneLit)
     )
 
   of xnkMemberAccessExpr:

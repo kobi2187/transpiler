@@ -1142,11 +1142,14 @@ proc conv_xnkOperatorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
   # Body
   let body = newNimNode(nnkStmtList)
-  if node.extOperatorBody.kind == xnkBlockStmt:
-    for stmt in node.operatorBody.blockBody:
+  # extOperatorBody is an Option[XLangNode]; handle absence and unwrap safely
+  if node.extOperatorBody.isSome() and node.extOperatorBody.get.kind == xnkBlockStmt:
+    for stmt in node.extOperatorBody.get.blockBody:
       body.add(convertToNimAST(stmt, ctx))
+  elif node.extOperatorBody.isSome():
+    body.add(convertToNimAST(node.extOperatorBody.get, ctx))
   else:
-    body.add(convertToNimAST(node.operatorBody, ctx))
+    discard
 
   result.add(body)
 
@@ -1220,7 +1223,7 @@ proc conv_xnkGotoStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
 ## C#: `fixed (int* p = arr) { }` (unsafe pointers)
 ## Nim: (discarded - use ptr manually)
 proc conv_xnkFixedStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
-  addWarning(xnkFixedStmt, "fixed statement not supported - use ptr manually in Nim")
+  addWarning(xnkExternal_Fixed, "fixed statement not supported - use ptr manually in Nim")
   result = newNimNode(nnkCommentStmt)
   result.strVal = "UNSUPPORTED: fixed statement - use unsafe pointer operations manually"
 
@@ -1232,12 +1235,12 @@ proc conv_xnkLockStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
 ## C#: `unsafe { }` (Nim doesn't need unsafe blocks)
 ## Nim: (just convert body)
 proc conv_xnkUnsafeStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
-  convertToNimAST(node.unsafeBody, ctx)
+  convertToNimAST(node.extUnsafeBody, ctx)
 
 ## C#: `checked { }` / `unchecked { }` (overflow checking)
 ## Nim: (discarded - Nim has compile-time overflow checks)
 proc conv_xnkCheckedStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
-  convertToNimAST(node.checkedBody, ctx)
+  convertToNimAST(node.extCheckedBody, ctx)
 
 ## C#: local function inside method
 ## Nim: nested proc
@@ -1245,24 +1248,27 @@ proc conv_xnkCheckedStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
 ## Nim: Nested proc
 proc conv_xnkLocalFunctionStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result = newNimNode(nnkProcDef)
-  result.add(newIdentNode(node.localFuncName))
+  result.add(newIdentNode(node.extLocalFuncName))
   result.add(newEmptyNode())  # term-rewriting
   result.add(newEmptyNode())  # generic params
 
   # Formal params
   let formalParams = newNimNode(nnkFormalParams)
-  if node.localFuncReturnType.isSome():
-    formalParams.add(convertToNimAST(node.localFuncReturnType.get, ctx))
+  if node.extLocalFuncReturnType.isSome():
+    formalParams.add(convertToNimAST(node.extLocalFuncReturnType.get, ctx))
   else:
     formalParams.add(newEmptyNode())
 
-  for param in node.localFuncParams:
+  for param in node.extLocalFuncParams:
     formalParams.add(convertToNimAST(param, ctx))
 
   result.add(formalParams)
   result.add(newEmptyNode())  # pragmas
   result.add(newEmptyNode())  # reserved
-  result.add(convertToNimAST(node.localFuncBody, ctx))
+  if node.extLocalFuncBody.isSome():
+    result.add(convertToNimAST(node.extLocalFuncBody.get, ctx))
+  else:
+    result.add(newEmptyNode())
 
 ## Ruby: `unless x` → `if not x` (lowered by normalize_simple.nim)
 proc conv_xnkUnlessStmt(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkUnlessStmt")
@@ -1556,7 +1562,7 @@ proc conv_xnkAwaitExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
   ctx.addImport("asyncdispatch")
   result = newNimNode(nnkCommand)
   result.add(newIdentNode("await"))
-  result.add(convertToNimAST(node.awaitExpr, ctx))
+  result.add(convertToNimAST(node.extAwaitExpr, ctx))
 proc conv_xnkCompFor(node: XLangNode, ctx: ConversionContext): MyNimNode = notYetImpl("xnkCompFor")
 
 ## C#: `default(T)` or `default`
@@ -1598,8 +1604,8 @@ proc conv_xnkThrowExpr(node: XLangNode, ctx: ConversionContext): MyNimNode = ass
 ## Nim: Case expression
 proc conv_xnkSwitchExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result = newNimNode(nnkCaseStmt)
-  result.add(convertToNimAST(node.switchExprValue, ctx))
-  for arm in node.switchExprArms:
+  result.add(convertToNimAST(node.extSwitchExprValue, ctx))
+  for arm in node.extSwitchExprArms:
     result.add(convertToNimAST(arm, ctx))
 ## C#: `stackalloc int[10]`
 ## Nim: `var arr: array[10, int]` (Nim is stack-allocated by default)
@@ -1607,13 +1613,13 @@ proc conv_xnkStackAllocExpr(node: XLangNode, ctx: ConversionContext): MyNimNode 
   # In Nim, arrays are stack-allocated by default, so create array type
   result = newNimNode(nnkBracketExpr)
   result.add(newIdentNode("array"))
-  if node.stackAllocSize.isSome():
-    result.add(convertToNimAST(node.stackAllocSize.get, ctx))
+  if node.extStackAllocSize.isSome():
+    result.add(convertToNimAST(node.extStackAllocSize.get, ctx))
   else:
     # Unknown size - use seq instead
     result = newNimNode(nnkBracketExpr)
     result.add(newIdentNode("seq"))
-  result.add(convertToNimAST(node.stackAllocType, ctx))
+  result.add(convertToNimAST(node.extStackAllocType, ctx))
 
 ## C#: `new[] { 1, 2, 3 }` - implicit array creation
 ## Nim: `@[1, 2, 3]` or array literal
@@ -1818,7 +1824,7 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
     result = conv_xnkIfStmt(node, ctx)
   of xnkWhileStmt:
     result = conv_xnkWhileStmt(node, ctx)
-  of xnkForStmt:
+  of xnkExternal_ForStmt:
     result = conv_xnkForStmt(node, ctx)
   of xnkBlockStmt:
     result = conv_xnkBlockStmt(node, ctx)
@@ -1912,7 +1918,7 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
   # TODO: discard (when nim doesn't have it - disappears in transforms) or write conv_ procs after mapping and example of c# code of that construct to expected Nim code.
   of xnkIteratorDecl:
     result = conv_xnkIteratorDecl(node, ctx)
-  of xnkPropertyDecl:
+  of xnkExternal_Property:
     result = conv_xnkPropertyDecl(node, ctx)
   of xnkFieldDecl:
     result = conv_xnkFieldDecl(node, ctx)
@@ -1920,9 +1926,9 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
     result = conv_xnkConstructorDecl(node, ctx)
   of xnkDestructorDecl:
     result = conv_xnkDestructorDecl(node, ctx)
-  of xnkDelegateDecl:
+  of xnkExternal_Delegate:
     result = conv_xnkDelegateDecl(node, ctx)
-  of xnkEventDecl:
+  of xnkExternal_Event:
     result = conv_xnkEventDecl(node, ctx)
   of xnkModuleDecl:
     result = conv_xnkModuleDecl(node, ctx)
@@ -1932,11 +1938,11 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
     result = conv_xnkAbstractDecl(node, ctx)
   of xnkEnumMember:
     result = conv_xnkEnumMember(node, ctx)
-  of xnkIndexerDecl:
+  of xnkExternal_Indexer:
     result = conv_xnkIndexerDecl(node, ctx)
-  of xnkOperatorDecl:
+  of xnkExternal_Operator:
     result = conv_xnkOperatorDecl(node, ctx)
-  of xnkConversionOperatorDecl:
+  of xnkExternal_ConversionOp:
     result = conv_xnkConversionOperatorDecl(node, ctx)
   of xnkAbstractType:
     result = conv_xnkAbstractType(node, ctx)
@@ -1980,13 +1986,13 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
     result = conv_xnkThrowStmt(node, ctx)
   of xnkAssertStmt:
     result = conv_xnkAssertStmt(node, ctx)
-  of xnkWithStmt:
+  of xnkExternal_With:
     result = conv_xnkWithStmt(node, ctx)
-  of xnkResourceStmt:
+  of xnkExternal_Resource:
     result = conv_xnkResourceStmt(node, ctx)
   of xnkResourceItem:
     result = conv_xnkResourceItem(node, ctx)
-  of xnkPassStmt:
+  of xnkExternal_Pass:
     result = conv_xnkPassStmt(node, ctx)
   of xnkTypeSwitchStmt:
     result = conv_xnkTypeSwitchStmt(node, ctx)
@@ -2000,15 +2006,15 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
     result = conv_xnkLabeledStmt(node, ctx)
   of xnkGotoStmt:
     result = conv_xnkGotoStmt(node, ctx)
-  of xnkFixedStmt:
+  of xnkExternal_Fixed:
     result = conv_xnkFixedStmt(node, ctx)
-  of xnkLockStmt:
+  of xnkExternal_Lock:
     result = conv_xnkLockStmt(node, ctx)
-  of xnkUnsafeStmt:
+  of xnkExternal_Unsafe:
     result = conv_xnkUnsafeStmt(node, ctx)
-  of xnkCheckedStmt:
+  of xnkExternal_Checked:
     result = conv_xnkCheckedStmt(node, ctx)
-  of xnkLocalFunctionStmt:
+  of xnkExternal_LocalFunction:
     result = conv_xnkLocalFunctionStmt(node, ctx)
   of xnkUnlessStmt:
     result = conv_xnkUnlessStmt(node, ctx)
@@ -2028,13 +2034,13 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
     result = conv_xnkInclude(node, ctx)
   of xnkExtend:
     result = conv_xnkExtend(node, ctx)
-  of xnkTernaryExpr:
+  of xnkExternal_Ternary:
     result = conv_xnkTernaryExpr(node, ctx)
   of xnkSliceExpr:
     result = conv_xnkSliceExpr(node, ctx)
-  of xnkSafeNavigationExpr:
+  of xnkExternal_SafeNavigation:
     result = conv_xnkSafeNavigationExpr(node, ctx)
-  of xnkNullCoalesceExpr:
+  of xnkExternal_NullCoalesce:
     result = conv_xnkNullCoalesceExpr(node, ctx)
   # xnkConditionalAccessExpr removed - was duplicate of xnkSafeNavigationExpr
   of xnkLambdaExpr:
@@ -2067,11 +2073,11 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
     result = conv_xnkSymbolLit(node, ctx)
   of xnkDynamicType:
     result = conv_xnkDynamicType(node, ctx)
-  of xnkGeneratorExpr:
+  of xnkExternal_Generator:
     result = conv_xnkGeneratorExpr(node, ctx)
-  of xnkAwaitExpr:
+  of xnkExternal_Await:
     result = conv_xnkAwaitExpr(node, ctx)
-  of xnkStringInterpolation:
+  of xnkExternal_StringInterp:
     result = conv_xnkStringInterpolation(node, ctx)
   of xnkCompFor:
     result = conv_xnkCompFor(node, ctx)
@@ -2083,11 +2089,11 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
     result = conv_xnkSizeOfExpr(node, ctx)
   of xnkCheckedExpr:
     result = conv_xnkCheckedExpr(node, ctx)
-  of xnkThrowExpr:
+  of xnkExternal_ThrowExpr:
     result = conv_xnkThrowExpr(node, ctx)
-  of xnkSwitchExpr:
+  of xnkExternal_SwitchExpr:
     result = conv_xnkSwitchExpr(node, ctx)
-  of xnkStackAllocExpr:
+  of xnkExternal_StackAlloc:
     result = conv_xnkStackAllocExpr(node, ctx)
   of xnkImplicitArrayCreation:
     result = conv_xnkImplicitArrayCreation(node, ctx)
@@ -2159,35 +2165,11 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
     result = conv_xnkTupleExpr(node, ctx)
   of xnkDictExpr:
     result = conv_xnkDictExpr(node, ctx)
-  of xnkComprehensionExpr:
-    result = conv_xnkComprehensionExpr(node, ctx)
+  
   of xnkDictEntry:
     result = conv_xnkDictEntry(node, ctx)
-
-  # ==========================================================================
-  # External/Source-Specific Kinds - These must be lowered by passes
-  # ==========================================================================
-  # External kinds should never reach the converter. If they do, it means
-  # the lowering passes didn't run or failed to transform them.
-  of xnkExternal_Property, xnkExternal_Indexer, xnkExternal_Event,
-     xnkExternal_Delegate, xnkExternal_Operator, xnkExternal_ConversionOp,
-     xnkExternal_Resource, xnkExternal_Fixed, xnkExternal_Lock,
-     xnkExternal_Unsafe, xnkExternal_Checked, xnkExternal_SafeNavigation,
-     xnkExternal_NullCoalesce, xnkExternal_ThrowExpr, xnkExternal_SwitchExpr,
-     xnkExternal_StackAlloc, xnkExternal_StringInterp, xnkExternal_Ternary,
-     xnkExternal_DoWhile, xnkExternal_ForStmt, xnkExternal_Interface,
-     xnkExternal_Generator, xnkExternal_Comprehension, xnkExternal_With,
-     xnkExternal_Destructure, xnkExternal_Await, xnkExternal_LocalFunction,
-     # Additional external kinds
-     xnkExternal_ExtensionMethod, xnkExternal_FallthroughCase,
-     xnkExternal_Unless, xnkExternal_Until, xnkExternal_Pass,
-     xnkExternal_Channel, xnkExternal_Goroutine, xnkExternal_GoDefer,
-     xnkExternal_GoSelect:
-    # External kinds must be lowered before reaching the converter
-    assert false, $node.kind & " should have been lowered by transformation passes"
-
-  # else:
-  #   raise newException(ValueError, "Unsupported XLang node kind: " & $node.kind)
+  else:
+    raise newException(ValueError, "Unsupported or unlowered XLang node kind: " & $node.kind)
 
 
 

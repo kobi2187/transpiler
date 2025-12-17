@@ -83,21 +83,21 @@ proc hoistThrowExpr(node: XLangNode, stmts: var seq[XLangNode]): XLangNode =
         binaryRight: rightTransformed
       )
 
-  of xnkTernaryExpr:
+  of xnkExternal_Ternary:
     # condition ? throw : value  or  condition ? value : throw
     let condStmts: seq[XLangNode] = @[]
     let thenStmts: seq[XLangNode] = @[]
     let elseStmts: seq[XLangNode] = @[]
 
-    let thenTransformed = hoistThrowExpr(node.ternaryThen, stmts)
-    let elseTransformed = hoistThrowExpr(node.ternaryElse, stmts)
+    let thenTransformed = hoistThrowExpr(node.extTernaryThen, stmts)
+    let elseTransformed = hoistThrowExpr(node.extTernaryElse, stmts)
 
     # If either branch throws, convert to if statement
     result = XLangNode(
-      kind: xnkTernaryExpr,
-      ternaryCondition: node.ternaryCondition,
-      ternaryThen: thenTransformed,
-      ternaryElse: elseTransformed
+      kind: xnkExternal_Ternary,
+      extTernaryCondition: node.extTernaryCondition,
+      extTernaryThen: thenTransformed,
+      extTernaryElse: elseTransformed
     )
 
   else:

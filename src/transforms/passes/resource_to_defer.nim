@@ -96,12 +96,12 @@ proc transformResourceToDefer*(node: XLangNode): XLangNode {.noSideEffect, gcsaf
 proc migrateWithStmt*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Migrate Python with statements to unified resource management
 
-  if node.kind != xnkWithStmt:
+  if node.kind != xnkExternal_With:
     return node
 
   var resourceItems: seq[XLangNode] = @[]
 
-  for item in node.items:
+  for item in node.extWithItems:
     resourceItems.add(XLangNode(
       kind: xnkResourceItem,
       resourceExpr: item.contextExpr,
@@ -110,9 +110,9 @@ proc migrateWithStmt*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
     ))
 
   result = XLangNode(
-    kind: xnkResourceStmt,
-    resourceItems: resourceItems,
-    resourceBody: node.withBody
+    kind: xnkExternal_Resource,
+    extResourceItems: resourceItems,
+    extResourceBody: node.extWithBody
   )
 
 
@@ -141,7 +141,7 @@ proc migrateUsingStmt*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   )
 
   result = XLangNode(
-    kind: xnkResourceStmt,
-    resourceItems: @[resourceItem],
-    resourceBody: node.usingBody
+    kind: xnkExternal_Resource,
+    extResourceItems: @[resourceItem],
+    extResourceBody: node.usingBody
   )
