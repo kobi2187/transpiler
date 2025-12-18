@@ -229,15 +229,49 @@ partial class Program
 
     static JObject ConvertMethod(MethodDeclarationSyntax method)
     {
-        return new JObject
+        // Check if this is an extension method (static method with 'this' on first parameter)
+        bool isExtensionMethod = method.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.StaticKeyword)) &&
+                                  method.ParameterList.Parameters.Count > 0 &&
+                                  method.ParameterList.Parameters[0].Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.ThisKeyword));
+
+        // Extract parameters
+        var parameters = method.ParameterList.Parameters.Select(p => new JObject
         {
-            ["kind"] = "xnkFuncDecl",
-            ["funcName"] = method.Identifier.Text,
-            ["params"] = new JArray(),
-            ["returnType"] = new JObject { ["kind"] = "xnkNamedType", ["typeName"] = method.ReturnType.ToString() },
-            ["body"] = method.Body != null ? ConvertBlock(method.Body) : JValue.CreateNull(),
-            ["isAsync"] = method.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.AsyncKeyword))
-        };
+            ["kind"] = "xnkParameter",
+            ["paramName"] = p.Identifier.Text,
+            ["paramType"] = p.Type != null ? new JObject
+            {
+                ["kind"] = "xnkNamedType",
+                ["typeName"] = p.Type.ToString()
+            } : JValue.CreateNull(),
+            ["defaultValue"] = p.Default != null ? ConvertExpression(p.Default.Value) : JValue.CreateNull(),
+            ["isThis"] = p.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.ThisKeyword))
+        });
+
+        if (isExtensionMethod)
+        {
+            return new JObject
+            {
+                ["kind"] = "xnkExternal_ExtensionMethod",
+                ["extExtMethodName"] = method.Identifier.Text,
+                ["extExtMethodParams"] = new JArray(parameters),
+                ["extExtMethodReturnType"] = new JObject { ["kind"] = "xnkNamedType", ["typeName"] = method.ReturnType.ToString() },
+                ["extExtMethodBody"] = method.Body != null ? ConvertBlock(method.Body) : JValue.CreateNull(),
+                ["extExtMethodIsStatic"] = true  // Extension methods are always static in C#
+            };
+        }
+        else
+        {
+            return new JObject
+            {
+                ["kind"] = "xnkFuncDecl",
+                ["funcName"] = method.Identifier.Text,
+                ["params"] = new JArray(parameters),
+                ["returnType"] = new JObject { ["kind"] = "xnkNamedType", ["typeName"] = method.ReturnType.ToString() },
+                ["body"] = method.Body != null ? ConvertBlock(method.Body) : JValue.CreateNull(),
+                ["isAsync"] = method.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.AsyncKeyword))
+            };
+        }
     }
 
     static JObject ConvertBlock(BlockSyntax block)

@@ -16,59 +16,30 @@ import ../../../xlangtypes
 import options
 import strutils
 
-proc isExtensionMethod(node: XLangNode): bool =
-  ## Check if this function is a C# extension method
-  ## Extension methods are static and have 'this' on first parameter
-  if node.kind notin {xnkFuncDecl, xnkMethodDecl}:
-    return false
-
-  # In XLang AST, extension method info would be in metadata
-  # For now, check if function name or params have indicators
-  # A proper implementation would check:
-  # 1. Function is static
-  # 2. First parameter has 'this' modifier
-  # This would require extending XLangNode to track parameter modifiers
-
-  # Placeholder check - would need metadata
-  return false
-
 proc transformExtensionMethods*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   ## Transform C# extension methods to regular Nim procedures
   case node.kind
-  of xnkFuncDecl, xnkMethodDecl:
-    # Check if this is an extension method
-    if not isExtensionMethod(node):
-      return node
-
+  of xnkExternal_ExtensionMethod:
     # Transform extension method to regular proc
     # C#:
-    #   public static int WordCount(this string str) { ... }
+    #   public static PadPosition ToOld(this Padder.PadPosition padPosition) { ... }
     #
     # Nim:
-    #   proc wordCount(str: string): int = ...
+    #   proc toOld(padPosition: Padder.PadPosition): PadPosition = ...
 
-    # The transformation is mainly:
-    # 1. Remove 'static' modifier (Nim procs are already static-like)
-    # 2. Remove 'this' from first parameter
-    # 3. Keep same parameter list and body
+    # The transformation:
+    # 1. Convert to xnkFuncDecl (Nim procs are already static-like)
+    # 2. Keep all parameters including the 'this' parameter (Nim's UFCS handles it)
+    # 3. Keep same body
 
     result = XLangNode(
-      kind: xnkFuncDecl,  # Convert method to function
-      funcName: node.funcName,
-      params: node.params,  # 'this' modifier would be removed from param metadata
-      returnType: node.returnType,
-      body: node.body,
-      isAsync: node.isAsync
+      kind: xnkFuncDecl,
+      funcName: node.extExtMethodName,
+      params: node.extExtMethodParams,  # Keep all params, including the 'this' one
+      returnType: node.extExtMethodReturnType,
+      body: node.extExtMethodBody,
+      isAsync: false  # Will be tracked separately if needed
     )
-
-  of xnkCallExpr:
-    # Also need to transform extension method calls
-    # C#: str.WordCount() where WordCount is extension
-    # Nim: wordCount(str) or str.wordCount()
-
-    # In Nim, both syntaxes work (UFCS - Uniform Function Call Syntax)
-    # So member access to extension method can stay as-is
-    result = node
 
   else:
     result = node
