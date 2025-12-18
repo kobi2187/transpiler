@@ -44,7 +44,7 @@ proc TransformInvariantFeature(): void =
   Directory.CreateDirectory(outputDirectory)
   File.Copy(filePath, outFilePath, true)
 proc GetFeatureFileName(): string =
-  return if == featureName string.Empty:
+  return if featureName == string.Empty:
   string.Concat(DataDirectoryName, ".", fileName)
 else:
   string.Concat(DataDirectoryName, ".", featureName, ".", fileName)
@@ -52,7 +52,7 @@ proc LoadLocaleList(): ISet<string> =
   var result: var = HashSet<string>
   var reader: var = StreamReader(Path.Combine(dataPath, localeListFileName), Encoding.UTF8)
   var line: string
-  while != line = reader.ReadLine nil:
+  while line = reader.ReadLine != nil:
     result.Add(line.Trim)
   return result
 proc CreateInvariantResourceManifest(): void =
@@ -61,10 +61,10 @@ proc CreateInvariantResourceManifest(): void =
   var writer: var = StreamWriter(outputFilePath, false, Encoding.UTF8)
   block:
     var i: int = 0
-    while < i - files.Count 1:
+    while i < files.Count - 1:
       writer.WriteLine(files[i])
 ++i
-  writer.Write(files[- files.Count 1])
+  writer.Write(files[files.Count - 1])
   writer.Flush
 proc GetNonLocalizedFileNameList(): IList<string> =
   var result: var = List<string>

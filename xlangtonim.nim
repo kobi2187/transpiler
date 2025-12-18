@@ -905,8 +905,9 @@ proc conv_xnkBracketExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 proc conv_xnkBinaryExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result = newNimNode(nnkInfix)
-  result.add(convertToNimAST(node.binaryLeft, ctx))
+  # nnkInfix children order: [operator, left, right]
   result.add(newIdentNode(node.binaryOp))
+  result.add(convertToNimAST(node.binaryLeft, ctx))
   result.add(convertToNimAST(node.binaryRight, ctx))
 
 proc conv_xnkUnaryExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
