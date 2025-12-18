@@ -42,6 +42,13 @@ type
     # ^ The xnkFile/xnkModule being converted
     # Gives access to: moduleName, all top-level declarations
 
+    currentFile*: string
+    # ^ The source file path being processed (for error reporting)
+    # Note: Similar to currentModule but stores the file path string
+
+    nodeStack*: seq[XLangNode]
+    # ^ Stack of nodes being converted (for error reporting - shows hierarchy)
+
     # ===== Symbol Tables (XLangNode references) =====
     types*: Table[string, XLangNode]
     # ^ All type declarations: xnkClassDecl, xnkInterfaceDecl, xnkEnumDecl
@@ -70,6 +77,8 @@ proc newContext*(): ConversionContext =
     currentFunction: none(XLangNode),
     currentNamespace: none(XLangNode),
     currentModule: none(XLangNode),
+    currentFile: "",
+    nodeStack: @[],
     types: initTable[string, XLangNode](),
     variables: initTable[string, XLangNode](),
     functions: initTable[string, XLangNode](),
@@ -432,8 +441,15 @@ proc conv_xnkFuncDecl_method(node: XLangNode, ctx: ConversionContext): MyNimNode
   result.add(newEmptyNode())
   # 5: reserved
   result.add(newEmptyNode())
-  # 6: body
-  result.add(convertToNimAST(node.body, ctx))
+  # 6: body - convert block body directly to statement list (no explicit block needed)
+  if node.body.kind == xnkBlockStmt:
+    # Function bodies don't need explicit block: wrapper in Nim
+    let body = newStmtList()
+    for stmt in node.body.blockBody:
+      body.add(convertToNimAST(stmt, ctx))
+    result.add(body)
+  else:
+    result.add(convertToNimAST(node.body, ctx))
   if node.isAsync:
     setPragma(result, newPragma(newIdentNode("async")))
 
@@ -521,17 +537,39 @@ proc conv_xnkIfStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result = newNimNode(nnkIfStmt)
   let branchNode = newNimNode(nnkElifBranch)
   branchNode.add(convertToNimAST(node.ifCondition, ctx))
-  branchNode.add(convertToNimAST(node.ifBody, ctx))
+  # Unwrap block for if body - Nim doesn't need explicit block for branches
+  if node.ifBody.kind == xnkBlockStmt:
+    let body = newStmtList()
+    for stmt in node.ifBody.blockBody:
+      body.add(convertToNimAST(stmt, ctx))
+    branchNode.add(body)
+  else:
+    branchNode.add(convertToNimAST(node.ifBody, ctx))
   result.add(branchNode)
   if node.elseBody.isSome():
     let elseNode = newNimNode(nnkElse)
-    elseNode.add(convertToNimAST(node.elseBody.get, ctx))
+    let elseBodyNode = node.elseBody.get
+    # Unwrap block for else body
+    if elseBodyNode.kind == xnkBlockStmt:
+      let body = newStmtList()
+      for stmt in elseBodyNode.blockBody:
+        body.add(convertToNimAST(stmt, ctx))
+      elseNode.add(body)
+    else:
+      elseNode.add(convertToNimAST(elseBodyNode, ctx))
     result.add(elseNode)
 
 proc conv_xnkWhileStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result = newNimNode(nnkWhileStmt)
   result.add(convertToNimAST(node.whileCondition, ctx))
-  result.add(convertToNimAST(node.whileBody, ctx))
+  # Unwrap block for while body
+  if node.whileBody.kind == xnkBlockStmt:
+    let body = newStmtList()
+    for stmt in node.whileBody.blockBody:
+      body.add(convertToNimAST(stmt, ctx))
+    result.add(body)
+  else:
+    result.add(convertToNimAST(node.whileBody, ctx))
 
 proc conv_xnkForStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
   # Handle C-style or for-in style
@@ -606,9 +644,9 @@ proc conv_xnkCaseStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
       ofBranch.add(convertToNimAST(cond, ctx))
     ofBranch.add(convertToNimAST(branch.caseBody, ctx))
     result.add(ofBranch)
-  if node.elseBody.isSome:
+  if node.caseElseBody.isSome:
     let elseBranch = newNimNode(nnkElse)
-    elseBranch.add(convertToNimAST(node.elseBody.get, ctx))
+    elseBranch.add(convertToNimAST(node.caseElseBody.get, ctx))
     result.add(elseBranch)
 
 proc conv_xnkTryStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
@@ -697,7 +735,14 @@ proc conv_xnkComment(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 proc conv_xnkIntLit(node: XLangNode, ctx: ConversionContext): MyNimNode =
   # Parse integer literal value and create integer literal node
-  result = newIntLitNode(parseInt(node.literalValue))
+  # Handle large unsigned integers that overflow int64
+  try:
+    result = newIntLitNode(parseInt(node.literalValue))
+  except ValueError, OverflowDefect:
+    # Value too large for parseInt - keep as string literal for now
+    # This typically happens with large hex constants like 0xFFFFFFFFFFFFFFFF
+    # In Nim we can represent these as hex literals
+    result = newIdentNode(node.literalValue)
 
 proc conv_xnkFloatLit(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result = newFloatLitNode(parseFloat(node.literalValue))
@@ -1217,8 +1262,7 @@ proc conv_xnkLabeledStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
 ## Nim: (discarded - should restructure code)
 proc conv_xnkGotoStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
   addWarning(xnkGotoStmt, "goto statement not supported in Nim - code needs restructuring")
-  result = newNimNode(nnkCommentStmt)
-  result.strVal = "UNSUPPORTED: goto " & node.gotoLabel & " - requires manual restructuring"
+  result = newCommentStmtNode("UNSUPPORTED: goto " & node.gotoLabel & " - requires manual restructuring")
 
 ## C#: `fixed (int* p = arr) { }` (unsafe pointers)
 ## Nim: (discarded - use ptr manually)
@@ -1792,384 +1836,439 @@ proc conv_xnkAsgn(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result.add(convertToNimAST(node.asgnRight, ctx))
 
 
-#TODO: support all LOWERED (after transforms) xlangtypes node kinds
+# Helper proc to get a description of a node for error reporting
+proc getNodeDescription(node: XLangNode): string =
+  if node.isNil:
+    return "nil"
+
+  result = $node.kind
+
+  # Add identifying information based on node type
+  case node.kind
+  of xnkModule:
+    if node.moduleName.len > 0:
+      result &= " (module: " & node.moduleName & ")"
+  of xnkFuncDecl, xnkMethodDecl:
+    if node.funcName.len > 0:
+      result &= " (name: " & node.funcName & ")"
+  of xnkVarDecl, xnkLetDecl, xnkConstDecl:
+    if node.declName.len > 0:
+      result &= " (name: " & node.declName & ")"
+  of xnkIdentifier:
+    if node.identName.len > 0:
+      result &= " (" & node.identName & ")"
+  of xnkIntLit:
+    if node.literalValue.len > 0:
+      result &= " (" & node.literalValue & ")"
+  of xnkFloatLit:
+    if node.literalValue.len > 0:
+      result &= " (" & node.literalValue & ")"
+  of xnkStringLit:
+    if node.literalValue.len > 0:
+      let s = node.literalValue
+      result &= " (\"" & (if s.len > 30: s[0..29] & "..." else: s) & "\")"
+  else:
+    discard
+
 proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode =
   # Check for nil node
   if node.isNil:
-    echo "WARNING: convertToNimAST called with nil node"
+    let fileInfo = if not ctx.isNil and ctx.currentFile != "": " in " & ctx.currentFile else: ""
+    echo "WARNING: convertToNimAST called with nil node", fileInfo
     return newNimNode(nnkDiscardStmt)
 
   # Create temporary context if none provided (for backward compatibility)
   let context = if ctx.isNil: newContext() else: ctx
 
-  case node.kind
-  
-  of xnkFile:
-    result = conv_xnkFile(node, context)
-  of xnkModule:
-    result = conv_xnkModule(node, context)
-  of xnkNamespace:
-    result = conv_xnkNamespace(node, context)
-  of xnkFuncDecl, xnkMethodDecl:
-    result = conv_xnkFuncDecl_method(node, context)
-  of xnkClassDecl, xnkStructDecl:
-    result = conv_xnkClassDecl_structDecl(node, context)
-  of xnkInterfaceDecl:
-    result = conv_xnkInterfaceDecl(node, ctx)
-  of xnkEnumDecl:
-    result = conv_xnkEnumDecl(node, ctx)
-  of xnkVarDecl, xnkLetDecl, xnkConstDecl:
-    result = conv_xnkVarLetConst(node, ctx)
-  of xnkIfStmt:
-    result = conv_xnkIfStmt(node, ctx)
-  of xnkWhileStmt:
-    result = conv_xnkWhileStmt(node, ctx)
-  of xnkExternal_ForStmt:
-    result = conv_xnkForStmt(node, ctx)
-  of xnkBlockStmt:
-    result = conv_xnkBlockStmt(node, ctx)
-  of xnkCallExpr:
-    result = conv_xnkCallExpr(node, ctx)
-  of xnkThisCall:
-    result = conv_xnkThisCall(node, ctx)
-  of xnkBaseCall:
-    result = conv_xnkBaseCall(node, ctx)
-  of xnkDotExpr:
-    result = conv_xnkDotExpr(node, ctx)
-  of xnkMemberAccessExpr:
-    result = conv_xnkMemberAccess(node, ctx)
-  of xnkBracketExpr:
-    result = conv_xnkBracketExpr(node, ctx)
-  of xnkIndexExpr:
-    result = conv_xnkIndexExpr(node, ctx)
-  of xnkBinaryExpr:
-    result = conv_xnkBinaryExpr(node, ctx)
-  of xnkUnaryExpr:
-    result = conv_xnkUnaryExpr(node, ctx)
-  of xnkReturnStmt:
-    result = conv_xnkReturnStmt(node, ctx)
-  of xnkIteratorYield:
-    result = conv_xnkIteratorYield(node, ctx)
-  of xnkYieldStmt:
-    result = conv_xnkYieldStmt(node, ctx)
-  of xnkDiscardStmt:
-    result = conv_xnkDiscardStmt(node, ctx)
-  of xnkCaseStmt:
-    result = conv_xnkCaseStmt(node, ctx)
-  of xnkTryStmt:
-    result = conv_xnkTryStmt(node, ctx)
-  of xnkRaiseStmt:
-    result = conv_xnkRaiseStmt(node, ctx)
-  of xnkTypeDecl:
-    result = conv_xnkTypeDecl(node, ctx)
-  of xnkImportStmt:
-    result = conv_xnkImportStmt(node, ctx)
-  of xnkImport:
-    result = conv_xnkImport(node, ctx)
-  of xnkExport:
-    result = conv_xnkExport(node, ctx)
-  of xnkExportStmt:
-    result = conv_xnkExportStmt(node, ctx)
-  of xnkFromImportStmt:
-    result = conv_xnkFromImportStmt(node, ctx)
-  of xnkGenericParameter:
-    result = conv_xnkGenericParameter(node, ctx)
-  of xnkIdentifier:
-    result = conv_xnkIdentifier(node, ctx)
-  of xnkComment:
-    result = conv_xnkComment(node, ctx)
-  of xnkIntLit:
-    result = conv_xnkIntLit(node, ctx)
-  of xnkFloatLit:
-    result = conv_xnkFloatLit(node, ctx)
-  of xnkStringLit:
-    result = conv_xnkStringLit(node, ctx)
-  of xnkCharLit:
-    result = conv_xnkCharLit(node, ctx)
-  of xnkBoolLit:
-    result = conv_xnkBoolLit(node, ctx)
-  of xnkNilLit:
-    result = conv_xnkNilLit(node, ctx)
-  of xnkTemplateDef, xnkMacroDef:
-    result = conv_xnkTemplateMacro(node, ctx)
-  of xnkPragma:
-    result = conv_xnkPragma(node, ctx)
-  of xnkStaticStmt:
-    result = conv_xnkStaticStmt(node, ctx)
-  of xnkDeferStmt:
-    result = conv_xnkDeferStmt(node, ctx)
-  of xnkAsmStmt:
-    result = conv_xnkAsmStmt(node, ctx)
-  of xnkDistinctTypeDef:
-    result = conv_xnkDistinctTypeDef(node, ctx)
-  of xnkConceptDef:
-    result = conv_xnkConceptDef(node, ctx)
-  of xnkMixinStmt:
-    result = conv_xnkMixinStmt(node, ctx)
-  of xnkBindStmt:
-    result = conv_xnkBindStmt(node, ctx)
-  of xnkTupleConstr:
-    result = conv_xnkTupleConstr(node, ctx)
-  of xnkTupleUnpacking:
-    result = conv_xnkTupleUnpacking(node, ctx)
-  of xnkUsingStmt:
-    result = conv_xnkUsingStmt(node, ctx)
-  
-  # TODO: discard (when nim doesn't have it - disappears in transforms) or write conv_ procs after mapping and example of c# code of that construct to expected Nim code.
-  of xnkIteratorDecl:
-    result = conv_xnkIteratorDecl(node, ctx)
-  of xnkExternal_Property:
-    result = conv_xnkPropertyDecl(node, ctx)
-  of xnkFieldDecl:
-    result = conv_xnkFieldDecl(node, ctx)
-  of xnkConstructorDecl:
-    result = conv_xnkConstructorDecl(node, ctx)
-  of xnkDestructorDecl:
-    result = conv_xnkDestructorDecl(node, ctx)
-  of xnkExternal_Delegate:
-    result = conv_xnkDelegateDecl(node, ctx)
-  of xnkExternal_Event:
-    result = conv_xnkEventDecl(node, ctx)
-  of xnkModuleDecl:
-    result = conv_xnkModuleDecl(node, ctx)
-  of xnkTypeAlias:
-    result = conv_xnkTypeAlias(node, ctx)
-  of xnkAbstractDecl:
-    result = conv_xnkAbstractDecl(node, ctx)
-  of xnkEnumMember:
-    result = conv_xnkEnumMember(node, ctx)
-  of xnkExternal_Indexer:
-    result = conv_xnkIndexerDecl(node, ctx)
-  of xnkExternal_Operator:
-    result = conv_xnkOperatorDecl(node, ctx)
-  of xnkExternal_ConversionOp:
-    result = conv_xnkConversionOperatorDecl(node, ctx)
-  of xnkAbstractType:
-    result = conv_xnkAbstractType(node, ctx)
-  of xnkFunctionType:
-    result = conv_xnkFunctionType(node, ctx)
-  of xnkMetadata:
-    result = conv_xnkMetadata(node, ctx)
-  of xnkLibDecl:
-    result = conv_xnkLibDecl(node, ctx)
-  of xnkCFuncDecl:
-    result = conv_xnkCFuncDecl(node, ctx)
-  of xnkExternalVar:
-    result = conv_xnkExternalVar(node, ctx)
-  of xnkAsgn:
-    result = conv_xnkAsgn(node, ctx)
-  of xnkSwitchStmt:
-    result = conv_xnkSwitchStmt(node, ctx)
-  of xnkCaseClause:
-    result = conv_xnkCaseClause(node, ctx)
-  of xnkDefaultClause:
-    result = conv_xnkDefaultClause(node, ctx)
-  of xnkDoWhileStmt:
-    result = conv_xnkDoWhileStmt(node, ctx)
-  of xnkForeachStmt:
-    result = conv_xnkForeachStmt(node, ctx)
-  of xnkCatchStmt:
-    result = conv_xnkCatchStmt(node, ctx)
-  of xnkFinallyStmt:
-    result = conv_xnkFinallyStmt(node, ctx)
-  of xnkIteratorDelegate:
-    result = conv_xnkIteratorDelegate(node, ctx)
-  of xnkYieldExpr:
-    result = conv_xnkYieldExpr(node, ctx)
-  of xnkYieldFromStmt:
-    result = conv_xnkYieldFromStmt(node, ctx)
-  of xnkBreakStmt:
-    result = conv_xnkBreakStmt(node, ctx)
-  of xnkContinueStmt:
-    result = conv_xnkContinueStmt(node, ctx)
-  of xnkThrowStmt:
-    result = conv_xnkThrowStmt(node, ctx)
-  of xnkAssertStmt:
-    result = conv_xnkAssertStmt(node, ctx)
-  of xnkExternal_With:
-    result = conv_xnkWithStmt(node, ctx)
-  of xnkExternal_Resource:
-    result = conv_xnkResourceStmt(node, ctx)
-  of xnkResourceItem:
-    result = conv_xnkResourceItem(node, ctx)
-  of xnkExternal_Pass:
-    result = conv_xnkPassStmt(node, ctx)
-  of xnkTypeSwitchStmt:
-    result = conv_xnkTypeSwitchStmt(node, ctx)
-  of xnkTypeCaseClause:
-    result = conv_xnkTypeCaseClause(node, ctx)
-  of xnkWithItem:
-    result = conv_xnkWithItem(node, ctx)
-  of xnkEmptyStmt:
-    result = conv_xnkEmptyStmt(node, ctx)
-  of xnkLabeledStmt:
-    result = conv_xnkLabeledStmt(node, ctx)
-  of xnkGotoStmt:
-    result = conv_xnkGotoStmt(node, ctx)
-  of xnkExternal_Fixed:
-    result = conv_xnkFixedStmt(node, ctx)
-  of xnkExternal_Lock:
-    result = conv_xnkLockStmt(node, ctx)
-  of xnkExternal_Unsafe:
-    result = conv_xnkUnsafeStmt(node, ctx)
-  of xnkExternal_Checked:
-    result = conv_xnkCheckedStmt(node, ctx)
-  of xnkExternal_LocalFunction:
-    result = conv_xnkLocalFunctionStmt(node, ctx)
-  of xnkUnlessStmt:
-    result = conv_xnkUnlessStmt(node, ctx)
-  of xnkUntilStmt:
-    result = conv_xnkUntilStmt(node, ctx)
-  of xnkStaticAssert:
-    result = conv_xnkStaticAssert(node, ctx)
-  of xnkSwitchCase:
-    result = conv_xnkSwitchCase(node, ctx)
-  of xnkMixinDecl:
-    result = conv_xnkMixinDecl(node, ctx)
-  of xnkTemplateDecl:
-    result = conv_xnkTemplateDecl(node, ctx)
-  of xnkMacroDecl:
-    result = conv_xnkMacroDecl(node, ctx)
-  of xnkInclude:
-    result = conv_xnkInclude(node, ctx)
-  of xnkExtend:
-    result = conv_xnkExtend(node, ctx)
-  of xnkExternal_Ternary:
-    result = conv_xnkTernaryExpr(node, ctx)
-  of xnkSliceExpr:
-    result = conv_xnkSliceExpr(node, ctx)
-  of xnkExternal_SafeNavigation:
-    result = conv_xnkSafeNavigationExpr(node, ctx)
-  of xnkExternal_NullCoalesce:
-    result = conv_xnkNullCoalesceExpr(node, ctx)
-  # xnkConditionalAccessExpr removed - was duplicate of xnkSafeNavigationExpr
-  of xnkLambdaExpr:
-    result = conv_xnkLambdaExpr(node, ctx)
-  of xnkTypeAssertion:
-    result = conv_xnkTypeAssertion(node, ctx)
-  of xnkCastExpr:
-    result = conv_xnkCastExpr(node, ctx)
-  of xnkThisExpr:
-    result = conv_xnkThisExpr(node, ctx)
-  of xnkBaseExpr:
-    result = conv_xnkBaseExpr(node, ctx)
-  of xnkRefExpr:
-    result = conv_xnkRefExpr(node, ctx)
-  of xnkInstanceVar:
-    result = conv_xnkInstanceVar(node, ctx)
-  of xnkClassVar:
-    result = conv_xnkClassVar(node, ctx)
-  of xnkGlobalVar:
-    result = conv_xnkGlobalVar(node, ctx)
-  of xnkProcLiteral:
-    result = conv_xnkProcLiteral(node, ctx)
-  of xnkProcPointer:
-    result = conv_xnkProcPointer(node, ctx)
-  of xnkArrayLit:
-    result = conv_xnkArrayLit(node, ctx)
-  of xnkNumberLit:
-    result = conv_xnkNumberLit(node, ctx)
-  of xnkSymbolLit:
-    result = conv_xnkSymbolLit(node, ctx)
-  of xnkDynamicType:
-    result = conv_xnkDynamicType(node, ctx)
-  of xnkExternal_Generator:
-    result = conv_xnkGeneratorExpr(node, ctx)
-  of xnkExternal_Await:
-    result = conv_xnkAwaitExpr(node, ctx)
-  of xnkExternal_StringInterp:
-    result = conv_xnkStringInterpolation(node, ctx)
-  of xnkCompFor:
-    result = conv_xnkCompFor(node, ctx)
-  of xnkDefaultExpr:
-    result = conv_xnkDefaultExpr(node, ctx)
-  of xnkTypeOfExpr:
-    result = conv_xnkTypeOfExpr(node, ctx)
-  of xnkSizeOfExpr:
-    result = conv_xnkSizeOfExpr(node, ctx)
-  of xnkCheckedExpr:
-    result = conv_xnkCheckedExpr(node, ctx)
-  of xnkExternal_ThrowExpr:
-    result = conv_xnkThrowExpr(node, ctx)
-  of xnkExternal_SwitchExpr:
-    result = conv_xnkSwitchExpr(node, ctx)
-  of xnkExternal_StackAlloc:
-    result = conv_xnkStackAllocExpr(node, ctx)
-  of xnkImplicitArrayCreation:
-    result = conv_xnkImplicitArrayCreation(node, ctx)
-  of xnkNoneLit:
-    result = conv_xnkNoneLit(node, ctx)
-  of xnkNamedType:
-    result = conv_xnkNamedType(node, ctx)
-  of xnkArrayType:
-    result = conv_xnkArrayType(node, ctx)
-  of xnkMapType:
-    result = conv_xnkMapType(node, ctx)
-  of xnkFuncType:
-    result = conv_xnkFuncType(node, ctx)
-  of xnkPointerType:
-    result = conv_xnkPointerType(node, ctx)
-  of xnkReferenceType:
-    result = conv_xnkReferenceType(node, ctx)
-  of xnkGenericType:
-    result = conv_xnkGenericType(node, ctx)
-  of xnkUnionType:
-    result = conv_xnkUnionType(node, ctx)
-  of xnkIntersectionType:
-    result = conv_xnkIntersectionType(node, ctx)
-  of xnkDistinctType:
-    result = conv_xnkDistinctType(node, ctx)
-  of xnkAttribute:
-    result = conv_xnkAttribute(node, ctx)
-  of xnkParameter:
-    result = conv_xnkParameter(node, ctx)
-  of xnkArgument:
-    result = conv_xnkArgument(node, ctx)
-  of xnkDecorator:
-    result = conv_xnkDecorator(node, ctx)
-  of xnkLambdaProc:
-    result = conv_xnkLambdaProc(node, ctx)
-  of xnkArrowFunc:
-    result = conv_xnkArrowFunc(node, ctx)
-  of xnkConceptRequirement:
-    result = conv_xnkConceptRequirement(node, ctx)
-  of xnkQualifiedName:
-    result = conv_xnkQualifiedName(node, ctx)
-  of xnkAliasQualifiedName:
-    result = conv_xnkAliasQualifiedName(node, ctx)
-  of xnkGenericName:
-    result = conv_xnkGenericName(node, ctx)
-  of xnkUnknown:
-    result = conv_xnkUnknown(node, ctx)
-  of xnkConceptDecl:
-    result = conv_xnkConceptDecl(node, ctx)
-  of xnkDestructureObj:
-    result = conv_xnkDestructureObj(node, ctx)
-  of xnkDestructureArray:
-    result = conv_xnkDestructureArray(node, ctx)
-  of xnkMethodReference:
-    result = conv_xnkMethodReference(node, ctx)
-  of xnkSequenceLiteral:
-    result = conv_xnkSequenceLiteral(node, ctx)
-  of xnkSetLiteral:
-    result = conv_xnkSetLiteral(node, ctx)
-  of xnkMapLiteral:
-    result = conv_xnkMapLiteral(node, ctx)
-  of xnkArrayLiteral:
-    result = conv_xnkArrayLiteral(node, ctx)
-  of xnkListExpr:
-    result = conv_xnkListExpr(node, ctx)
-  of xnkSetExpr:
-    result = conv_xnkSetExpr(node, ctx)
-  of xnkTupleExpr:
-    result = conv_xnkTupleExpr(node, ctx)
-  of xnkDictExpr:
-    result = conv_xnkDictExpr(node, ctx)
-  
-  of xnkDictEntry:
-    result = conv_xnkDictEntry(node, ctx)
-  else:
-    raise newException(ValueError, "Unsupported or unlowered XLang node kind: " & $node.kind)
+  # Push node onto stack for error tracking
+  context.nodeStack.add(node)
+  defer:
+    # Pop node from stack when we exit (success or failure)
+    discard context.nodeStack.pop()
+
+  # Wrap in try-except to provide better error context
+  try:
+    case node.kind
+
+    of xnkFile:
+      result = conv_xnkFile(node, context)
+    of xnkModule:
+      result = conv_xnkModule(node, context)
+    of xnkNamespace:
+      result = conv_xnkNamespace(node, context)
+    of xnkFuncDecl, xnkMethodDecl:
+      result = conv_xnkFuncDecl_method(node, context)
+    of xnkClassDecl, xnkStructDecl:
+      result = conv_xnkClassDecl_structDecl(node, context)
+    of xnkInterfaceDecl:
+      result = conv_xnkInterfaceDecl(node, ctx)
+    of xnkEnumDecl:
+      result = conv_xnkEnumDecl(node, ctx)
+    of xnkVarDecl, xnkLetDecl, xnkConstDecl:
+      result = conv_xnkVarLetConst(node, ctx)
+    of xnkIfStmt:
+      result = conv_xnkIfStmt(node, ctx)
+    of xnkWhileStmt:
+      result = conv_xnkWhileStmt(node, ctx)
+    of xnkExternal_ForStmt:
+      result = conv_xnkForStmt(node, ctx)
+    of xnkBlockStmt:
+      result = conv_xnkBlockStmt(node, ctx)
+    of xnkCallExpr:
+      result = conv_xnkCallExpr(node, ctx)
+    of xnkThisCall:
+      result = conv_xnkThisCall(node, ctx)
+    of xnkBaseCall:
+      result = conv_xnkBaseCall(node, ctx)
+    of xnkDotExpr:
+      result = conv_xnkDotExpr(node, ctx)
+    of xnkMemberAccessExpr:
+      result = conv_xnkMemberAccess(node, ctx)
+    of xnkBracketExpr:
+      result = conv_xnkBracketExpr(node, ctx)
+    of xnkIndexExpr:
+      result = conv_xnkIndexExpr(node, ctx)
+    of xnkBinaryExpr:
+      result = conv_xnkBinaryExpr(node, ctx)
+    of xnkUnaryExpr:
+      result = conv_xnkUnaryExpr(node, ctx)
+    of xnkReturnStmt:
+      result = conv_xnkReturnStmt(node, ctx)
+    of xnkIteratorYield:
+      result = conv_xnkIteratorYield(node, ctx)
+    of xnkYieldStmt:
+      result = conv_xnkYieldStmt(node, ctx)
+    of xnkDiscardStmt:
+      result = conv_xnkDiscardStmt(node, ctx)
+    of xnkCaseStmt:
+      result = conv_xnkCaseStmt(node, ctx)
+    of xnkTryStmt:
+      result = conv_xnkTryStmt(node, ctx)
+    of xnkRaiseStmt:
+      result = conv_xnkRaiseStmt(node, ctx)
+    of xnkTypeDecl:
+      result = conv_xnkTypeDecl(node, ctx)
+    of xnkImportStmt:
+      result = conv_xnkImportStmt(node, ctx)
+    of xnkImport:
+      result = conv_xnkImport(node, ctx)
+    of xnkExport:
+      result = conv_xnkExport(node, ctx)
+    of xnkExportStmt:
+      result = conv_xnkExportStmt(node, ctx)
+    of xnkFromImportStmt:
+      result = conv_xnkFromImportStmt(node, ctx)
+    of xnkGenericParameter:
+      result = conv_xnkGenericParameter(node, ctx)
+    of xnkIdentifier:
+      result = conv_xnkIdentifier(node, ctx)
+    of xnkComment:
+      result = conv_xnkComment(node, ctx)
+    of xnkIntLit:
+      result = conv_xnkIntLit(node, ctx)
+    of xnkFloatLit:
+      result = conv_xnkFloatLit(node, ctx)
+    of xnkStringLit:
+      result = conv_xnkStringLit(node, ctx)
+    of xnkCharLit:
+      result = conv_xnkCharLit(node, ctx)
+    of xnkBoolLit:
+      result = conv_xnkBoolLit(node, ctx)
+    of xnkNilLit:
+      result = conv_xnkNilLit(node, ctx)
+    of xnkTemplateDef, xnkMacroDef:
+      result = conv_xnkTemplateMacro(node, ctx)
+    of xnkPragma:
+      result = conv_xnkPragma(node, ctx)
+    of xnkStaticStmt:
+      result = conv_xnkStaticStmt(node, ctx)
+    of xnkDeferStmt:
+      result = conv_xnkDeferStmt(node, ctx)
+    of xnkAsmStmt:
+      result = conv_xnkAsmStmt(node, ctx)
+    of xnkDistinctTypeDef:
+      result = conv_xnkDistinctTypeDef(node, ctx)
+    of xnkConceptDef:
+      result = conv_xnkConceptDef(node, ctx)
+    of xnkMixinStmt:
+      result = conv_xnkMixinStmt(node, ctx)
+    of xnkBindStmt:
+      result = conv_xnkBindStmt(node, ctx)
+    of xnkTupleConstr:
+      result = conv_xnkTupleConstr(node, ctx)
+    of xnkTupleUnpacking:
+      result = conv_xnkTupleUnpacking(node, ctx)
+    of xnkUsingStmt:
+      result = conv_xnkUsingStmt(node, ctx)
+    
+    # TODO: discard (when nim doesn't have it - disappears in transforms) or write conv_ procs after mapping and example of c# code of that construct to expected Nim code.
+    of xnkIteratorDecl:
+      result = conv_xnkIteratorDecl(node, ctx)
+    of xnkExternal_Property:
+      result = conv_xnkPropertyDecl(node, ctx)
+    of xnkFieldDecl:
+      result = conv_xnkFieldDecl(node, ctx)
+    of xnkConstructorDecl:
+      result = conv_xnkConstructorDecl(node, ctx)
+    of xnkDestructorDecl:
+      result = conv_xnkDestructorDecl(node, ctx)
+    of xnkExternal_Delegate:
+      result = conv_xnkDelegateDecl(node, ctx)
+    of xnkExternal_Event:
+      result = conv_xnkEventDecl(node, ctx)
+    of xnkModuleDecl:
+      result = conv_xnkModuleDecl(node, ctx)
+    of xnkTypeAlias:
+      result = conv_xnkTypeAlias(node, ctx)
+    of xnkAbstractDecl:
+      result = conv_xnkAbstractDecl(node, ctx)
+    of xnkEnumMember:
+      result = conv_xnkEnumMember(node, ctx)
+    of xnkExternal_Indexer:
+      result = conv_xnkIndexerDecl(node, ctx)
+    of xnkExternal_Operator:
+      result = conv_xnkOperatorDecl(node, ctx)
+    of xnkExternal_ConversionOp:
+      result = conv_xnkConversionOperatorDecl(node, ctx)
+    of xnkAbstractType:
+      result = conv_xnkAbstractType(node, ctx)
+    of xnkFunctionType:
+      result = conv_xnkFunctionType(node, ctx)
+    of xnkMetadata:
+      result = conv_xnkMetadata(node, ctx)
+    of xnkLibDecl:
+      result = conv_xnkLibDecl(node, ctx)
+    of xnkCFuncDecl:
+      result = conv_xnkCFuncDecl(node, ctx)
+    of xnkExternalVar:
+      result = conv_xnkExternalVar(node, ctx)
+    of xnkAsgn:
+      result = conv_xnkAsgn(node, ctx)
+    of xnkSwitchStmt:
+      result = conv_xnkSwitchStmt(node, ctx)
+    of xnkCaseClause:
+      result = conv_xnkCaseClause(node, ctx)
+    of xnkDefaultClause:
+      result = conv_xnkDefaultClause(node, ctx)
+    of xnkDoWhileStmt:
+      result = conv_xnkDoWhileStmt(node, ctx)
+    of xnkForeachStmt:
+      result = conv_xnkForeachStmt(node, ctx)
+    of xnkCatchStmt:
+      result = conv_xnkCatchStmt(node, ctx)
+    of xnkFinallyStmt:
+      result = conv_xnkFinallyStmt(node, ctx)
+    of xnkIteratorDelegate:
+      result = conv_xnkIteratorDelegate(node, ctx)
+    of xnkYieldExpr:
+      result = conv_xnkYieldExpr(node, ctx)
+    of xnkYieldFromStmt:
+      result = conv_xnkYieldFromStmt(node, ctx)
+    of xnkBreakStmt:
+      result = conv_xnkBreakStmt(node, ctx)
+    of xnkContinueStmt:
+      result = conv_xnkContinueStmt(node, ctx)
+    of xnkThrowStmt:
+      result = conv_xnkThrowStmt(node, ctx)
+    of xnkAssertStmt:
+      result = conv_xnkAssertStmt(node, ctx)
+    of xnkExternal_With:
+      result = conv_xnkWithStmt(node, ctx)
+    of xnkExternal_Resource:
+      result = conv_xnkResourceStmt(node, ctx)
+    of xnkResourceItem:
+      result = conv_xnkResourceItem(node, ctx)
+    of xnkExternal_Pass:
+      result = conv_xnkPassStmt(node, ctx)
+    of xnkTypeSwitchStmt:
+      result = conv_xnkTypeSwitchStmt(node, ctx)
+    of xnkTypeCaseClause:
+      result = conv_xnkTypeCaseClause(node, ctx)
+    of xnkWithItem:
+      result = conv_xnkWithItem(node, ctx)
+    of xnkEmptyStmt:
+      result = conv_xnkEmptyStmt(node, ctx)
+    of xnkLabeledStmt:
+      result = conv_xnkLabeledStmt(node, ctx)
+    of xnkGotoStmt:
+      result = conv_xnkGotoStmt(node, ctx)
+    of xnkExternal_Fixed:
+      result = conv_xnkFixedStmt(node, ctx)
+    of xnkExternal_Lock:
+      result = conv_xnkLockStmt(node, ctx)
+    of xnkExternal_Unsafe:
+      result = conv_xnkUnsafeStmt(node, ctx)
+    of xnkExternal_Checked:
+      result = conv_xnkCheckedStmt(node, ctx)
+    of xnkExternal_LocalFunction:
+      result = conv_xnkLocalFunctionStmt(node, ctx)
+    of xnkUnlessStmt:
+      result = conv_xnkUnlessStmt(node, ctx)
+    of xnkUntilStmt:
+      result = conv_xnkUntilStmt(node, ctx)
+    of xnkStaticAssert:
+      result = conv_xnkStaticAssert(node, ctx)
+    of xnkSwitchCase:
+      result = conv_xnkSwitchCase(node, ctx)
+    of xnkMixinDecl:
+      result = conv_xnkMixinDecl(node, ctx)
+    of xnkTemplateDecl:
+      result = conv_xnkTemplateDecl(node, ctx)
+    of xnkMacroDecl:
+      result = conv_xnkMacroDecl(node, ctx)
+    of xnkInclude:
+      result = conv_xnkInclude(node, ctx)
+    of xnkExtend:
+      result = conv_xnkExtend(node, ctx)
+    of xnkExternal_Ternary:
+      result = conv_xnkTernaryExpr(node, ctx)
+    of xnkSliceExpr:
+      result = conv_xnkSliceExpr(node, ctx)
+    of xnkExternal_SafeNavigation:
+      result = conv_xnkSafeNavigationExpr(node, ctx)
+    of xnkExternal_NullCoalesce:
+      result = conv_xnkNullCoalesceExpr(node, ctx)
+    # xnkConditionalAccessExpr removed - was duplicate of xnkSafeNavigationExpr
+    of xnkLambdaExpr:
+      result = conv_xnkLambdaExpr(node, ctx)
+    of xnkTypeAssertion:
+      result = conv_xnkTypeAssertion(node, ctx)
+    of xnkCastExpr:
+      result = conv_xnkCastExpr(node, ctx)
+    of xnkThisExpr:
+      result = conv_xnkThisExpr(node, ctx)
+    of xnkBaseExpr:
+      result = conv_xnkBaseExpr(node, ctx)
+    of xnkRefExpr:
+      result = conv_xnkRefExpr(node, ctx)
+    of xnkInstanceVar:
+      result = conv_xnkInstanceVar(node, ctx)
+    of xnkClassVar:
+      result = conv_xnkClassVar(node, ctx)
+    of xnkGlobalVar:
+      result = conv_xnkGlobalVar(node, ctx)
+    of xnkProcLiteral:
+      result = conv_xnkProcLiteral(node, ctx)
+    of xnkProcPointer:
+      result = conv_xnkProcPointer(node, ctx)
+    of xnkArrayLit:
+      result = conv_xnkArrayLit(node, ctx)
+    of xnkNumberLit:
+      result = conv_xnkNumberLit(node, ctx)
+    of xnkSymbolLit:
+      result = conv_xnkSymbolLit(node, ctx)
+    of xnkDynamicType:
+      result = conv_xnkDynamicType(node, ctx)
+    of xnkExternal_Generator:
+      result = conv_xnkGeneratorExpr(node, ctx)
+    of xnkExternal_Await:
+      result = conv_xnkAwaitExpr(node, ctx)
+    of xnkExternal_StringInterp:
+      result = conv_xnkStringInterpolation(node, ctx)
+    of xnkCompFor:
+      result = conv_xnkCompFor(node, ctx)
+    of xnkDefaultExpr:
+      result = conv_xnkDefaultExpr(node, ctx)
+    of xnkTypeOfExpr:
+      result = conv_xnkTypeOfExpr(node, ctx)
+    of xnkSizeOfExpr:
+      result = conv_xnkSizeOfExpr(node, ctx)
+    of xnkCheckedExpr:
+      result = conv_xnkCheckedExpr(node, ctx)
+    of xnkExternal_ThrowExpr:
+      result = conv_xnkThrowExpr(node, ctx)
+    of xnkExternal_SwitchExpr:
+      result = conv_xnkSwitchExpr(node, ctx)
+    of xnkExternal_StackAlloc:
+      result = conv_xnkStackAllocExpr(node, ctx)
+    of xnkImplicitArrayCreation:
+      result = conv_xnkImplicitArrayCreation(node, ctx)
+    of xnkNoneLit:
+      result = conv_xnkNoneLit(node, ctx)
+    of xnkNamedType:
+      result = conv_xnkNamedType(node, ctx)
+    of xnkArrayType:
+      result = conv_xnkArrayType(node, ctx)
+    of xnkMapType:
+      result = conv_xnkMapType(node, ctx)
+    of xnkFuncType:
+      result = conv_xnkFuncType(node, ctx)
+    of xnkPointerType:
+      result = conv_xnkPointerType(node, ctx)
+    of xnkReferenceType:
+      result = conv_xnkReferenceType(node, ctx)
+    of xnkGenericType:
+      result = conv_xnkGenericType(node, ctx)
+    of xnkUnionType:
+      result = conv_xnkUnionType(node, ctx)
+    of xnkIntersectionType:
+      result = conv_xnkIntersectionType(node, ctx)
+    of xnkDistinctType:
+      result = conv_xnkDistinctType(node, ctx)
+    of xnkAttribute:
+      result = conv_xnkAttribute(node, ctx)
+    of xnkParameter:
+      result = conv_xnkParameter(node, ctx)
+    of xnkArgument:
+      result = conv_xnkArgument(node, ctx)
+    of xnkDecorator:
+      result = conv_xnkDecorator(node, ctx)
+    of xnkLambdaProc:
+      result = conv_xnkLambdaProc(node, ctx)
+    of xnkArrowFunc:
+      result = conv_xnkArrowFunc(node, ctx)
+    of xnkConceptRequirement:
+      result = conv_xnkConceptRequirement(node, ctx)
+    of xnkQualifiedName:
+      result = conv_xnkQualifiedName(node, ctx)
+    of xnkAliasQualifiedName:
+      result = conv_xnkAliasQualifiedName(node, ctx)
+    of xnkGenericName:
+      result = conv_xnkGenericName(node, ctx)
+    of xnkUnknown:
+      result = conv_xnkUnknown(node, ctx)
+    of xnkConceptDecl:
+      result = conv_xnkConceptDecl(node, ctx)
+    of xnkDestructureObj:
+      result = conv_xnkDestructureObj(node, ctx)
+    of xnkDestructureArray:
+      result = conv_xnkDestructureArray(node, ctx)
+    of xnkMethodReference:
+      result = conv_xnkMethodReference(node, ctx)
+    of xnkSequenceLiteral:
+      result = conv_xnkSequenceLiteral(node, ctx)
+    of xnkSetLiteral:
+      result = conv_xnkSetLiteral(node, ctx)
+    of xnkMapLiteral:
+      result = conv_xnkMapLiteral(node, ctx)
+    of xnkArrayLiteral:
+      result = conv_xnkArrayLiteral(node, ctx)
+    of xnkListExpr:
+      result = conv_xnkListExpr(node, ctx)
+    of xnkSetExpr:
+      result = conv_xnkSetExpr(node, ctx)
+    of xnkTupleExpr:
+      result = conv_xnkTupleExpr(node, ctx)
+    of xnkDictExpr:
+      result = conv_xnkDictExpr(node, ctx)
+    
+    of xnkDictEntry:
+      result = conv_xnkDictEntry(node, ctx)
+    else:
+      raise newException(ValueError, "Unsupported or unlowered XLang node kind: " & $node.kind)
+  except Exception as e:
+    # Print hierarchy only once - when we first catch the error
+    # Check if this is the first time we're seeing this error by checking
+    # if we're deeper in the stack than a simple File node
+    if context.nodeStack.len > 1:
+      let fileInfo = if context.currentFile != "": " in " & context.currentFile else: ""
+      echo "ERROR", fileInfo, ":"
+      echo "  ", e.msg
+      echo "  Node hierarchy (innermost first):"
+      for i in countdown(context.nodeStack.len - 1, 0):
+        let desc = getNodeDescription(context.nodeStack[i])
+        echo "    ", desc
+    raise  # Re-raise the exception with original stack trace
 
 
 

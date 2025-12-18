@@ -136,18 +136,21 @@ proc main() =
     try:
       if verbose:
         echo "DEBUG: About to convert XLang AST to Nim AST..."
-      nimAst = convertToNimAST(xlangAst)
+      # Create context with file information for better error reporting
+      let ctx = newContext()
+      ctx.currentFile = inputFile
+      nimAst = convertToNimAST(xlangAst, ctx)
       if verbose:
         echo "DEBUG: Nim AST root kind: ", nimAst.kind
         echo "DEBUG: Nim AST has ", nimAst.sons.len, " sons"
         echo "✓ Nim AST created successfully"
     except Exception as e:
-      echo "ERROR: Failed to convert XLang to Nim AST: ", e.msg
+      echo "ERROR [", inputFile, "]: Failed to convert XLang to Nim AST: ", e.msg
       echo "Stack trace: ", e.getStackTrace()
       errorCollector.addError(
         tekConversionError,
         "Failed to convert XLang to Nim AST: " & e.msg,
-        location = "xlangtonim",
+        location = inputFile,
         details = e.getStackTrace()
       )
       continue  # Skip to next file

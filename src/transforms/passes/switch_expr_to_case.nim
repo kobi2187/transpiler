@@ -38,8 +38,13 @@ proc transformSwitchExprToCase*(node: XLangNode): XLangNode {.noSideEffect, gcsa
         # This is the default/else branch
         elseBody = some(arm.switchCaseBody)
       else:
-        # Regular pattern branch
-        branches.add(arm)
+        # Regular pattern branch - convert xnkSwitchCase to xnkCaseClause
+        let caseClause = XLangNode(
+          kind: xnkCaseClause,
+          caseValues: arm.switchCaseConditions,
+          caseBody: arm.switchCaseBody
+        )
+        branches.add(caseClause)
 
   # Create case statement/expression
   result = XLangNode(
