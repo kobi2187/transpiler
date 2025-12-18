@@ -177,7 +177,8 @@ proc renderElse(n: MyNimNode, indent: int): string =
   if n[0].kind == nnkStmtList:
     result &= renderStmtList(n[0], indent + 1)
   else:
-    result &= renderNode(n[0], indent + 1)
+    # For simple expressions, add indentation manually
+    result &= ind(indent + 1) & renderNode(n[0], 0) & "\n"
 
 proc renderWhileStmt(n: MyNimNode, indent: int): string =
   result = ind(indent) & "while " & renderNode(n[0], 0) & ":\n"
@@ -210,12 +211,21 @@ proc renderOfBranch(n: MyNimNode, indent: int): string =
   if body.kind == nnkStmtList:
     result &= renderStmtList(body, indent + 1)
   else:
-    result &= renderNode(body, indent + 1)
+    # For simple expressions, add indentation manually
+    result &= ind(indent + 1) & renderNode(body, 0) & "\n"
 
 proc renderReturnStmt(n: MyNimNode, indent: int): string =
   result = ind(indent) & "return"
   if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= " " & renderNode(n[0], 0)
+    # Special handling for case expressions - they need the branches indented at parent level
+    if n[0].kind == nnkCaseStmt:
+      result &= " case " & renderNode(n[0][0], 0) & "\n"
+      # Render branches with parent's indentation
+      for i in 1..<n[0].len:
+        if i > 1: result &= "\n"
+        result &= renderNode(n[0][i], indent)
+    else:
+      result &= " " & renderNode(n[0], 0)
 
 proc renderYieldStmt(n: MyNimNode, indent: int): string =
   result = ind(indent) & "yield"

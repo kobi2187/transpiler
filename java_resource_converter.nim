@@ -21,15 +21,14 @@ proc TransformFeature(): void =
     block:
       var fileNameWithoutExtension: string = Path.GetFileNameWithoutExtension(filePath)
       if localeList.Contains(fileNameWithoutExtension):
-        block:
-          var icuLocaleName: string = fileNameWithoutExtension
-          if icuLocaleName.Equals("root"):
-            TransformInvariantFeature(filePath, featureName, outputDirectory)
-          else:
-            TransformLocalizedFeature(filePath, featureName, icuLocaleName, outputDirectory)
-      else:
-        block:
+        var icuLocaleName: string = fileNameWithoutExtension
+        if icuLocaleName.Equals("root"):
           TransformInvariantFeature(filePath, featureName, outputDirectory)
+        else:
+          TransformLocalizedFeature(filePath, featureName, icuLocaleName, outputDirectory)
+
+      else:
+        TransformInvariantFeature(filePath, featureName, outputDirectory)
 proc TransformLocalizedFeature(): void =
   var fileName: string = Path.GetFileName(filePath)
   var dotnetLocaleName: string = ICU4N.Globalization.ResourceUtil.GetDotNetNeutralCultureName(icuLocaleName)
@@ -46,11 +45,9 @@ proc TransformInvariantFeature(): void =
   File.Copy(filePath, outFilePath, true)
 proc GetFeatureFileName(): string =
   return if == featureName string.Empty:
-  block:
-    string.Concat(DataDirectoryName, ".", fileName)
+  string.Concat(DataDirectoryName, ".", fileName)
 else:
-  block:
-    string.Concat(DataDirectoryName, ".", featureName, ".", fileName)
+  string.Concat(DataDirectoryName, ".", featureName, ".", fileName)
 proc LoadLocaleList(): ISet<string> =
   var result: var = HashSet<string>
   var reader: var = StreamReader(Path.Combine(dataPath, localeListFileName), Encoding.UTF8)
@@ -65,8 +62,7 @@ proc CreateInvariantResourceManifest(): void =
   block:
     var i: int = 0
     while < i - files.Count 1:
-      block:
-        writer.WriteLine(files[i])
+      writer.WriteLine(files[i])
 ++i
   writer.Write(files[- files.Count 1])
   writer.Flush
