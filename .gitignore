@@ -53,3 +53,8 @@ test*
 # OS
 .DS_Store
 Thumbs.db
+
+# Java build artifacts
+*.class
+*.jar
+src/parsers/java/lib/

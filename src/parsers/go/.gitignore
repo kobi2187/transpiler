@@ -1,0 +1,8 @@
+# Compiled Go binaries
+go-xlang-parser
+
+# Generated XLang JSON output
+*.xlang.json
+
+# Backup files
+*.backup
