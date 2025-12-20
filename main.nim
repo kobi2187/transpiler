@@ -74,6 +74,9 @@ proc main() =
   # Create error collector for the entire pipeline
   let errorCollector = newErrorCollector()
 
+  # Track files with infinite loops
+  var infiniteLoopFiles: seq[tuple[file: string, iterations: int, kinds: seq[XLangNodeKind]]] = @[]
+
   # Create and register transform passes once (global for all files)
   var passManager: PassManager2 = nil
   if not skipTransforms:
@@ -115,7 +118,18 @@ proc main() =
       try:
         if verbose:
           echo "DEBUG: About to run passes on AST..."
-        xlangAst = passManager.run(xlangAst)
+        xlangAst = passManager.run(xlangAst, verbose)
+
+        # Check for infinite loop
+        if passManager.result.maxIterationsReached:
+          infiniteLoopFiles.add((
+            file: inputFile,
+            iterations: passManager.result.iterations,
+            kinds: passManager.result.loopKinds
+          ))
+          echo "WARNING: Max iterations reached for: ", inputFile
+        elif passManager.result.loopWarning and verbose:
+          echo "WARNING: Potential infinite loop detected (", passManager.result.iterations, " iterations)"
 
         if verbose:
           echo "DEBUG: After transformations, AST kind: ", xlangAst.kind
@@ -229,11 +243,25 @@ proc main() =
       )
       continue  # Skip to next file
 
+  # Report infinite loop files
+  if infiniteLoopFiles.len > 0:
+    echo ""
+    echo "=== INFINITE LOOP REPORT ==="
+    echo "Files that reached max iterations (", passManager.maxIterations, "):"
+    for entry in infiniteLoopFiles:
+      echo "  - ", entry.file
+      echo "    Iterations: ", entry.iterations
+      if entry.kinds.len > 0:
+        echo "    Stuck on kinds: ", entry.kinds.mapIt($it).join(", ")
+    echo ""
+    echo "Total files with infinite loops: ", infiniteLoopFiles.len
+    echo ""
+
   # Report any warnings or errors
   if errorCollector.hasWarnings() or errorCollector.hasErrors():
     errorCollector.reportSummary()
 
-  if errorCollector.hasErrors():
+  if errorCollector.hasErrors() or infiniteLoopFiles.len > 0:
     quit(1)
 
 when isMainModule:
