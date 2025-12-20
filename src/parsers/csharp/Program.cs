@@ -222,8 +222,33 @@ partial class Program
             DestructorDeclarationSyntax destructor => ConvertDestructor(destructor),
             EventFieldDeclarationSyntax eventField => ConvertEventFieldDeclaration(eventField),
             EventDeclarationSyntax eventDecl => ConvertEventDeclaration(eventDecl),
-            IncompleteMemberSyntax incompleteMember => CreateUnknownNode(incompleteMember, "class_member"),
+            IncompleteMemberSyntax incompleteMember => ConvertIncompleteMember(incompleteMember),
             _ => CreateUnknownNode(member, "class_member")
+        };
+    }
+
+    static JObject ConvertType(TypeSyntax type)
+    {
+        // Properly convert types
+        // Debug: check what type we're dealing with
+        if (type.ToString().Contains("?"))
+        {
+            Console.Error.WriteLine($"DEBUG: Type '{type}' is {type.GetType().Name}");
+        }
+
+        return type switch
+        {
+            NullableTypeSyntax nullableType => ConvertNullableType(nullableType),
+            PredefinedTypeSyntax predefinedType => ConvertPredefinedType(predefinedType),
+            ArrayTypeSyntax arrayType => ConvertArrayType(arrayType),
+            GenericNameSyntax genericName => ConvertGenericName(genericName),
+            QualifiedNameSyntax qualifiedName => ConvertQualifiedName(qualifiedName),
+            // Fallback: create a NamedType with the type's string representation
+            _ => new JObject
+            {
+                ["kind"] = "xnkNamedType",
+                ["typeName"] = type.ToString()
+            }
         };
     }
 
@@ -239,11 +264,7 @@ partial class Program
         {
             ["kind"] = "xnkParameter",
             ["paramName"] = p.Identifier.Text,
-            ["paramType"] = p.Type != null ? new JObject
-            {
-                ["kind"] = "xnkNamedType",
-                ["typeName"] = p.Type.ToString()
-            } : JValue.CreateNull(),
+            ["paramType"] = p.Type != null ? ConvertType(p.Type) : JValue.CreateNull(),
             ["defaultValue"] = p.Default != null ? ConvertExpression(p.Default.Value) : JValue.CreateNull(),
             ["isThis"] = p.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.ThisKeyword))
         });
@@ -351,6 +372,7 @@ partial class Program
             InvocationExpressionSyntax inv => ConvertInvocation(inv),
             ObjectCreationExpressionSyntax objCreate => ConvertObjectCreation(objCreate),
             AnonymousObjectCreationExpressionSyntax anonObjectCreate => ConvertAnonymousObjectCreationExpression(anonObjectCreate),
+            ImplicitObjectCreationExpressionSyntax implicitObjCreate => ConvertImplicitObjectCreation(implicitObjCreate),
             CastExpressionSyntax cast => ConvertCast(cast),
             ElementAccessExpressionSyntax elemAccess => ConvertElementAccess(elemAccess),
             ThisExpressionSyntax thisExpr => ConvertThis(thisExpr),
@@ -449,6 +471,17 @@ partial class Program
 
     static JObject ConvertBinary(BinaryExpressionSyntax binary)
     {
+        // Check for null coalescing operator ??
+        if (binary.OperatorToken.Text == "??")
+        {
+            return new JObject
+            {
+                ["kind"] = "xnkExternal_NullCoalesce",
+                ["extNullCoalesceLeft"] = ConvertExpression(binary.Left),
+                ["extNullCoalesceRight"] = ConvertExpression(binary.Right)
+            };
+        }
+
         return new JObject
         {
             ["kind"] = "xnkBinaryExpr",
@@ -656,11 +689,7 @@ partial class Program
         {
             ["kind"] = "xnkFieldDecl",
             ["fieldName"] = firstVar.Identifier.Text,
-            ["fieldType"] = new JObject
-            {
-                ["kind"] = "xnkNamedType",
-                ["typeName"] = field.Declaration.Type.ToString()
-            },
+            ["fieldType"] = ConvertType(field.Declaration.Type),
             ["fieldInitializer"] = firstVar.Initializer != null
                 ? ConvertExpression(firstVar.Initializer.Value)
                 : JValue.CreateNull()
@@ -675,24 +704,66 @@ partial class Program
             ["extPropName"] = property.Identifier.Text
         };
 
-        // extPropType as XLangNode (NamedType)
-        result["extPropType"] = new JObject
-        {
-            ["kind"] = "xnkNamedType",
-            ["typeName"] = property.Type.ToString()
-        };
+        // extPropType as XLangNode
+        result["extPropType"] = ConvertType(property.Type);
 
         // extPropGetter and extPropSetter as Option[XLangNode]
-        var getAccessor = property.AccessorList?.Accessors.FirstOrDefault(a => a.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.GetAccessorDeclaration);
-        if (getAccessor != null && getAccessor.Body != null)
+        // Handle expression-bodied properties: public int Age => 42;
+        if (property.ExpressionBody != null)
         {
-            result["extPropGetter"] = ConvertBlock(getAccessor.Body);
+            // Expression-bodied property is a getter-only property
+            result["extPropGetter"] = new JObject
+            {
+                ["kind"] = "xnkBlockStmt",
+                ["blockBody"] = new JArray(new JObject
+                {
+                    ["kind"] = "xnkReturnStmt",
+                    ["returnExpr"] = ConvertExpression(property.ExpressionBody.Expression)
+                })
+            };
         }
-
-        var setAccessor = property.AccessorList?.Accessors.FirstOrDefault(a => a.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.SetAccessorDeclaration);
-        if (setAccessor != null && setAccessor.Body != null)
+        else if (property.AccessorList != null)
         {
-            result["extPropSetter"] = ConvertBlock(setAccessor.Body);
+            // Handle explicit accessor list: public int Age { get { return 42; } set { ... } }
+            var getAccessor = property.AccessorList.Accessors.FirstOrDefault(a => a.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.GetAccessorDeclaration);
+            if (getAccessor != null)
+            {
+                if (getAccessor.Body != null)
+                {
+                    result["extPropGetter"] = ConvertBlock(getAccessor.Body);
+                }
+                else if (getAccessor.ExpressionBody != null)
+                {
+                    // Expression-bodied accessor: get => expression;
+                    result["extPropGetter"] = new JObject
+                    {
+                        ["kind"] = "xnkBlockStmt",
+                        ["blockBody"] = new JArray(new JObject
+                        {
+                            ["kind"] = "xnkReturnStmt",
+                            ["returnExpr"] = ConvertExpression(getAccessor.ExpressionBody.Expression)
+                        })
+                    };
+                }
+            }
+
+            var setAccessor = property.AccessorList.Accessors.FirstOrDefault(a => a.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.SetAccessorDeclaration);
+            if (setAccessor != null)
+            {
+                if (setAccessor.Body != null)
+                {
+                    result["extPropSetter"] = ConvertBlock(setAccessor.Body);
+                }
+                else if (setAccessor.ExpressionBody != null)
+                {
+                    // Expression-bodied accessor: set => field = value;
+                    result["extPropSetter"] = new JObject
+                    {
+                        ["kind"] = "xnkBlockStmt",
+                        ["blockBody"] = new JArray(ConvertExpression(setAccessor.ExpressionBody.Expression))
+                    };
+                }
+            }
         }
 
         return result;
@@ -707,11 +778,7 @@ partial class Program
             {
                 ["kind"] = "xnkParameter",
                 ["paramName"] = p.Identifier.Text,
-                ["paramType"] = new JObject
-                {
-                    ["kind"] = "xnkNamedType",
-                    ["typeName"] = p.Type?.ToString() ?? "auto"
-                },
+                ["paramType"] = p.Type != null ? ConvertType(p.Type) : new JObject { ["kind"] = "xnkNamedType", ["typeName"] = "auto" },
                 ["defaultValue"] = p.Default != null ? ConvertExpression(p.Default.Value) : JValue.CreateNull()
             })),
             // TODO: Handle constructor initializers: this(...) and base(...) calls

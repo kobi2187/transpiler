@@ -99,6 +99,11 @@ proc renderTupleConstr(n: MyNimNode, indent: int): string =
   if n.len == 1: result &= ","  # Single element tuple
   result &= ")"
 
+proc renderCast(n: MyNimNode, indent: int): string =
+  # Nim cast syntax: cast[Type](value)
+  # n[0] is the target type, n[1] is the expression to cast
+  result = "cast[" & renderNode(n[0], indent) & "](" & renderNode(n[1], indent) & ")"
+
 proc renderObjConstr(n: MyNimNode, indent: int): string =
   if n.len == 0: return "()"
   result = renderNode(n[0], indent) & "("
@@ -491,6 +496,8 @@ proc renderNode(n: MyNimNode, indent: int = 0): string =
     result = renderTupleConstr(n, indent)
   of nnkObjConstr:
     result = renderObjConstr(n, indent)
+  of nnkCast:
+    result = renderCast(n, indent)
   of nnkExprColonExpr:
     result = renderExprColonExpr(n, indent)
   of nnkExprEqExpr:

@@ -26,6 +26,15 @@
 import ../../../xlangtypes
 import options
 import strutils
+import collections/tables
+
+proc createEnumPrefix*(typeName: string): string =
+  ## Create idiomatic Nim enum prefix from type name
+  ## PadPosition → pp, FileMode → fm, Color → c
+  result = ""
+  for ch in typeName:
+    if ch >= 'A' and ch <= 'Z':
+      result.add(($ch).toLowerAscii())
 
 proc normalizeEnumMemberName*(name: string): string =
   ## Convert enum member names to Nim convention
@@ -44,6 +53,74 @@ proc normalizeEnumMemberName*(name: string): string =
     for i in 1..<parts.len:
       if parts[i].len > 0:
         result.add(parts[i][0].toUpperAscii & parts[i][1..^1])
+
+# Global registry for enum types and their prefixes
+var enumRegistry {.global.} = initTable[string, string]()
+
+proc registerEnum*(enumName: string) =
+  ## Register an enum type and compute its prefix
+  let prefix = createEnumPrefix(enumName)
+  enumRegistry[enumName] = prefix
+
+proc getEnumPrefix*(enumName: string): Option[string] =
+  ## Get the prefix for a registered enum type
+  if enumRegistry.hasKey(enumName):
+    return some(enumRegistry[enumName])
+  return none(string)
+
+proc isEnumType*(typeName: string): bool =
+  ## Check if a type name is a registered enum
+  return enumRegistry.hasKey(typeName)
+
+proc normalizeEnumMemberAccess*(node: XLangNode): XLangNode =
+  ## Normalize enum member access to idiomatic Nim form
+  ## Handles both:
+  ## - Simple: PadPosition.BeforePrefix → ppBeforePrefix
+  ## - Nested: Padder.PadPosition.BeforePrefix → ppBeforePrefix
+
+  if node.kind != xnkMemberAccessExpr:
+    return node
+
+  # Extract the chain of member access: [Padder, PadPosition, BeforePrefix]
+  var chain: seq[string] = @[]
+  var current = node
+
+  # Walk up the member access chain
+  while current.kind == xnkMemberAccessExpr:
+    chain.insert(current.memberName, 0)
+    current = current.memberExpr
+
+  # Add the leftmost identifier
+  if current.kind == xnkIdentifier:
+    chain.insert(current.identName, 0)
+  else:
+    # Not a simple member access chain, leave it alone
+    return node
+
+  # Try to find enum type in the chain
+  # For Padder.PadPosition.BeforePrefix: check if PadPosition is an enum
+  # For PadPosition.BeforePrefix: check if PadPosition is an enum
+
+  if chain.len >= 2:
+    # Try second-to-last as enum type name
+    let potentialEnumType = chain[^2]
+    if isEnumType(potentialEnumType):
+      let prefix = getEnumPrefix(potentialEnumType).get()
+      let memberName = chain[^1]
+      let idiomaticName = prefix & memberName
+      return XLangNode(kind: xnkIdentifier, identName: idiomaticName)
+
+    # Also try if the first part is an enum (for simple access)
+    if chain.len == 2:
+      let potentialEnumType2 = chain[0]
+      if isEnumType(potentialEnumType2):
+        let prefix = getEnumPrefix(potentialEnumType2).get()
+        let memberName = chain[1]
+        let idiomaticName = prefix & memberName
+        return XLangNode(kind: xnkIdentifier, identName: idiomaticName)
+
+  # Not an enum access, leave as-is
+  return node
 
 proc transformPythonEnum*(node: XLangNode): XLangNode =
   ## Transform Python Enum class to Nim enum
@@ -245,16 +322,47 @@ proc transformFlagsEnum*(node: XLangNode): XLangNode =
 # Some languages allow iterating enum values
 # Nim: for value in Color: echo value
 
-# Main transformation
-proc transformEnumNormalization*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+# Main transformation - TWO PASS approach
+proc transformEnumNormalization*(node: XLangNode): XLangNode =
   ## Main enum normalization transformation
+  ## PASS 1: Register all enums in the tree
+  ## PASS 2: Transform enum declarations and member access
 
+  # Helper proc to collect all enum declarations
+  proc collectEnums(n: XLangNode) =
+    case n.kind
+    of xnkEnumDecl:
+      registerEnum(n.enumName)
+    of xnkFile:
+      for decl in n.moduleDecls:
+        collectEnums(decl)
+    of xnkNamespace:
+      for decl in n.namespaceBody:
+        collectEnums(decl)
+    of xnkClassDecl, xnkStructDecl:
+      for member in n.members:
+        collectEnums(member)
+    else:
+      discard
+
+  # PASS 1: If this is the root (xnkFile), collect all enums first
+  if node.kind == xnkFile:
+    collectEnums(node)
+
+  # PASS 2: Transform the node
   case node.kind
+  of xnkMemberAccessExpr:
+    # Normalize enum member access
+    return normalizeEnumMemberAccess(node)
+
   of xnkClassDecl:
     # Check for Python Enum
     return transformPythonEnum(node)
 
   of xnkEnumDecl:
+    # Register this enum
+    registerEnum(node.enumName)
+
     # Check for string enum first
     let stringResult = transformStringEnum(node)
     if stringResult.kind != xnkEnumDecl:
@@ -265,8 +373,22 @@ proc transformEnumNormalization*(node: XLangNode): XLangNode {.noSideEffect, gcs
     if flagsResult != node:
       return flagsResult
 
-    # Regular enum normalization
-    return transformCSharpEnum(node)
+    # Regular enum normalization (updates member names to use prefix)
+    let prefix = getEnumPrefix(node.enumName).get()
+    var normalizedMembers: seq[XLangNode] = @[]
+    for member in node.enumMembers:
+      let idiomaticName = prefix & member.enumMemberName
+      normalizedMembers.add(XLangNode(
+        kind: xnkEnumMember,
+        enumMemberName: idiomaticName,
+        enumMemberValue: member.enumMemberValue
+      ))
+
+    return XLangNode(
+      kind: xnkEnumDecl,
+      enumName: node.enumName,
+      enumMembers: normalizedMembers
+    )
 
   else:
     return node

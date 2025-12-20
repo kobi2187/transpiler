@@ -57,6 +57,9 @@ type TransformPassID* = enum
     tpLocalFunctionToProc = "local-function-to-proc"
     tpUnsafeToNimBlock = "unsafe-to-nim-block"
     tpDelegateToProcType = "delegate-to-proc-type"
+    tpNullableToOption = "nullable-to-option"
+    tpAddSelfParameter = "add-self-parameter"
+    tpNormalizeOperators = "normalize-operators"
     # Add more passes here as they are implemented
 
 type TransformPass* = ref object

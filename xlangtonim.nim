@@ -70,6 +70,10 @@ type
     requiredImports*: HashSet[string]
     # ^ Nim modules to import (tables, options, asyncdispatch, etc.)
 
+    # ===== Enum Tracking =====
+    enumPrefixes*: Table[string, string]
+    # ^ Maps enum type names to their prefixes (e.g., "PadPosition" -> "pp")
+
 # ===== Context Creation =====
 proc newContext*(): ConversionContext =
   result = ConversionContext(
@@ -83,7 +87,8 @@ proc newContext*(): ConversionContext =
     variables: initTable[string, XLangNode](),
     functions: initTable[string, XLangNode](),
     scopeStack: @[],
-    requiredImports: initHashSet[string]()
+    requiredImports: initHashSet[string](),
+    enumPrefixes: initTable[string, string]()
   )
 
 # ===== Import Management =====
@@ -442,7 +447,10 @@ proc conv_xnkFuncDecl_method(node: XLangNode, ctx: ConversionContext): MyNimNode
   # 5: reserved
   result.add(newEmptyNode())
   # 6: body - convert block body directly to statement list (no explicit block needed)
-  if node.body.kind == xnkBlockStmt:
+  if node.body == nil:
+    # Abstract/interface method with no body - add empty statement list
+    result.add(newStmtList())
+  elif node.body.kind == xnkBlockStmt:
     # Function bodies don't need explicit block: wrapper in Nim
     let body = newStmtList()
     for stmt in node.body.blockBody:
@@ -453,14 +461,14 @@ proc conv_xnkFuncDecl_method(node: XLangNode, ctx: ConversionContext): MyNimNode
   if node.isAsync:
     setPragma(result, newPragma(newIdentNode("async")))
 
-proc conv_xnkClassDecl_structDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkClassDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
   # Set class context for converting members (methods, constructors, fields)
   ctx.setCurrentClass(node)
-  defer: ctx.clearCurrentClass()  # Ensure cleanup happens even on error
+  defer: ctx.clearCurrentClass()
 
   result = newStmtList()
 
-  # Create type definition with fields only
+  # Create type definition: ClassName = ref object of BaseType
   let typeSection = newNimNode(nnkTypeSection)
   let typeDef = newNimNode(nnkTypeDef)
   typeDef.add(newIdentNode(node.typeNameDecl))
@@ -473,7 +481,7 @@ proc conv_xnkClassDecl_structDecl(node: XLangNode, ctx: ConversionContext): MyNi
   for baseType in node.baseTypes:
     inheritList.add(convertToNimAST(baseType, ctx))
   objType.add(inheritList)
-  # fields only (not methods/constructors)
+  # fields only
   let recList = newNimNode(nnkRecList)
   for member in node.members:
     if member.kind == xnkFieldDecl:
@@ -489,29 +497,79 @@ proc conv_xnkClassDecl_structDecl(node: XLangNode, ctx: ConversionContext): MyNi
     if member.kind != xnkFieldDecl:
       result.add(convertToNimAST(member, ctx))
 
+proc conv_xnkStructDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
+  # Set class context for converting members
+  ctx.setCurrentClass(node)
+  defer: ctx.clearCurrentClass()
+
+  result = newStmtList()
+
+  # Create type definition: StructName = object (no ref, value type)
+  let typeSection = newNimNode(nnkTypeSection)
+  let typeDef = newNimNode(nnkTypeDef)
+  typeDef.add(newIdentNode(node.typeNameDecl))
+  typeDef.add(newEmptyNode())
+  let objType = newNimNode(nnkObjectTy)
+  objType.add(newEmptyNode()) # no pragmas
+  objType.add(newEmptyNode()) # no inheritance for structs
+  # fields only
+  let recList = newNimNode(nnkRecList)
+  for member in node.members:
+    if member.kind == xnkFieldDecl:
+      recList.add(convertToNimAST(member, ctx))
+  objType.add(recList)
+  typeDef.add(objType)
+  typeSection.add(typeDef)
+  result.add(typeSection)
+
+  # Add methods as separate procs
+  for member in node.members:
+    if member.kind != xnkFieldDecl:
+      result.add(convertToNimAST(member, ctx))
+
 proc conv_xnkInterfaceDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
+  # Interfaces become concepts or abstract base types in Nim
   result = newNimNode(nnkTypeSection)
-  let conceptDef = newNimNode(nnkTypeDef)
-  conceptDef.add(newIdentNode(node.typeNameDecl))
-  conceptDef.add(newEmptyNode())
+  let typeDef = newNimNode(nnkTypeDef)
+  typeDef.add(newIdentNode(node.typeNameDecl))
+  typeDef.add(newEmptyNode())
+  # Use concept for interface
   let conceptTy = newNimNode(nnkObjectTy)
-  for meth in node.members:
-    conceptTy.add(convertToNimAST(meth, ctx))
-  conceptDef.add(conceptTy)
-  result.add(conceptDef)
+  conceptTy.add(newEmptyNode()) # pragmas
+  conceptTy.add(newEmptyNode()) # no inheritance
+  conceptTy.add(newEmptyNode()) # no fields for interface
+  typeDef.add(conceptTy)
+  result.add(typeDef)
+  # Interface methods become abstract proc declarations (no body needed)
 
 proc conv_xnkEnumDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result = newNimNode(nnkTypeSection)
+
+  # Create enum prefix from type name (e.g., PadPosition -> pp)
+  # Take initial letters from each capital letter in the name
+  var enumPrefix = ""
+  for ch in node.enumName:
+    if ch >= 'A' and ch <= 'Z':
+      enumPrefix.add(($ch).toLowerAscii())
+
+  # Store the prefix for later use when converting enum member access
+  ctx.enumPrefixes[node.enumName] = enumPrefix
+
   let enumTy = newNimNode(nnkEnumTy)
   enumTy.add(newEmptyNode())
+
   for member in node.enumMembers:
+    # Create idiomatic enum member name: ppBeforePrefix instead of BeforePrefix
+    let idiomaticName = enumPrefix & member.enumMemberName
+
     if member.enumMemberValue.isSome():
       let field = newNimNode(nnkEnumFieldDef)
-      field.add(newIdentNode(member.enumMemberName))
+      field.add(newIdentNode(idiomaticName))
       field.add(convertToNimAST(member.enumMemberValue.get, ctx))
       enumTy.add(field)
     else:
-      enumTy.add(newIdentNode(member.enumMemberName))
+      enumTy.add(newIdentNode(idiomaticName))
+
   let typeDef = newNimNode(nnkTypeDef)
   typeDef.add(newIdentNode(node.enumName))
   typeDef.add(newEmptyNode())
@@ -600,6 +658,18 @@ proc conv_xnkBlockStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 # Patch member access and index kinds to xlangtypes style
 proc conv_xnkMemberAccess(node: XLangNode, ctx: ConversionContext): MyNimNode =
+  # Check if this is an enum member access (e.g., PadPosition.BeforePrefix)
+  # The memberExpr should be an identifier with the enum type name
+  if node.memberExpr.kind == xnkIdentifier:
+    let typeName = node.memberExpr.identName
+    if ctx.enumPrefixes.hasKey(typeName):
+      # This is an enum member access - convert to idiomatic form
+      let prefix = ctx.enumPrefixes[typeName]
+      let idiomaticName = prefix & node.memberName
+      result = newIdentNode(idiomaticName)
+      return
+
+  # Regular member access
   result = newNimNode(nnkDotExpr)
   result.add(convertToNimAST(node.memberExpr, ctx))
   result.add(newIdentNode(node.memberName))
@@ -1899,8 +1969,10 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
       result = conv_xnkNamespace(node, context)
     of xnkFuncDecl, xnkMethodDecl:
       result = conv_xnkFuncDecl_method(node, context)
-    of xnkClassDecl, xnkStructDecl:
-      result = conv_xnkClassDecl_structDecl(node, context)
+    of xnkClassDecl:
+      result = conv_xnkClassDecl(node, context)
+    of xnkStructDecl:
+      result = conv_xnkStructDecl(node, context)
     of xnkInterfaceDecl:
       result = conv_xnkInterfaceDecl(node, ctx)
     of xnkEnumDecl:
@@ -2255,6 +2327,8 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
     
     of xnkDictEntry:
       result = conv_xnkDictEntry(node, ctx)
+    of xnkExternal_Interface:
+      result = conv_xnkInterfaceDecl(node, ctx)
     else:
       raise newException(ValueError, "Unsupported or unlowered XLang node kind: " & $node.kind)
   except Exception as e:

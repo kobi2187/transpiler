@@ -32,12 +32,18 @@ proc transformExtensionMethods*(node: XLangNode): XLangNode {.noSideEffect, gcsa
     # 2. Keep all parameters including the 'this' parameter (Nim's UFCS handles it)
     # 3. Keep same body
 
+    # Handle nil body - create an empty block for abstract/interface methods
+    let funcBody = if node.extExtMethodBody != nil:
+      node.extExtMethodBody
+    else:
+      XLangNode(kind: xnkBlockStmt, blockBody: @[])
+
     result = XLangNode(
       kind: xnkFuncDecl,
       funcName: node.extExtMethodName,
       params: node.extExtMethodParams,  # Keep all params, including the 'this' one
       returnType: node.extExtMethodReturnType,
-      body: node.extExtMethodBody,
+      body: funcBody,
       isAsync: false  # Will be tracked separately if needed
     )
 

@@ -56,10 +56,13 @@ import passes/fixed_to_block
 import passes/local_function_to_proc
 import passes/unsafe_to_nim_block
 import passes/delegate_to_proc_type
+import passes/nullable_to_option
+import passes/add_self_parameter
+import passes/normalize_operators
 import types
 
-template toClosure(p: untyped): proc(node: XLangNode): XLangNode {.closure, gcsafe.} =
-  proc(node: XLangNode): XLangNode {.closure, gcsafe.} =
+template toClosure(p: untyped): proc(node: XLangNode): XLangNode {.closure.} =
+  proc(node: XLangNode): XLangNode {.closure.} =
     p(node)
 
 
@@ -72,6 +75,10 @@ proc buildNimPassRegistry*(): Table[TransformPassID, TransformPass] =
   ## Build a registry of all Nim passes so callers can select which ones to add based on target capabilities.
   ## Lowering passes now operate on xnkExternal_* kinds (source-specific constructs that must be eliminated).
   var reg = initTable[TransformPassID, TransformPass]()
+
+  # Normalization pass - runs first to convert operators to External nodes
+  # Uses empty list because it needs to traverse all nodes looking for special operators
+  reg[tpNormalizeOperators] = newTransformPass(tpNormalizeOperators, toClosure(normalizeOperators), @[])
 
   # Lowering passes - operate on external kinds that must be eliminated
   reg[tpForToWhile] = newTransformPass(tpForToWhile, toClosure(transformForToWhile), @[xnkExternal_ForStmt])
@@ -123,22 +130,24 @@ proc buildNimPassRegistry*(): Table[TransformPassID, TransformPass] =
   reg[tpLocalFunctionToProc] = newTransformPass(tpLocalFunctionToProc, toClosure(transformLocalFunctionToProc), @[xnkExternal_LocalFunction])
   reg[tpUnsafeToNimBlock] = newTransformPass(tpUnsafeToNimBlock, toClosure(transformUnsafeToNimBlock), @[xnkExternal_Unsafe])
   reg[tpDelegateToProcType] = newTransformPass(tpDelegateToProcType, toClosure(transformDelegateToTypeAlias), @[xnkExternal_Delegate])
+  reg[tpNullableToOption] = newTransformPass(tpNullableToOption, toClosure(transformNullableToOption), @[xnkGenericType])
+  reg[tpAddSelfParameter] = newTransformPass(tpAddSelfParameter, toClosure(addSelfParameter), @[xnkClassDecl, xnkStructDecl])
 
   return reg
 
-let nimDefaultPassIDs = @[tpForToWhile, tpDoWhileToWhile, tpTernaryToIf, tpNimInterfaceToConcept, tpPropertyToProcs, tpSwitchFallthrough,
+let nimDefaultPassIDs = @[tpNormalizeOperators, tpForToWhile, tpDoWhileToWhile, tpTernaryToIf, tpNimInterfaceToConcept, tpPropertyToProcs, tpSwitchFallthrough,
                          tpNullCoalesce, tpMultipleCatch, tpDestructuring, tpListComprehension, tpNormalizeSimple,
                          tpWithToDefer, tpAsyncNormalization, tpUnionToVariant, tpLinqToSequtils, tpOperatorOverload, tpPatternMatching,
                          tpDecoratorAttribute, tpExtensionMethods, tpLambdaNormalization, tpEnumNormalization, tpSafeNavigation,
                          tpResourceToDefer, tpThrowExpression, tpGeneratorExpressions, tpStringInterpolation, tpIndexerToProcs,
                          tpSwitchExprToCase, tpLockToWithLock, tpStackAllocToSeq, tpConversionOpToProc, tpCheckedToBlock, tpFixedToBlock,
-                         tpLocalFunctionToProc, tpUnsafeToNimBlock, tpDelegateToProcType]
+                         tpLocalFunctionToProc, tpUnsafeToNimBlock, tpDelegateToProcType, tpNullableToOption] # , tpAddSelfParameter - DISABLED temporarily
 
 let goDefaultPassIDs = @[tpGoErrorHandling, tpGoDefer, tpGoConcurrency, tpGoTypeAssertions, tpGoImplicitInterfaces, tpGoPanicRecover]
 
 let pythonDefaultPassIDs = @[tpPythonGenerators, tpPythonTypeHints, tpListComprehension, tpDestructuring, tpPatternMatching, tpGeneratorExpressions]
 
-let csharpDefaultPassIDs = @[tpLinqToSequtils, tpCSharpUsing, tpCSharpEvents, tpExtensionMethods, tpIndexerToProcs, tpThrowExpression]
+let csharpDefaultPassIDs = @[tpNormalizeOperators, tpLinqToSequtils, tpCSharpUsing, tpCSharpEvents, tpExtensionMethods, tpIndexerToProcs, tpThrowExpression, tpNullableToOption, tpAddSelfParameter]
 
 proc selectPassIDsForLang*(name:string): seq[TransformPassID] =
   result = @[]

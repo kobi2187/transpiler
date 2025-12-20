@@ -472,7 +472,103 @@ partial class Program
                     firstOrdering = false;
                 }
             }
-            // TODO: Handle other clauses like join, let
+            else if (clause is LetClauseSyntax letClause)
+            {
+                // let x = expr → Select(item => new { item, x = expr })
+                // For simplicity, we'll use a tuple-like transformation
+                currentCollection = new JObject
+                {
+                    ["kind"] = "xnkCallExpr",
+                    ["callee"] = new JObject
+                    {
+                        ["kind"] = "xnkMemberAccessExpr",
+                        ["memberExpr"] = currentCollection,
+                        ["memberName"] = "Select"
+                    },
+                    ["args"] = new JArray(new JObject
+                    {
+                        ["kind"] = "xnkLambdaExpr",
+                        ["lambdaParams"] = new JArray(new JObject { ["kind"] = "xnkIdentifier", ["identName"] = currentIdentifier }),
+                        ["lambdaBody"] = new JObject
+                        {
+                            ["kind"] = "xnkTupleExpr",
+                            ["elements"] = new JArray(
+                                new JObject { ["kind"] = "xnkIdentifier", ["identName"] = currentIdentifier },
+                                ConvertExpression(letClause.Expression)
+                            )
+                        }
+                    })
+                };
+                // Note: After let, the identifier changes to include the let variable
+                // This is simplified - proper handling would track both identifiers
+            }
+            else if (clause is JoinClauseSyntax joinClause)
+            {
+                // join x in collection on outerKey equals innerKey
+                currentCollection = new JObject
+                {
+                    ["kind"] = "xnkCallExpr",
+                    ["callee"] = new JObject
+                    {
+                        ["kind"] = "xnkMemberAccessExpr",
+                        ["memberExpr"] = currentCollection,
+                        ["memberName"] = "Join"
+                    },
+                    ["args"] = new JArray(
+                        ConvertExpression(joinClause.InExpression),
+                        new JObject
+                        {
+                            ["kind"] = "xnkLambdaExpr",
+                            ["lambdaParams"] = new JArray(new JObject { ["kind"] = "xnkIdentifier", ["identName"] = currentIdentifier }),
+                            ["lambdaBody"] = ConvertExpression(joinClause.LeftExpression)
+                        },
+                        new JObject
+                        {
+                            ["kind"] = "xnkLambdaExpr",
+                            ["lambdaParams"] = new JArray(new JObject { ["kind"] = "xnkIdentifier", ["identName"] = joinClause.Identifier.Text }),
+                            ["lambdaBody"] = ConvertExpression(joinClause.RightExpression)
+                        },
+                        new JObject
+                        {
+                            ["kind"] = "xnkLambdaExpr",
+                            ["lambdaParams"] = new JArray(
+                                new JObject { ["kind"] = "xnkIdentifier", ["identName"] = currentIdentifier },
+                                new JObject { ["kind"] = "xnkIdentifier", ["identName"] = joinClause.Identifier.Text }
+                            ),
+                            ["lambdaBody"] = new JObject
+                            {
+                                ["kind"] = "xnkTupleExpr",
+                                ["elements"] = new JArray(
+                                    new JObject { ["kind"] = "xnkIdentifier", ["identName"] = currentIdentifier },
+                                    new JObject { ["kind"] = "xnkIdentifier", ["identName"] = joinClause.Identifier.Text }
+                                )
+                            }
+                        }
+                    )
+                };
+            }
+            else if (clause is FromClauseSyntax fromClause)
+            {
+                // Additional from clause → SelectMany
+                currentCollection = new JObject
+                {
+                    ["kind"] = "xnkCallExpr",
+                    ["callee"] = new JObject
+                    {
+                        ["kind"] = "xnkMemberAccessExpr",
+                        ["memberExpr"] = currentCollection,
+                        ["memberName"] = "SelectMany"
+                    },
+                    ["args"] = new JArray(new JObject
+                    {
+                        ["kind"] = "xnkLambdaExpr",
+                        ["lambdaParams"] = new JArray(new JObject { ["kind"] = "xnkIdentifier", ["identName"] = currentIdentifier }),
+                        ["lambdaBody"] = ConvertExpression(fromClause.Expression)
+                    })
+                };
+                // Update identifier to the new from variable
+                currentIdentifier = fromClause.Identifier.Text;
+            }
         }
 
         // Handle the final select or group clause
@@ -525,9 +621,57 @@ partial class Program
 
         if (queryExpr.Body.Continuation != null)
         {
-            // This is a query continuation like 'into ...'
-            // The logic here is complex. For now, create an unknown node.
-            return CreateUnknownNode(queryExpr, "expression");
+            // Query continuation like 'into newVar ...'
+            // The continuation creates a new query scope with the result so far
+            // We'll wrap this as a nested query with the continuation's clauses
+            var continuation = queryExpr.Body.Continuation;
+            string contIdentifier = continuation.Identifier.Text;
+
+            // Process continuation clauses
+            foreach (var clause in continuation.Body.Clauses)
+            {
+                if (clause is WhereClauseSyntax whereClause)
+                {
+                    currentCollection = new JObject
+                    {
+                        ["kind"] = "xnkCallExpr",
+                        ["callee"] = new JObject
+                        {
+                            ["kind"] = "xnkMemberAccessExpr",
+                            ["memberExpr"] = currentCollection,
+                            ["memberName"] = "Where"
+                        },
+                        ["args"] = new JArray(new JObject
+                        {
+                            ["kind"] = "xnkLambdaExpr",
+                            ["lambdaParams"] = new JArray(new JObject { ["kind"] = "xnkIdentifier", ["identName"] = contIdentifier }),
+                            ["lambdaBody"] = ConvertExpression(whereClause.Condition)
+                        })
+                    };
+                }
+                // Add more clause handling as needed
+            }
+
+            // Handle continuation's select/group
+            if (continuation.Body.SelectOrGroup is SelectClauseSyntax contSelect)
+            {
+                currentCollection = new JObject
+                {
+                    ["kind"] = "xnkCallExpr",
+                    ["callee"] = new JObject
+                    {
+                        ["kind"] = "xnkMemberAccessExpr",
+                        ["memberExpr"] = currentCollection,
+                        ["memberName"] = "Select"
+                    },
+                    ["args"] = new JArray(new JObject
+                    {
+                        ["kind"] = "xnkLambdaExpr",
+                        ["lambdaParams"] = new JArray(new JObject { ["kind"] = "xnkIdentifier", ["identName"] = contIdentifier }),
+                        ["lambdaBody"] = ConvertExpression(contSelect.Expression)
+                    })
+                };
+            }
         }
 
         return currentCollection;
@@ -547,7 +691,25 @@ partial class Program
         foreach (var initializer in anonObject.Initializers)
         {
             // NameEquals can be null if the property name is inferred.
-            var name = initializer.NameEquals?.Name.Identifier.Text ?? (initializer.Expression as IdentifierNameSyntax)?.Identifier.Text;
+            // For inferred names like `new { a.b, a.c }`, the name is the last member (b, c)
+            string name = null;
+
+            if (initializer.NameEquals != null)
+            {
+                // Explicit name: new { Name = value }
+                name = initializer.NameEquals.Name.Identifier.Text;
+            }
+            else if (initializer.Expression is IdentifierNameSyntax identExpr)
+            {
+                // Simple identifier: new { variableName }
+                name = identExpr.Identifier.Text;
+            }
+            else if (initializer.Expression is MemberAccessExpressionSyntax memberAccess)
+            {
+                // Member access: new { obj.Property } → name is "Property"
+                name = memberAccess.Name.Identifier.Text;
+            }
+
             if (name != null)
             {
                 entries.Add(new JObject
@@ -556,24 +718,23 @@ partial class Program
                     ["key"] = new JObject
                     {
                         ["kind"] = "xnkStringLit",
-                        ["value"] = name
+                        ["literalValue"] = name
                     },
                     ["value"] = ConvertExpression(initializer.Expression)
                 });
             }
             else
             {
-                // Could be a more complex expression where name is inferred, e.g. new { a.b, a.c }
-                // For now, we'll just create an unknown entry for this initializer.
+                // For other complex expressions, use the expression string as key
                 entries.Add(new JObject
                 {
                     ["kind"] = "xnkDictEntry",
                     ["key"] = new JObject
                     {
                         ["kind"] = "xnkStringLit",
-                        ["value"] = "unknown"
+                        ["literalValue"] = initializer.Expression.ToString()
                     },
-                    ["value"] = CreateUnknownNode(initializer, "anonymous_initializer")
+                    ["value"] = ConvertExpression(initializer.Expression)
                 });
             }
         }
@@ -590,6 +751,26 @@ partial class Program
             ["kind"] = "xnkGenericType",
             ["genericTypeName"] = "Nullable",
             ["genericArgs"] = new JArray(ConvertExpression(nullableType.ElementType))
+        };
+    }
+    static JObject ConvertImplicitObjectCreation(ImplicitObjectCreationExpressionSyntax implicitObjCreate)
+    {
+        // C# 9.0 target-typed new: new() { ... } or new(args)
+        // The type is inferred from context, so we use a placeholder
+        return new JObject
+        {
+            ["kind"] = "xnkCallExpr",
+            ["callee"] = new JObject
+            {
+                ["kind"] = "xnkNamedType",
+                ["typeName"] = "auto"  // Type is inferred from context
+            },
+            ["args"] = implicitObjCreate.ArgumentList != null
+                ? new JArray(implicitObjCreate.ArgumentList.Arguments.Select(arg => ConvertExpression(arg.Expression)))
+                : new JArray(),
+            ["initializer"] = implicitObjCreate.Initializer != null
+                ? ConvertInitializer(implicitObjCreate.Initializer)
+                : JValue.CreateNull()
         };
     }
     static JObject ConvertRefValueExpression(RefValueExpressionSyntax refValueExpr)
@@ -1060,6 +1241,39 @@ partial class Program
             MethodDeclarationSyntax method => ConvertMethod(method),
             PropertyDeclarationSyntax property => ConvertProperty(property),
             _ => new JObject { ["kind"] = "xnkUnknown", ["unknownData"] = member.ToString() }
+        };
+    }
+
+    static JObject ConvertIncompleteMember(IncompleteMemberSyntax incompleteMember)
+    {
+        // IncompleteMemberSyntax represents a member that couldn't be fully parsed
+        // It typically has a Type property that indicates what was being declared
+        // This can happen with code that's still being edited or has syntax errors
+
+        // Try to extract useful information
+        var typeStr = incompleteMember.Type?.ToString() ?? "unknown";
+
+        // If it looks like a field declaration (just a type), create a placeholder field
+        if (incompleteMember.Type != null)
+        {
+            return new JObject
+            {
+                ["kind"] = "xnkFieldDecl",
+                ["fieldName"] = "_incomplete_",  // Placeholder name
+                ["fieldType"] = ConvertType(incompleteMember.Type),
+                ["fieldInitializer"] = JValue.CreateNull(),
+                ["isIncomplete"] = true  // Mark it as incomplete for downstream processing
+            };
+        }
+
+        // Fallback to unknown
+        return new JObject
+        {
+            ["kind"] = "xnkUnknown",
+            ["unknownData"] = incompleteMember.ToString().Length > 100
+                ? incompleteMember.ToString().Substring(0, 100) + "..."
+                : incompleteMember.ToString(),
+            ["context"] = "incomplete_member"
         };
     }
 }

@@ -4,9 +4,9 @@ type
     LocaleListFileName: string = "fullLocaleNames.lst"
     InvariantResourcesListFileName: string = "invariantResourceNames.lst"
     DataDirectoryName: string = "data"
-    SupportedFeatures: string[] = @["brkitr", "coll", "curr", "lang", "rbnf", "region", "translit"]
+    SupportedFeatures: seq[string] = @["brkitr", "coll", "curr", "lang", "rbnf", "region", "translit"]
 
-proc TransformResources(): void =
+proc TransformResources(dataPath: string, outputDirectory: string): void =
   TransformFeature(string.Empty, dataPath, outputDirectory)
   for var dir: var in Directory.GetDirectories(dataPath, "*.*", SearchOption.TopDirectoryOnly):
     block:
@@ -15,7 +15,7 @@ proc TransformResources(): void =
         continue
       TransformFeature(featureName, dir, outputDirectory)
   CreateInvariantResourceManifest(outputDirectory, outputDirectory)
-proc TransformFeature(): void =
+proc TransformFeature(featureName: string, featurePath: string, outputDirectory: string): void =
   var localeList: var = LoadLocaleList(featurePath)
   for var filePath: var in Directory.GetFiles(featurePath, "*.*", SearchOption.TopDirectoryOnly):
     block:
@@ -29,7 +29,7 @@ proc TransformFeature(): void =
 
       else:
         TransformInvariantFeature(filePath, featureName, outputDirectory)
-proc TransformLocalizedFeature(): void =
+proc TransformLocalizedFeature(filePath: string, featureName: string, icuLocaleName: string, outputDirectory: string): void =
   var fileName: string = Path.GetFileName(filePath)
   var dotnetLocaleName: string = ICU4N.Globalization.ResourceUtil.GetDotNetNeutralCultureName(icuLocaleName)
   var outFileName: string = GetFeatureFileName(featureName, fileName)
@@ -37,25 +37,25 @@ proc TransformLocalizedFeature(): void =
   var outFilePath: string = Path.Combine(outDirectoryName, outFileName)
   Directory.CreateDirectory(outDirectoryName)
   File.Copy(filePath, outFilePath, true)
-proc TransformInvariantFeature(): void =
+proc TransformInvariantFeature(filePath: string, featureName: string, outputDirectory: string): void =
   var fileName: string = Path.GetFileName(filePath)
   var outFileName: string = GetFeatureFileName(featureName, fileName)
   var outFilePath: string = Path.Combine(outputDirectory, outFileName)
   Directory.CreateDirectory(outputDirectory)
   File.Copy(filePath, outFilePath, true)
-proc GetFeatureFileName(): string =
+proc GetFeatureFileName(featureName: string, fileName: string): string =
   return if featureName == string.Empty:
   string.Concat(DataDirectoryName, ".", fileName)
 else:
   string.Concat(DataDirectoryName, ".", featureName, ".", fileName)
-proc LoadLocaleList(): ISet<string> =
+proc LoadLocaleList(dataPath: string, localeListFileName: string = LocaleListFileName): ISet<string> =
   var result: var = HashSet<string>
   var reader: var = StreamReader(Path.Combine(dataPath, localeListFileName), Encoding.UTF8)
   var line: string
   while line = reader.ReadLine != nil:
     result.Add(line.Trim)
   return result
-proc CreateInvariantResourceManifest(): void =
+proc CreateInvariantResourceManifest(invariantResourceDirectory: string, outputDirectory: string): void =
   var files: var = GetNonLocalizedFileNameList(invariantResourceDirectory)
   var outputFilePath: string = Path.Combine(outputDirectory, string.Concat(DataDirectoryName, ".", InvariantResourcesListFileName))
   var writer: var = StreamWriter(outputFilePath, false, Encoding.UTF8)
@@ -66,7 +66,7 @@ proc CreateInvariantResourceManifest(): void =
 ++i
   writer.Write(files[files.Count - 1])
   writer.Flush
-proc GetNonLocalizedFileNameList(): IList<string> =
+proc GetNonLocalizedFileNameList(inputDirectory: string): IList<string> =
   var result: var = List<string>
   for var filePath: var in Directory.GetFiles(inputDirectory, "*.*", SearchOption.TopDirectoryOnly):
     result.Add(Path.GetFileName(filePath))
