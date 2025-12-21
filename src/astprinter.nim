@@ -126,7 +126,10 @@ proc renderIdentDefs(n: MyNimNode, indent: int): string =
   # name: type = default
   result = renderNode(n[0], indent)
   if n.len > 1 and n[1].kind != nnkEmpty:
-    result &= ": " & renderNode(n[1], indent)
+    let typeStr = renderNode(n[1], indent)
+    # Skip type annotation if it's "var" (C# var keyword with inferred type)
+    if typeStr != "var":
+      result &= ": " & typeStr
   if n.len > 2 and n[2].kind != nnkEmpty:
     result &= " = " & renderNode(n[2], indent)
 
@@ -158,10 +161,11 @@ proc renderStmtList(n: MyNimNode, indent: int): string =
     result &= renderNode(stmt, indent)
 
 proc renderBlockStmt(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "block"
   if n[0].kind != nnkEmpty:
-    result &= " " & renderNode(n[0], 0)
-  result &= ":\n"
+    result = ind(indent) & "block " & renderNode(n[0], 0) & ":\n"
+  else:
+    result = ind(indent)
+    
   result &= renderNode(n[1], indent + 1)
 
 proc renderIfStmt(n: MyNimNode, indent: int): string =
@@ -255,6 +259,44 @@ proc renderRaiseStmt(n: MyNimNode, indent: int): string =
   if n.len > 0 and n[0].kind != nnkEmpty:
     result &= " " & renderNode(n[0], 0)
 
+proc renderTryStmt(n: MyNimNode, indent: int): string =
+  # Try statement: [0] is try body, [1..n-1] are except/finally branches
+  result = ind(indent) & "try:\n"
+  if n.len > 0 and n[0].kind != nnkEmpty:
+    if n[0].kind == nnkStmtList:
+      result &= renderStmtList(n[0], indent + 1)
+    else:
+      result &= renderNode(n[0], indent + 1)
+
+  for i in 1..<n.len:
+    result &= "\n"
+    result &= renderNode(n[i], indent)
+
+proc renderExceptBranch(n: MyNimNode, indent: int): string =
+  # Except branch: [0..n-2] are exception types, [n-1] is the body
+  result = ind(indent) & "except"
+  if n.len > 1:
+    # Render exception types with space after except
+    result &= " "
+    for i in 0..<n.len-1:
+      if i > 0: result &= ", "
+      result &= renderNode(n[i], 0)
+  result &= ":\n"
+  let body = n[n.len - 1]
+  if body.kind == nnkStmtList:
+    result &= renderStmtList(body, indent + 1)
+  else:
+    result &= renderNode(body, indent + 1)
+
+proc renderFinally(n: MyNimNode, indent: int): string =
+  # Finally block: [0] is the body
+  result = ind(indent) & "finally:\n"
+  if n.len > 0 and n[0].kind != nnkEmpty:
+    if n[0].kind == nnkStmtList:
+      result &= renderStmtList(n[0], indent + 1)
+    else:
+      result &= renderNode(n[0], indent + 1)
+
 # Procedure/function rendering
 proc renderFormalParams(n: MyNimNode, indent: int): string =
   # [0] is return type, [1..] are parameters
@@ -264,7 +306,10 @@ proc renderFormalParams(n: MyNimNode, indent: int): string =
     result &= renderIdentDefs(n[i], 0)
   result &= ")"
   if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= ": " & renderNode(n[0], 0)
+    # Skip rendering void return type (idiomatic Nim has no return type for void procedures)
+    let returnType = renderNode(n[0], 0)
+    if returnType != "void":
+      result &= ": " & returnType
 
 proc renderProcDef(n: MyNimNode, indent: int): string =
   result = ind(indent) & "proc "
@@ -385,6 +430,13 @@ proc renderDistinctTy(n: MyNimNode, indent: int): string =
   result = "distinct "
   if n.len > 0:
     result &= renderNode(n[0], indent)
+
+proc renderEnumFieldDef(n: MyNimNode, indent: int): string =
+  # Enum field definition: [name] or [name, value]
+  if n.len > 0 and n[0].kind != nnkEmpty:
+    result = renderNode(n[0], 0)
+    if n.len > 1 and n[1].kind != nnkEmpty:
+      result &= " = " & renderNode(n[1], 0)
 
 proc renderEnumTy(n: MyNimNode, indent: int): string =
   result = "enum\n"
@@ -544,6 +596,12 @@ proc renderNode(n: MyNimNode, indent: int = 0): string =
     result = renderContinueStmt(n, indent)
   of nnkRaiseStmt:
     result = renderRaiseStmt(n, indent)
+  of nnkTryStmt:
+    result = renderTryStmt(n, indent)
+  of nnkExceptBranch:
+    result = renderExceptBranch(n, indent)
+  of nnkFinally:
+    result = renderFinally(n, indent)
 
   # Procedures/functions
   of nnkProcDef:
@@ -580,6 +638,8 @@ proc renderNode(n: MyNimNode, indent: int = 0): string =
     result = renderDistinctTy(n, indent)
   of nnkEnumTy:
     result = renderEnumTy(n, indent)
+  of nnkEnumFieldDef:
+    result = renderEnumFieldDef(n, indent)
   of nnkTupleTy:
     result = renderTupleTy(n, indent)
   of nnkProcTy:

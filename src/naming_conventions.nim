@@ -79,13 +79,32 @@ proc extractNamespace*(xlangAst: XLangNode): Option[string] =
         return some(decl.namespaceName)
   return none(string)
 
-proc getOutputFileName*(xlangAst: XLangNode, inputFile: string, extension: string = ".nim"): string =
-  ## Determine the output filename based on namespace conventions
-  ## If namespace exists: convert to module path (e.g., "System.Collections" -> "system/collections.nim")
-  ## If no namespace: use input filename with changed extension
-  let ns = extractNamespace(xlangAst)
-  if ns.isSome():
-    return namespaceToFileName(ns.get(), extension)
+proc getOutputFileName*(xlangAst: XLangNode, inputFile: string, extension: string = ".nim", inputRoot: string = ""): string =
+  ## Determine the output filename based on input file structure
+  ## Each C# source file maps to its own Nim file with the same relative directory structure
+  ## This preserves module boundaries and avoids collisions from multiple files sharing namespaces
+  ##
+  ## Args:
+  ##   xlangAst: The XLang AST (unused, kept for API compatibility)
+  ##   inputFile: The full path to the input file
+  ##   extension: Output file extension (default ".nim")
+  ##   inputRoot: The root input directory to make paths relative to
+  let inputDir = inputFile.parentDir()
+  let inputBaseName = inputFile.splitFile().name  # filename without extension
+
+  # Compute relative path from inputRoot to inputDir
+  let relativeDir = if inputRoot != "":
+    let root = inputRoot.normalizedPath()
+    let fullDir = inputDir.normalizedPath()
+    if fullDir.startsWith(root):
+      fullDir[root.len..^1].strip(chars = {os.DirSep}, leading = true, trailing = true)
+    else:
+      inputDir
   else:
-    # Fallback to input filename with changed extension
-    return inputFile.changeFileExt(extension)
+    inputDir
+
+  # Convert relative path to snake_case for Nim conventions
+  if relativeDir != "":
+    return pascalToSnake(relativeDir) & "/" & inputBaseName & extension
+  else:
+    return inputBaseName & extension

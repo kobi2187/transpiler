@@ -161,6 +161,7 @@ type
       returnType*: Option[XLangNode]
       body*: XLangNode
       isAsync*: bool
+      funcVisibility*: string  # "public", "private", "internal", "protected", etc.
 
     of xnkMethodDecl:
       receiver*: Option[XLangNode]       # <- method-specific field
@@ -821,6 +822,7 @@ type
       extExtMethodReturnType*: Option[XLangNode]
       extExtMethodBody*: XLangNode
       extExtMethodIsStatic*: bool
+      extExtMethodVisibility*: string  # "public", "private", "internal", "protected", etc.
 
     # Switch case with fallthrough
     of xnkExternal_FallthroughCase:

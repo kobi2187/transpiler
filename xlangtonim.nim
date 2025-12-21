@@ -422,8 +422,9 @@ proc conv_xnkFuncDecl_method(node: XLangNode, ctx: ConversionContext): MyNimNode
   # Build a proc/method node using my_nim_node API
   let kind = if node.kind == xnkFuncDecl: nnkProcDef else: nnkMethodDef
   result = newNimNode(kind)
-  # 0: name
-  result.add(newIdentNode(node.funcName))
+  # 0: name - add asterisk for public procs
+  let procName = if node.funcVisibility == "public": node.funcName & "*" else: node.funcName
+  result.add(newIdentNode(procName))
   # 1: pattern/term rewriting placeholder
   result.add(newEmptyNode())
   # 2: generic params placeholder
@@ -869,8 +870,9 @@ proc conv_xnkBracketExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 proc conv_xnkBinaryExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result = newNimNode(nnkInfix)
-  result.add(convertToNimAST(node.binaryLeft, ctx))
+  # nnkInfix structure: [operator, left, right]
   result.add(newIdentNode(node.binaryOp))
+  result.add(convertToNimAST(node.binaryLeft, ctx))
   result.add(convertToNimAST(node.binaryRight, ctx))
 
 proc conv_xnkUnaryExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
@@ -1176,7 +1178,13 @@ proc conv_xnkLibDecl(node: XLangNode, ctx: ConversionContext): MyNimNode = notYe
 ## Nim: `for x in arr:`
 proc conv_xnkForeachStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result = newNimNode(nnkForStmt)
-  result.add(convertToNimAST(node.foreachVar, ctx))
+  # For foreach, we only need the variable name, not the full declaration with type
+  # The loop variable type is inferred from the iterable
+  let varName = if node.foreachVar.kind == xnkVarDecl:
+    node.foreachVar.declName  # Just the variable name
+  else:
+    "item"  # Fallback
+  result.add(newIdentNode(varName))
   result.add(convertToNimAST(node.foreachIter, ctx))
   result.add(convertToNimAST(node.foreachBody, ctx))
 

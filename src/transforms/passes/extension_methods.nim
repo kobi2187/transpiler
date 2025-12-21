@@ -44,7 +44,8 @@ proc transformExtensionMethods*(node: XLangNode): XLangNode {.noSideEffect, gcsa
       params: node.extExtMethodParams,  # Keep all params, including the 'this' one
       returnType: node.extExtMethodReturnType,
       body: funcBody,
-      isAsync: false  # Will be tracked separately if needed
+      isAsync: false,  # Will be tracked separately if needed
+      funcVisibility: node.extExtMethodVisibility  # Preserve visibility from extension method
     )
 
   else:

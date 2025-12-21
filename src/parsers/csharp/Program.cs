@@ -252,6 +252,20 @@ partial class Program
         };
     }
 
+    static string ExtractVisibility(SyntaxTokenList modifiers)
+    {
+        if (modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.PublicKeyword)))
+            return "public";
+        if (modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.PrivateKeyword)))
+            return "private";
+        if (modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.InternalKeyword)))
+            return "internal";
+        if (modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.ProtectedKeyword)))
+            return "protected";
+        // Default to internal if no explicit visibility (C# default)
+        return "internal";
+    }
+
     static JObject ConvertMethod(MethodDeclarationSyntax method)
     {
         // Check if this is an extension method (static method with 'this' on first parameter)
@@ -271,26 +285,88 @@ partial class Program
 
         if (isExtensionMethod)
         {
+            // Handle both block bodies and expression bodies (=>)
+            JToken bodyToken;
+            if (method.Body != null)
+            {
+                bodyToken = ConvertBlock(method.Body);
+            }
+            else if (method.ExpressionBody != null)
+            {
+                // Convert expression body to a return statement wrapped in a block
+                var returnExpr = ConvertExpression(method.ExpressionBody.Expression);
+                bodyToken = new JObject
+                {
+                    ["kind"] = "xnkBlockStmt",
+                    ["blockBody"] = new JArray(new JObject
+                    {
+                        ["kind"] = "xnkReturnStmt",
+                        ["returnExpr"] = returnExpr
+                    })
+                };
+            }
+            else
+            {
+                // Fallback: empty block (abstract/interface methods shouldn't be here)
+                bodyToken = new JObject
+                {
+                    ["kind"] = "xnkBlockStmt",
+                    ["blockBody"] = new JArray()
+                };
+            }
+
             return new JObject
             {
                 ["kind"] = "xnkExternal_ExtensionMethod",
                 ["extExtMethodName"] = method.Identifier.Text,
                 ["extExtMethodParams"] = new JArray(parameters),
                 ["extExtMethodReturnType"] = new JObject { ["kind"] = "xnkNamedType", ["typeName"] = method.ReturnType.ToString() },
-                ["extExtMethodBody"] = method.Body != null ? ConvertBlock(method.Body) : JValue.CreateNull(),
-                ["extExtMethodIsStatic"] = true  // Extension methods are always static in C#
+                ["extExtMethodBody"] = bodyToken,
+                ["extExtMethodIsStatic"] = true,  // Extension methods are always static in C#
+                ["extExtMethodVisibility"] = ExtractVisibility(method.Modifiers)
             };
         }
         else
         {
+            // Handle both block bodies and expression bodies (=>)
+            JToken bodyToken;
+            if (method.Body != null)
+            {
+                bodyToken = ConvertBlock(method.Body);
+            }
+            else if (method.ExpressionBody != null)
+            {
+                // Convert expression body to a return statement wrapped in a block
+                var returnExpr = ConvertExpression(method.ExpressionBody.Expression);
+                bodyToken = new JObject
+                {
+                    ["kind"] = "xnkBlockStmt",
+                    ["blockBody"] = new JArray(new JObject
+                    {
+                        ["kind"] = "xnkReturnStmt",
+                        ["returnExpr"] = returnExpr
+                    })
+                };
+            }
+            else
+            {
+                // Fallback: empty block (abstract/interface methods shouldn't be here)
+                bodyToken = new JObject
+                {
+                    ["kind"] = "xnkBlockStmt",
+                    ["blockBody"] = new JArray()
+                };
+            }
+
             return new JObject
             {
                 ["kind"] = "xnkFuncDecl",
                 ["funcName"] = method.Identifier.Text,
                 ["params"] = new JArray(parameters),
                 ["returnType"] = new JObject { ["kind"] = "xnkNamedType", ["typeName"] = method.ReturnType.ToString() },
-                ["body"] = method.Body != null ? ConvertBlock(method.Body) : JValue.CreateNull(),
-                ["isAsync"] = method.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.AsyncKeyword))
+                ["body"] = bodyToken,
+                ["isAsync"] = method.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.AsyncKeyword)),
+                ["funcVisibility"] = ExtractVisibility(method.Modifiers)
             };
         }
     }
@@ -410,17 +486,27 @@ partial class Program
     static JObject ConvertLiteral(LiteralExpressionSyntax literal)
     {
         // Map C# literal kinds to xlang literal kinds
-        string xlangKind = literal.Kind() switch
+        string xlangKind;
+
+        if (literal.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.NumericLiteralExpression)
         {
-            Microsoft.CodeAnalysis.CSharp.SyntaxKind.NumericLiteralExpression => "xnkIntLit",
-            Microsoft.CodeAnalysis.CSharp.SyntaxKind.StringLiteralExpression => "xnkStringLit",
-            Microsoft.CodeAnalysis.CSharp.SyntaxKind.CharacterLiteralExpression => "xnkCharLit",
-            Microsoft.CodeAnalysis.CSharp.SyntaxKind.TrueLiteralExpression => "xnkBoolLit",
-            Microsoft.CodeAnalysis.CSharp.SyntaxKind.FalseLiteralExpression => "xnkBoolLit",
-            Microsoft.CodeAnalysis.CSharp.SyntaxKind.NullLiteralExpression => "xnkNilLit",
-            Microsoft.CodeAnalysis.CSharp.SyntaxKind.DefaultLiteralExpression => "xnkNilLit",
-            _ => "xnkUnknownLit" // Default fallback
-        };
+            // Distinguish between integer and floating-point literals
+            var value = literal.Token.Value;
+            xlangKind = value is double or float or decimal ? "xnkFloatLit" : "xnkIntLit";
+        }
+        else
+        {
+            xlangKind = literal.Kind() switch
+            {
+                Microsoft.CodeAnalysis.CSharp.SyntaxKind.StringLiteralExpression => "xnkStringLit",
+                Microsoft.CodeAnalysis.CSharp.SyntaxKind.CharacterLiteralExpression => "xnkCharLit",
+                Microsoft.CodeAnalysis.CSharp.SyntaxKind.TrueLiteralExpression => "xnkBoolLit",
+                Microsoft.CodeAnalysis.CSharp.SyntaxKind.FalseLiteralExpression => "xnkBoolLit",
+                Microsoft.CodeAnalysis.CSharp.SyntaxKind.NullLiteralExpression => "xnkNilLit",
+                Microsoft.CodeAnalysis.CSharp.SyntaxKind.DefaultLiteralExpression => "xnkNilLit",
+                _ => "xnkUnknownLit" // Default fallback
+            };
+        }
 
         var result = new JObject
         {
