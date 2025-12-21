@@ -1,19 +1,20 @@
 ## AST Printer - Convert MyNimNode trees to Nim source code
-## Uses Forth-style small helper functions for maintainability
+## Uses global indent level that increments/decrements on block entry/exit
 
 import my_nim_node
 import std/strutils
 
 export my_nim_node  # Re-export for convenience
 
-# Forward declarations
-proc renderNode(n: MyNimNode, indent: int = 0): string
-proc renderNodes(nodes: openArray[MyNimNode], sep: string, indent: int = 0): string
+# Global indent level
+var gIndent = 0
 
-# Basic rendering helpers
-proc ind(level: int): string = "  ".repeat(level)
-proc needsParens(n: MyNimNode): bool =
-  n.kind in {nnkInfix, nnkPrefix, nnkCall, nnkCommand}
+proc incIndent() = inc gIndent
+proc decIndent() = dec gIndent
+proc ind(): string = "  ".repeat(gIndent)
+
+# Forward declaration
+proc renderNode(n: MyNimNode): string
 
 # Literal rendering
 proc renderIntLit(n: MyNimNode): string = $n.intVal
@@ -27,478 +28,491 @@ proc renderTripleStrLit(n: MyNimNode): string = "\"\"\"" & n.strVal & "\"\"\""
 proc renderIdent(n: MyNimNode): string = n.identStr
 proc renderSym(n: MyNimNode): string = n.symName
 
-# Expression rendering helpers
-proc renderInfix(n: MyNimNode, indent: int): string =
-  let op = renderNode(n[0], indent)
-  let lhs = renderNode(n[1], indent)
-  let rhs = renderNode(n[2], indent)
+# Expression rendering helpers (no indent - expressions are inline)
+proc renderInfix(n: MyNimNode): string =
+  let op = renderNode(n[0])
+  let lhs = renderNode(n[1])
+  let rhs = renderNode(n[2])
   result = lhs & " " & op & " " & rhs
 
-proc renderPrefix(n: MyNimNode, indent: int): string =
-  let op = renderNode(n[0], indent)
-  let arg = renderNode(n[1], indent)
+proc renderPrefix(n: MyNimNode): string =
+  let op = renderNode(n[0])
+  let arg = renderNode(n[1])
   result = op & arg
 
-proc renderPostfix(n: MyNimNode, indent: int): string =
-  let arg = renderNode(n[0], indent)
-  let op = renderNode(n[1], indent)
+proc renderPostfix(n: MyNimNode): string =
+  let arg = renderNode(n[0])
+  let op = renderNode(n[1])
   result = arg & op
 
-proc renderCall(n: MyNimNode, indent: int): string =
-  if n.len == 0: return ind(indent) & "()"
-  result = ind(indent) & renderNode(n[0], 0)
+proc renderCall(n: MyNimNode): string =
+  if n.len == 0: return "()"
+  result = renderNode(n[0])
   if n.len > 1:
     result &= "("
     for i in 1..<n.len:
       if i > 1: result &= ", "
-      result &= renderNode(n[i], 0)
+      result &= renderNode(n[i])
     result &= ")"
 
-proc renderCommand(n: MyNimNode, indent: int): string =
-  result = renderNode(n[0], indent)
+proc renderCommand(n: MyNimNode): string =
+  result = renderNode(n[0])
   for i in 1..<n.len:
     result &= " "
-    result &= renderNode(n[i], indent)
+    result &= renderNode(n[i])
 
-proc renderDotExpr(n: MyNimNode, indent: int): string =
-  result = renderNode(n[0], indent) & "." & renderNode(n[1], indent)
+proc renderDotExpr(n: MyNimNode): string =
+  result = renderNode(n[0]) & "." & renderNode(n[1])
 
-proc renderBracketExpr(n: MyNimNode, indent: int): string =
-  result = renderNode(n[0], indent) & "["
+proc renderBracketExpr(n: MyNimNode): string =
+  result = renderNode(n[0]) & "["
   for i in 1..<n.len:
     if i > 1: result &= ", "
-    result &= renderNode(n[i], indent)
+    result &= renderNode(n[i])
   result &= "]"
 
-proc renderPar(n: MyNimNode, indent: int): string =
+proc renderPar(n: MyNimNode): string =
   result = "("
   for i, child in n:
     if i > 0: result &= ", "
-    result &= renderNode(child, indent)
+    result &= renderNode(child)
   result &= ")"
 
-proc renderBracket(n: MyNimNode, indent: int): string =
+proc renderBracket(n: MyNimNode): string =
   result = "["
   for i, child in n:
     if i > 0: result &= ", "
-    result &= renderNode(child, indent)
+    result &= renderNode(child)
   result &= "]"
 
-proc renderCurly(n: MyNimNode, indent: int): string =
+proc renderCurly(n: MyNimNode): string =
   result = "{"
   for i, child in n:
     if i > 0: result &= ", "
-    result &= renderNode(child, indent)
+    result &= renderNode(child)
   result &= "}"
 
-proc renderTupleConstr(n: MyNimNode, indent: int): string =
+proc renderTupleConstr(n: MyNimNode): string =
   result = "("
   for i, child in n:
     if i > 0: result &= ", "
-    result &= renderNode(child, indent)
+    result &= renderNode(child)
   if n.len == 1: result &= ","  # Single element tuple
   result &= ")"
 
-proc renderCast(n: MyNimNode, indent: int): string =
-  # Nim cast syntax: cast[Type](value)
-  # n[0] is the target type, n[1] is the expression to cast
-  result = "cast[" & renderNode(n[0], indent) & "](" & renderNode(n[1], indent) & ")"
+proc renderCast(n: MyNimNode): string =
+  result = "cast[" & renderNode(n[0]) & "](" & renderNode(n[1]) & ")"
 
-proc renderObjConstr(n: MyNimNode, indent: int): string =
+proc renderObjConstr(n: MyNimNode): string =
   if n.len == 0: return "()"
-  result = renderNode(n[0], indent) & "("
+  result = renderNode(n[0]) & "("
   for i in 1..<n.len:
     if i > 1: result &= ", "
-    result &= renderNode(n[i], indent)
+    result &= renderNode(n[i])
   result &= ")"
 
-proc renderExprColonExpr(n: MyNimNode, indent: int): string =
-  result = renderNode(n[0], indent) & ": " & renderNode(n[1], indent)
+proc renderExprColonExpr(n: MyNimNode): string =
+  result = renderNode(n[0]) & ": " & renderNode(n[1])
 
-proc renderExprEqExpr(n: MyNimNode, indent: int): string =
-  result = renderNode(n[0], indent) & " = " & renderNode(n[1], indent)
+proc renderExprEqExpr(n: MyNimNode): string =
+  result = renderNode(n[0]) & " = " & renderNode(n[1])
 
 # Statement rendering helpers
-proc renderAsgn(n: MyNimNode, indent: int): string =
-  result = ind(indent) & renderNode(n[0], indent) & " = " & renderNode(n[1], indent)
-
-proc renderIdentDefs(n: MyNimNode, indent: int): string =
-  # name: type = default
-  result = renderNode(n[0], indent)
+proc renderIdentDefs(n: MyNimNode): string =
+  result = renderNode(n[0])
   if n.len > 1 and n[1].kind != nnkEmpty:
-    let typeStr = renderNode(n[1], indent)
-    # Skip type annotation if it's "var" (C# var keyword with inferred type)
+    let typeStr = renderNode(n[1])
     if typeStr != "var":
       result &= ": " & typeStr
   if n.len > 2 and n[2].kind != nnkEmpty:
-    result &= " = " & renderNode(n[2], indent)
+    result &= " = " & renderNode(n[2])
 
-proc renderVarSection(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "var "
+proc renderAsgn(n: MyNimNode): string =
+  result = ind() & renderNode(n[0]) & " = " & renderNode(n[1])
+
+proc renderVarSection(n: MyNimNode): string =
   for i, identDefs in n:
-    if i > 0: result &= "\n" & ind(indent) & "var "
-    result &= renderIdentDefs(identDefs, 0)
+    if i > 0: result &= "\n"
+    result &= ind() & "var " & renderIdentDefs(identDefs)
 
-proc renderLetSection(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "let "
+proc renderLetSection(n: MyNimNode): string =
   for i, identDefs in n:
-    if i > 0: result &= "\n" & ind(indent) & "let "
-    result &= renderIdentDefs(identDefs, 0)
+    if i > 0: result &= "\n"
+    result &= ind() & "let " & renderIdentDefs(identDefs)
 
-proc renderConstSection(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "const\n"
+proc renderConstSection(n: MyNimNode): string =
+  result = ind() & "const\n"
+  incIndent()
   for constDef in n:
-    result &= ind(indent + 1) & renderNode(constDef[0], 0)
+    result &= ind() & renderNode(constDef[0])
     if constDef.len > 1 and constDef[1].kind != nnkEmpty:
-      result &= ": " & renderNode(constDef[1], 0)
+      result &= ": " & renderNode(constDef[1])
     if constDef.len > 2:
-      result &= " = " & renderNode(constDef[2], 0)
+      result &= " = " & renderNode(constDef[2])
     result &= "\n"
+  decIndent()
 
-proc renderStmtList(n: MyNimNode, indent: int): string =
+proc renderStmtList(n: MyNimNode): string =
   for i, stmt in n:
     if i > 0: result &= "\n"
-    result &= renderNode(stmt, indent)
+    result &= renderNode(stmt)
 
-proc renderBlockStmt(n: MyNimNode, indent: int): string =
+proc renderBlockStmt(n: MyNimNode): string =
   if n[0].kind != nnkEmpty:
-    result = ind(indent) & "block " & renderNode(n[0], 0) & ":\n"
+    result = ind() & "block " & renderNode(n[0]) & ":\n"
   else:
-    result = ind(indent)
-    
-  result &= renderNode(n[1], indent + 1)
+    result = ""
+  incIndent()
+  result &= renderNode(n[1])
+  decIndent()
 
-proc renderIfStmt(n: MyNimNode, indent: int): string =
+proc renderIfStmt(n: MyNimNode): string =
   for i, branch in n:
     if i > 0: result &= "\n"
-    result &= renderNode(branch, indent)
+    if branch.kind == nnkElifBranch:
+      let keyword = if i == 0: "if" else: "elif"
+      result &= ind() & keyword & " " & renderNode(branch[0]) & ":\n"
+      incIndent()
+      result &= renderNode(branch[1])
+      decIndent()
+    elif branch.kind == nnkElse:
+      # Check if else body is a single nnkIfStmt - flatten to elif
+      if branch[0].kind == nnkIfStmt:
+        # Flatten: render the inner if as elif
+        let innerIf = branch[0]
+        for j, innerBranch in innerIf:
+          result &= "\n"
+          if innerBranch.kind == nnkElifBranch:
+            result &= ind() & "elif " & renderNode(innerBranch[0]) & ":\n"
+            incIndent()
+            result &= renderNode(innerBranch[1])
+            decIndent()
+          elif innerBranch.kind == nnkElse:
+            # Recursively handle nested else-if
+            if innerBranch[0].kind == nnkIfStmt:
+              # Continue flattening
+              result &= renderNode(MyNimNode(kind: nnkElse,  sons: innerBranch.sons))
+            else:
+              result &= ind() & "else:\n"
+              incIndent()
+              result &= renderNode(innerBranch[0])
+              decIndent()
+      else:
+        result &= ind() & "else:\n"
+        incIndent()
+        result &= renderNode(branch[0])
+        decIndent()
 
-proc renderElifBranch(n: MyNimNode, indent: int): string =
-  let keyword = "if"  # First branch uses "if", others use "elif"
-  result = ind(indent) & keyword & " " & renderNode(n[0], 0) & ":\n"
-  if n[1].kind == nnkStmtList:
-    result &= renderStmtList(n[1], indent + 1)
-  else:
-    result &= renderNode(n[1], indent + 1)
 
-proc renderElse(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "else:\n"
-  if n[0].kind == nnkStmtList:
-    result &= renderStmtList(n[0], indent + 1)
-  else:
-    # For simple expressions, add indentation manually
-    result &= ind(indent + 1) & renderNode(n[0], 0) & "\n"
+proc renderElifBranch(n: MyNimNode): string =
+  result = ind() & "elif " & renderNode(n[0]) & ":\n"
+  incIndent()
+  result &= renderNode(n[1])
+  decIndent()
 
-proc renderWhileStmt(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "while " & renderNode(n[0], 0) & ":\n"
-  if n[1].kind == nnkStmtList:
-    result &= renderStmtList(n[1], indent + 1)
-  else:
-    result &= renderNode(n[1], indent + 1)
+proc renderElse(n: MyNimNode): string =
+  result = ind() & "else:\n"
+  incIndent()
+  result &= renderNode(n[0])
+  decIndent()
 
-proc renderForStmt(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "for " & renderNode(n[0], 0)
-  result &= " in " & renderNode(n[1], 0) & ":\n"
-  if n[2].kind == nnkStmtList:
-    result &= renderStmtList(n[2], indent + 1)
-  else:
-    result &= renderNode(n[2], indent + 1)
+proc renderWhileStmt(n: MyNimNode): string =
+  result = ind() & "while " & renderNode(n[0]) & ":\n"
+  incIndent()
+  result &= renderNode(n[1])
+  decIndent()
 
-proc renderCaseStmt(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "case " & renderNode(n[0], 0) & "\n"
+proc renderForStmt(n: MyNimNode): string =
+  result = ind() & "for " & renderNode(n[0])
+  result &= " in " & renderNode(n[1]) & ":\n"
+  incIndent()
+  result &= renderNode(n[2])
+  decIndent()
+
+proc renderCaseStmt(n: MyNimNode): string =
+  result = ind() & "case " & renderNode(n[0]) & "\n"
   for i in 1..<n.len:
-    if i > 1: result &= "\n"
-    result &= renderNode(n[i], indent)
+    result &= renderNode(n[i])
+    if i < n.len - 1: result &= "\n"
 
-proc renderOfBranch(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "of "
+proc renderOfBranch(n: MyNimNode): string =
+  result = ind() & "of "
   for i in 0..<n.len-1:
     if i > 0: result &= ", "
-    result &= renderNode(n[i], 0)
+    result &= renderNode(n[i])
   result &= ":\n"
-  let body = n[n.len-1]
-  if body.kind == nnkStmtList:
-    result &= renderStmtList(body, indent + 1)
-  else:
-    # For simple expressions, add indentation manually
-    result &= ind(indent + 1) & renderNode(body, 0) & "\n"
+  incIndent()
+  result &= renderNode(n[n.len-1])
+  decIndent()
 
-proc renderReturnStmt(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "return"
+proc renderReturnStmt(n: MyNimNode): string =
+  result = ind() & "return"
   if n.len > 0 and n[0].kind != nnkEmpty:
-    # Special handling for case expressions - they need the branches indented at parent level
-    if n[0].kind == nnkCaseStmt:
-      result &= " case " & renderNode(n[0][0], 0) & "\n"
-      # Render branches with parent's indentation
-      for i in 1..<n[0].len:
-        if i > 1: result &= "\n"
-        result &= renderNode(n[0][i], indent)
-    else:
-      result &= " " & renderNode(n[0], 0)
+    result &= " " & renderNode(n[0])
 
-proc renderYieldStmt(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "yield"
+proc renderYieldStmt(n: MyNimNode): string =
+  result = ind() & "yield"
   if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= " " & renderNode(n[0], 0)
+    result &= " " & renderNode(n[0])
 
-proc renderDiscardStmt(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "discard"
+proc renderDiscardStmt(n: MyNimNode): string =
+  result = ind() & "discard"
   if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= " " & renderNode(n[0], 0)
+    result &= " " & renderNode(n[0])
 
-proc renderBreakStmt(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "break"
+proc renderBreakStmt(n: MyNimNode): string =
+  result = ind() & "break"
   if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= " " & renderNode(n[0], 0)
+    result &= " " & renderNode(n[0])
 
-proc renderContinueStmt(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "continue"
+proc renderContinueStmt(n: MyNimNode): string =
+  result = ind() & "continue"
 
-proc renderRaiseStmt(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "raise"
+proc renderRaiseStmt(n: MyNimNode): string =
+  result = ind() & "raise"
   if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= " " & renderNode(n[0], 0)
+    result &= " " & renderNode(n[0])
 
-proc renderTryStmt(n: MyNimNode, indent: int): string =
-  # Try statement: [0] is try body, [1..n-1] are except/finally branches
-  result = ind(indent) & "try:\n"
+proc renderTryStmt(n: MyNimNode): string =
+  result = ind() & "try:\n"
+  incIndent()
   if n.len > 0 and n[0].kind != nnkEmpty:
-    if n[0].kind == nnkStmtList:
-      result &= renderStmtList(n[0], indent + 1)
-    else:
-      result &= renderNode(n[0], indent + 1)
-
+    result &= renderNode(n[0])
+  decIndent()
   for i in 1..<n.len:
-    result &= "\n"
-    result &= renderNode(n[i], indent)
+    result &= "\n" & renderNode(n[i])
 
-proc renderExceptBranch(n: MyNimNode, indent: int): string =
-  # Except branch: [0..n-2] are exception types, [n-1] is the body
-  result = ind(indent) & "except"
+proc renderExceptBranch(n: MyNimNode): string =
+  result = ind() & "except"
   if n.len > 1:
-    # Render exception types with space after except
     result &= " "
     for i in 0..<n.len-1:
       if i > 0: result &= ", "
-      result &= renderNode(n[i], 0)
+      result &= renderNode(n[i])
   result &= ":\n"
-  let body = n[n.len - 1]
-  if body.kind == nnkStmtList:
-    result &= renderStmtList(body, indent + 1)
-  else:
-    result &= renderNode(body, indent + 1)
+  incIndent()
+  result &= renderNode(n[n.len - 1])
+  decIndent()
 
-proc renderFinally(n: MyNimNode, indent: int): string =
-  # Finally block: [0] is the body
-  result = ind(indent) & "finally:\n"
+proc renderFinally(n: MyNimNode): string =
+  result = ind() & "finally:\n"
+  incIndent()
   if n.len > 0 and n[0].kind != nnkEmpty:
-    if n[0].kind == nnkStmtList:
-      result &= renderStmtList(n[0], indent + 1)
-    else:
-      result &= renderNode(n[0], indent + 1)
+    result &= renderNode(n[0])
+  decIndent()
 
 # Procedure/function rendering
-proc renderFormalParams(n: MyNimNode, indent: int): string =
-  # [0] is return type, [1..] are parameters
+proc renderFormalParams(n: MyNimNode): string =
   result = "("
   for i in 1..<n.len:
     if i > 1: result &= ", "
-    result &= renderIdentDefs(n[i], 0)
+    result &= renderIdentDefs(n[i])
   result &= ")"
   if n.len > 0 and n[0].kind != nnkEmpty:
-    # Skip rendering void return type (idiomatic Nim has no return type for void procedures)
-    let returnType = renderNode(n[0], 0)
+    let returnType = renderNode(n[0])
     if returnType != "void":
       result &= ": " & returnType
 
-proc renderProcDef(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "proc "
-  # [0] name, [1] term rewriting, [2] generic params, [3] params, [4] return type/pragma, [5] reserved, [6] body
+proc renderProcDef(n: MyNimNode): string =
+  result = ind() & "proc "
   if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= renderNode(n[0], 0)
+    result &= renderNode(n[0])
   if n.len > 2 and n[2].kind != nnkEmpty:
-    result &= "[" & renderNode(n[2], 0) & "]"
+    result &= "[" & renderNode(n[2]) & "]"
   if n.len > 3 and n[3].kind != nnkEmpty:
-    result &= renderFormalParams(n[3], 0)
+    result &= renderFormalParams(n[3])
   if n.len > 4 and n[4].kind == nnkPragma:
-    result &= " {." & renderNode(n[4], 0) & ".}"
+    result &= " {." & renderNode(n[4]) & ".}"
   result &= " =\n"
+  incIndent()
   if n.len > 6 and n[6].kind != nnkEmpty:
-    if n[6].kind == nnkStmtList:
-      result &= renderStmtList(n[6], indent + 1)
-    else:
-      result &= renderNode(n[6], indent + 1)
+    result &= renderNode(n[6])
   else:
-    result &= ind(indent + 1) & "discard"
+    result &= ind() & "discard"
+  decIndent()
 
-proc renderFuncDef(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "func "
+proc renderFuncDef(n: MyNimNode): string =
+  result = ind() & "func "
   if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= renderNode(n[0], 0)
+    result &= renderNode(n[0])
   if n.len > 2 and n[2].kind != nnkEmpty:
-    result &= "[" & renderNode(n[2], 0) & "]"
+    result &= "[" & renderNode(n[2]) & "]"
   if n.len > 3 and n[3].kind != nnkEmpty:
-    result &= renderFormalParams(n[3], 0)
+    result &= renderFormalParams(n[3])
   result &= " =\n"
+  incIndent()
   if n.len > 6 and n[6].kind != nnkEmpty:
-    result &= renderNode(n[6], indent + 1)
+    result &= renderNode(n[6])
   else:
-    result &= ind(indent + 1) & "discard"
+    result &= ind() & "discard"
+  decIndent()
 
-proc renderMethodDef(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "method "
+proc renderMethodDef(n: MyNimNode): string =
+  result = ind() & "method "
   if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= renderNode(n[0], 0)
+    result &= renderNode(n[0])
   if n.len > 3 and n[3].kind != nnkEmpty:
-    result &= renderFormalParams(n[3], 0)
+    result &= renderFormalParams(n[3])
   result &= " =\n"
+  incIndent()
   if n.len > 6 and n[6].kind != nnkEmpty:
-    result &= renderNode(n[6], indent + 1)
+    result &= renderNode(n[6])
+  decIndent()
 
-proc renderIteratorDef(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "iterator "
+proc renderIteratorDef(n: MyNimNode): string =
+  result = ind() & "iterator "
   if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= renderNode(n[0], 0)
+    result &= renderNode(n[0])
   if n.len > 3 and n[3].kind != nnkEmpty:
-    result &= renderFormalParams(n[3], 0)
+    result &= renderFormalParams(n[3])
   result &= " =\n"
+  incIndent()
   if n.len > 6 and n[6].kind != nnkEmpty:
-    result &= renderNode(n[6], indent + 1)
+    result &= renderNode(n[6])
+  decIndent()
 
-proc renderTemplateDef(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "template "
+proc renderTemplateDef(n: MyNimNode): string =
+  result = ind() & "template "
   if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= renderNode(n[0], 0)
+    result &= renderNode(n[0])
   if n.len > 3 and n[3].kind != nnkEmpty:
-    result &= renderFormalParams(n[3], 0)
+    result &= renderFormalParams(n[3])
   result &= " =\n"
+  incIndent()
   if n.len > 6 and n[6].kind != nnkEmpty:
-    result &= renderNode(n[6], indent + 1)
+    result &= renderNode(n[6])
+  decIndent()
 
-proc renderMacroDef(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "macro "
+proc renderMacroDef(n: MyNimNode): string =
+  result = ind() & "macro "
   if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= renderNode(n[0], 0)
+    result &= renderNode(n[0])
   if n.len > 3 and n[3].kind != nnkEmpty:
-    result &= renderFormalParams(n[3], 0)
+    result &= renderFormalParams(n[3])
   result &= " =\n"
+  incIndent()
   if n.len > 6 and n[6].kind != nnkEmpty:
-    result &= renderNode(n[6], indent + 1)
+    result &= renderNode(n[6])
+  decIndent()
 
 # Type rendering
-proc renderTypeDef(n: MyNimNode, indent: int): string =
-  # [0] name, [1] generic params, [2] type def
-  result = ind(indent) & renderNode(n[0], 0)
+proc renderTypeDef(n: MyNimNode): string =
+  result = ind() & renderNode(n[0])
   if n.len > 1 and n[1].kind != nnkEmpty:
-    result &= "[" & renderNode(n[1], 0) & "]"
+    result &= "[" & renderNode(n[1]) & "]"
   if n.len > 2 and n[2].kind != nnkEmpty:
-    result &= " = " & renderNode(n[2], indent)
+    result &= " = " & renderNode(n[2])
 
-proc renderTypeSection(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "type\n"
+proc renderTypeSection(n: MyNimNode): string =
+  result = ""
   for typeDef in n:
-    result &= renderTypeDef(typeDef, indent + 1) & "\n"
+    result &= "type " & renderTypeDef(typeDef) & "\n"
+  
 
-proc renderObjectTy(n: MyNimNode, indent: int): string =
+proc renderObjectTy(n: MyNimNode): string =
   result = "object"
   if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= " of " & renderNode(n[0], 0)
+    result &= " of " & renderNode(n[0])
   if n.len > 2 and n[2].kind != nnkEmpty:
-    result &= "\n" & renderNode(n[2], indent + 1)
+    result &= "\n"
+    incIndent()
+    result &= renderNode(n[2])
+    decIndent()
 
-proc renderRecList(n: MyNimNode, indent: int): string =
+proc renderRecList(n: MyNimNode): string =
   for i, field in n:
     if i > 0: result &= "\n"
-    result &= ind(indent) & renderIdentDefs(field, 0)
+    result &= ind() & renderIdentDefs(field)
 
-proc renderRefTy(n: MyNimNode, indent: int): string =
+proc renderRefTy(n: MyNimNode): string =
   result = "ref "
   if n.len > 0:
-    result &= renderNode(n[0], indent)
+    result &= renderNode(n[0])
 
-proc renderPtrTy(n: MyNimNode, indent: int): string =
+proc renderPtrTy(n: MyNimNode): string =
   result = "ptr "
   if n.len > 0:
-    result &= renderNode(n[0], indent)
+    result &= renderNode(n[0])
 
-proc renderVarTy(n: MyNimNode, indent: int): string =
+proc renderVarTy(n: MyNimNode): string =
   result = "var "
   if n.len > 0:
-    result &= renderNode(n[0], indent)
+    result &= renderNode(n[0])
 
-proc renderDistinctTy(n: MyNimNode, indent: int): string =
+proc renderDistinctTy(n: MyNimNode): string =
   result = "distinct "
   if n.len > 0:
-    result &= renderNode(n[0], indent)
+    result &= renderNode(n[0])
 
-proc renderEnumFieldDef(n: MyNimNode, indent: int): string =
-  # Enum field definition: [name] or [name, value]
+proc renderEnumFieldDef(n: MyNimNode): string =
   if n.len > 0 and n[0].kind != nnkEmpty:
-    result = renderNode(n[0], 0)
+    result = renderNode(n[0])
     if n.len > 1 and n[1].kind != nnkEmpty:
-      result &= " = " & renderNode(n[1], 0)
+      result &= " = " & renderNode(n[1])
 
-proc renderEnumTy(n: MyNimNode, indent: int): string =
+proc renderEnumTy(n: MyNimNode): string =
   result = "enum\n"
+  incIndent()
   for i, field in n:
     if i == 0 and field.kind == nnkEmpty: continue
-    result &= ind(indent + 1) & renderNode(field, 0)
+    result &= ind() & renderNode(field)
     if i < n.len - 1: result &= "\n"
+  decIndent()
 
-proc renderTupleTy(n: MyNimNode, indent: int): string =
+proc renderTupleTy(n: MyNimNode): string =
   result = "tuple["
   for i, field in n:
     if i > 0: result &= ", "
-    result &= renderIdentDefs(field, 0)
+    result &= renderIdentDefs(field)
   result &= "]"
 
-proc renderProcTy(n: MyNimNode, indent: int): string =
+proc renderProcTy(n: MyNimNode): string =
   result = "proc"
   if n.len > 0:
-    result &= renderFormalParams(n[0], 0)
+    result &= renderFormalParams(n[0])
 
 # Import/export rendering
-proc renderImportStmt(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "import "
+proc renderImportStmt(n: MyNimNode): string =
+  result = ind() & "import "
   for i, child in n:
     if i > 0: result &= ", "
-    result &= renderNode(child, 0)
+    result &= renderNode(child)
 
-proc renderExportStmt(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "export "
+proc renderExportStmt(n: MyNimNode): string =
+  result = ind() & "export "
   for i, child in n:
     if i > 0: result &= ", "
-    result &= renderNode(child, 0)
+    result &= renderNode(child)
 
-proc renderFromStmt(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "from " & renderNode(n[0], 0) & " import "
+proc renderFromStmt(n: MyNimNode): string =
+  result = ind() & "from " & renderNode(n[0]) & " import "
   for i in 1..<n.len:
     if i > 1: result &= ", "
-    result &= renderNode(n[i], 0)
+    result &= renderNode(n[i])
 
-proc renderIncludeStmt(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "include "
+proc renderIncludeStmt(n: MyNimNode): string =
+  result = ind() & "include "
   for i, child in n:
     if i > 0: result &= ", "
-    result &= renderNode(child, 0)
+    result &= renderNode(child)
 
 # Pragma rendering
-proc renderPragma(n: MyNimNode, indent: int): string =
+proc renderPragma(n: MyNimNode): string =
   for i, child in n:
     if i > 0: result &= ", "
-    result &= renderNode(child, 0)
+    result &= renderNode(child)
 
-proc renderPragmaExpr(n: MyNimNode, indent: int): string =
-  result = renderNode(n[0], indent) & " {." & renderNode(n[1], 0) & ".}"
+proc renderPragmaExpr(n: MyNimNode): string =
+  result = renderNode(n[0]) & " {." & renderNode(n[1]) & ".}"
 
 # Comment rendering
-proc renderCommentStmt(n: MyNimNode, indent: int): string =
-  result = ind(indent) & "# "
+proc renderCommentStmt(n: MyNimNode): string =
+  result = ind() & "# "
   if n.len > 0:
-    result &= renderNode(n[0], 0)
+    result &= renderNode(n[0])
 
 # Main rendering dispatch
-proc renderNode(n: MyNimNode, indent: int = 0): string =
+proc renderNode(n: MyNimNode): string =
   case n.kind
   # Literals
   of nnkIntLit, nnkInt8Lit, nnkInt16Lit, nnkInt32Lit, nnkInt64Lit,
@@ -525,159 +539,156 @@ proc renderNode(n: MyNimNode, indent: int = 0): string =
 
   # Expressions
   of nnkInfix:
-    result = renderInfix(n, indent)
+    result = renderInfix(n)
   of nnkPrefix:
-    result = renderPrefix(n, indent)
+    result = renderPrefix(n)
   of nnkPostfix:
-    result = renderPostfix(n, indent)
+    result = renderPostfix(n)
   of nnkCall:
-    result = renderCall(n, indent)
+    result = renderCall(n)
   of nnkCommand:
-    result = renderCommand(n, indent)
+    result = renderCommand(n)
   of nnkDotExpr:
-    result = renderDotExpr(n, indent)
+    result = renderDotExpr(n)
   of nnkBracketExpr:
-    result = renderBracketExpr(n, indent)
+    result = renderBracketExpr(n)
   of nnkPar:
-    result = renderPar(n, indent)
+    result = renderPar(n)
   of nnkBracket:
-    result = renderBracket(n, indent)
+    result = renderBracket(n)
   of nnkCurly:
-    result = renderCurly(n, indent)
+    result = renderCurly(n)
   of nnkTupleConstr:
-    result = renderTupleConstr(n, indent)
+    result = renderTupleConstr(n)
   of nnkObjConstr:
-    result = renderObjConstr(n, indent)
+    result = renderObjConstr(n)
   of nnkCast:
-    result = renderCast(n, indent)
+    result = renderCast(n)
   of nnkExprColonExpr:
-    result = renderExprColonExpr(n, indent)
+    result = renderExprColonExpr(n)
   of nnkExprEqExpr:
-    result = renderExprEqExpr(n, indent)
+    result = renderExprEqExpr(n)
 
   # Statements
   of nnkAsgn:
-    result = renderAsgn(n, indent)
+    result = renderAsgn(n)
   of nnkIdentDefs:
-    result = renderIdentDefs(n, indent)
+    result = ind() & renderIdentDefs(n)
   of nnkVarSection:
-    result = renderVarSection(n, indent)
+    result = renderVarSection(n)
   of nnkLetSection:
-    result = renderLetSection(n, indent)
+    result = renderLetSection(n)
   of nnkConstSection:
-    result = renderConstSection(n, indent)
+    result = renderConstSection(n)
   of nnkStmtList, nnkStmtListExpr:
-    result = renderStmtList(n, indent)
+    result = renderStmtList(n)
   of nnkBlockStmt:
-    result = renderBlockStmt(n, indent)
+    result = renderBlockStmt(n)
   of nnkIfStmt:
-    result = renderIfStmt(n, indent)
+    result = renderIfStmt(n)
   of nnkElifBranch:
-    result = renderElifBranch(n, indent)
+    result = renderElifBranch(n)
   of nnkElse:
-    result = renderElse(n, indent)
+    result = renderElse(n)
   of nnkWhileStmt:
-    result = renderWhileStmt(n, indent)
+    result = renderWhileStmt(n)
   of nnkForStmt:
-    result = renderForStmt(n, indent)
+    result = renderForStmt(n)
   of nnkCaseStmt:
-    result = renderCaseStmt(n, indent)
+    result = renderCaseStmt(n)
   of nnkOfBranch:
-    result = renderOfBranch(n, indent)
+    result = renderOfBranch(n)
   of nnkReturnStmt:
-    result = renderReturnStmt(n, indent)
+    result = renderReturnStmt(n)
   of nnkYieldStmt:
-    result = renderYieldStmt(n, indent)
+    result = renderYieldStmt(n)
   of nnkDiscardStmt:
-    result = renderDiscardStmt(n, indent)
+    result = renderDiscardStmt(n)
   of nnkBreakStmt:
-    result = renderBreakStmt(n, indent)
+    result = renderBreakStmt(n)
   of nnkContinueStmt:
-    result = renderContinueStmt(n, indent)
+    result = renderContinueStmt(n)
   of nnkRaiseStmt:
-    result = renderRaiseStmt(n, indent)
+    result = renderRaiseStmt(n)
   of nnkTryStmt:
-    result = renderTryStmt(n, indent)
+    result = renderTryStmt(n)
   of nnkExceptBranch:
-    result = renderExceptBranch(n, indent)
+    result = renderExceptBranch(n)
   of nnkFinally:
-    result = renderFinally(n, indent)
+    result = renderFinally(n)
 
   # Procedures/functions
   of nnkProcDef:
-    result = renderProcDef(n, indent)
+    result = renderProcDef(n)
   of nnkFuncDef:
-    result = renderFuncDef(n, indent)
+    result = renderFuncDef(n)
   of nnkMethodDef:
-    result = renderMethodDef(n, indent)
+    result = renderMethodDef(n)
   of nnkIteratorDef:
-    result = renderIteratorDef(n, indent)
+    result = renderIteratorDef(n)
   of nnkTemplateDef:
-    result = renderTemplateDef(n, indent)
+    result = renderTemplateDef(n)
   of nnkMacroDef:
-    result = renderMacroDef(n, indent)
+    result = renderMacroDef(n)
   of nnkFormalParams:
-    result = renderFormalParams(n, indent)
+    result = renderFormalParams(n)
 
   # Types
   of nnkTypeSection:
-    result = renderTypeSection(n, indent)
+    result = renderTypeSection(n)
   of nnkTypeDef:
-    result = renderTypeDef(n, indent)
+    result = renderTypeDef(n)
   of nnkObjectTy:
-    result = renderObjectTy(n, indent)
+    result = renderObjectTy(n)
   of nnkRecList:
-    result = renderRecList(n, indent)
+    result = renderRecList(n)
   of nnkRefTy:
-    result = renderRefTy(n, indent)
+    result = renderRefTy(n)
   of nnkPtrTy:
-    result = renderPtrTy(n, indent)
+    result = renderPtrTy(n)
   of nnkVarTy:
-    result = renderVarTy(n, indent)
+    result = renderVarTy(n)
   of nnkDistinctTy:
-    result = renderDistinctTy(n, indent)
+    result = renderDistinctTy(n)
   of nnkEnumTy:
-    result = renderEnumTy(n, indent)
+    result = renderEnumTy(n)
   of nnkEnumFieldDef:
-    result = renderEnumFieldDef(n, indent)
+    result = renderEnumFieldDef(n)
   of nnkTupleTy:
-    result = renderTupleTy(n, indent)
+    result = renderTupleTy(n)
   of nnkProcTy:
-    result = renderProcTy(n, indent)
+    result = renderProcTy(n)
 
   # Import/export
   of nnkImportStmt:
-    result = renderImportStmt(n, indent)
+    result = renderImportStmt(n)
   of nnkExportStmt:
-    result = renderExportStmt(n, indent)
+    result = renderExportStmt(n)
   of nnkFromStmt:
-    result = renderFromStmt(n, indent)
+    result = renderFromStmt(n)
   of nnkIncludeStmt:
-    result = renderIncludeStmt(n, indent)
+    result = renderIncludeStmt(n)
 
   # Pragmas
   of nnkPragma:
-    result = renderPragma(n, indent)
+    result = renderPragma(n)
   of nnkPragmaExpr:
-    result = renderPragmaExpr(n, indent)
+    result = renderPragmaExpr(n)
 
   # Comments
   of nnkCommentStmt:
-    result = renderCommentStmt(n, indent)
+    result = renderCommentStmt(n)
 
   else:
     result = "<unhandled: " & $n.kind & ">"
 
-proc renderNodes(nodes: openArray[MyNimNode], sep: string, indent: int = 0): string =
-  for i, node in nodes:
-    if i > 0: result &= sep
-    result &= renderNode(node, indent)
-
 # Public API
 proc `$`*(n: MyNimNode): string =
   ## Convert a MyNimNode tree to Nim source code
-  renderNode(n, 0)
+  gIndent = 0  # Reset indent for each new rendering
+  renderNode(n)
 
 proc toNimCode*(n: MyNimNode): string =
   ## Convert a MyNimNode tree to Nim source code (alias for $)
-  renderNode(n, 0)
+  gIndent = 0  # Reset indent for each new rendering
+  renderNode(n)
