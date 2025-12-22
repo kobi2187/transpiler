@@ -81,27 +81,30 @@ proc extractNamespace*(xlangAst: XLangNode): Option[string] =
 
 proc getOutputFileName*(xlangAst: XLangNode, inputFile: string, extension: string = ".nim", inputRoot: string = ""): string =
   ## Determine the output filename based on input file structure
+  ## Uses source directory structure relative to inputRoot to preserve uniqueness
   ## Each C# source file maps to its own Nim file with the same relative directory structure
-  ## This preserves module boundaries and avoids collisions from multiple files sharing namespaces
   ##
   ## Args:
   ##   xlangAst: The XLang AST (unused, kept for API compatibility)
   ##   inputFile: The full path to the input file
   ##   extension: Output file extension (default ".nim")
   ##   inputRoot: The root input directory to make paths relative to
-  let inputDir = inputFile.parentDir()
   let inputBaseName = inputFile.splitFile().name  # filename without extension
 
-  # Compute relative path from inputRoot to inputDir
-  let relativeDir = if inputRoot != "":
-    let root = inputRoot.normalizedPath()
-    let fullDir = inputDir.normalizedPath()
-    if fullDir.startsWith(root):
-      fullDir[root.len..^1].strip(chars = {os.DirSep}, leading = true, trailing = true)
-    else:
-      inputDir
+  # If no inputRoot provided, use just the filename
+  if inputRoot == "":
+    return inputBaseName & extension
+
+  # Compute relative path from inputRoot to inputFile's directory
+  let inputDir = inputFile.parentDir()
+  let root = inputRoot.normalizedPath().absolutePath()
+  let fullDir = inputDir.normalizedPath().absolutePath()
+
+  let relativeDir = if fullDir.startsWith(root):
+    fullDir[root.len..^1].strip(chars = {os.DirSep}, leading = true, trailing = true)
   else:
-    inputDir
+    # Input file is not under inputRoot - use just the filename
+    ""
 
   # Convert relative path to snake_case for Nim conventions
   if relativeDir != "":

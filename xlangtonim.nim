@@ -616,9 +616,9 @@ proc conv_xnkCaseStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
       ofBranch.add(convertToNimAST(cond, ctx))
     ofBranch.add(convertToNimAST(branch.caseBody, ctx))
     result.add(ofBranch)
-  if node.elseBody.isSome:
+  if node.caseElseBody.isSome:
     let elseBranch = newNimNode(nnkElse)
-    elseBranch.add(convertToNimAST(node.elseBody.get, ctx))
+    elseBranch.add(convertToNimAST(node.caseElseBody.get, ctx))
     result.add(elseBranch)
 
 proc conv_xnkTryStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
@@ -710,16 +710,28 @@ proc conv_xnkNumberLit(node: XLangNode, ctx: ConversionContext): MyNimNode =
   var literal = node.numberValue
 
   # Strip C#/Java type suffixes (L, l, D, d, F, f, M, m, U, u, UL, ul, etc.)
+  # BUT: Don't strip F/f from hex literals (0xF is a hex digit, not a suffix)
   var hasFloatSuffix = false
+  let isHexLiteral = literal.len > 2 and literal[0..1].toLowerAscii() == "0x"
+
   if literal.len > 0:
     let lastChar = literal[^1]
-    if lastChar in {'L', 'l', 'U', 'u', 'D', 'd', 'F', 'f', 'M', 'm'}:
-      if lastChar in {'D', 'd', 'F', 'f', 'M', 'm'}:
-        hasFloatSuffix = true
-      literal = literal[0..^2]  # Remove suffix
-      # Handle UL/ul suffix
-      if literal.len > 0 and literal[^1] in {'L', 'l', 'U', 'u'}:
-        literal = literal[0..^2]
+    # For hex literals, only strip L/l, U/u suffixes (F is a valid hex digit)
+    # For decimal, strip all suffixes including F/f, D/d, M/m
+    if isHexLiteral:
+      if lastChar in {'L', 'l', 'U', 'u'}:
+        literal = literal[0..^2]  # Remove suffix
+        # Handle UL/ul suffix
+        if literal.len > 0 and literal[^1] in {'L', 'l', 'U', 'u'}:
+          literal = literal[0..^2]
+    else:
+      if lastChar in {'L', 'l', 'U', 'u', 'D', 'd', 'F', 'f', 'M', 'm'}:
+        if lastChar in {'D', 'd', 'F', 'f', 'M', 'm'}:
+          hasFloatSuffix = true
+        literal = literal[0..^2]  # Remove suffix
+        # Handle UL/ul suffix
+        if literal.len > 0 and literal[^1] in {'L', 'l', 'U', 'u'}:
+          literal = literal[0..^2]
 
   # Check if it's a hex literal first (before checking for 'e')
   if literal.len > 2 and literal[0..1].toLowerAscii() == "0x":
@@ -1273,15 +1285,13 @@ proc conv_xnkLabeledStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
 ## Nim: (discarded - should restructure code)
 proc conv_xnkGotoStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
   addWarning(xnkGotoStmt, "goto statement not supported in Nim - code needs restructuring")
-  result = newNimNode(nnkCommentStmt)
-  result.strVal = "UNSUPPORTED: goto " & node.gotoLabel & " - requires manual restructuring"
+  result = newCommentStmtNode("UNSUPPORTED: goto " & node.gotoLabel & " - requires manual restructuring")
 
 ## C#: `fixed (int* p = arr) { }` (unsafe pointers)
 ## Nim: (discarded - use ptr manually)
 proc conv_xnkFixedStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
   addWarning(xnkExternal_Fixed, "fixed statement not supported - use ptr manually in Nim")
-  result = newNimNode(nnkCommentStmt)
-  result.strVal = "UNSUPPORTED: fixed statement - use unsafe pointer operations manually"
+  result = newCommentStmtNode("UNSUPPORTED: fixed statement - use unsafe pointer operations manually")
 
 ## C#: `lock (obj) { }` → should be lowered by lock_to_withlock.nim transform
 ## Nim: `withLock obj:` or acquire/defer/release pattern
@@ -1855,8 +1865,8 @@ proc getNodeDescription(node: XLangNode): string =
     if node.funcName.len > 0:
       result &= " (name: " & node.funcName & ")"
   of xnkVarDecl, xnkLetDecl, xnkConstDecl:
-    if node.varName.len > 0:
-      result &= " (name: " & node.varName & ")"
+    if node.declName.len > 0:
+      result &= " (name: " & node.declName & ")"
   of xnkIdentifier:
     if node.identName.len > 0:
       result &= " (" & node.identName & ")"
