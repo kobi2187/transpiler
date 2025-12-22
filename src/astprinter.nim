@@ -17,7 +17,13 @@ proc ind(): string = "  ".repeat(gIndent)
 proc renderNode(n: MyNimNode): string
 
 # Literal rendering
-proc renderIntLit(n: MyNimNode): string = $n.intVal
+proc renderIntLit(n: MyNimNode): string =
+  # Use literalText if available (preserves hex format), otherwise use intVal
+  if n.literalText.len > 0:
+    n.literalText
+  else:
+    $n.intVal
+
 proc renderFloatLit(n: MyNimNode): string = $n.floatVal
 proc renderCharLit(n: MyNimNode): string = "'" & chr(int(n.intVal)) & "'"
 proc renderStrLit(n: MyNimNode): string = "\"" & n.strVal & "\""
@@ -155,7 +161,11 @@ proc renderConstSection(n: MyNimNode): string =
 proc renderStmtList(n: MyNimNode): string =
   for i, stmt in n:
     if i > 0: result &= "\n"
-    result &= renderNode(stmt)
+    # Expression nodes when used as statements need indent
+    if stmt.kind in {nnkCall, nnkCommand, nnkPrefix, nnkPostfix, nnkInfix}:
+      result &= ind() & renderNode(stmt)
+    else:
+      result &= renderNode(stmt)
 
 proc renderBlockStmt(n: MyNimNode): string =
   if n[0].kind != nnkEmpty:

@@ -565,10 +565,10 @@ proc conv_xnkForStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 proc conv_xnkBlockStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
   # xlangtypes: blockBody is a seq[XLangNode]
-  let body = newStmtList()
+  # C# blocks don't need to be Nim blocks - just return the statement list
+  result = newStmtList()
   for stmt in node.blockBody:
-    body.add(convertToNimAST(stmt, ctx))
-  result = newBlockStmt(newEmptyNode(), body)
+    result.add(convertToNimAST(stmt, ctx))
 
 # Patch member access and index kinds to xlangtypes style
 proc conv_xnkMemberAccess(node: XLangNode, ctx: ConversionContext): MyNimNode =
@@ -704,6 +704,45 @@ proc conv_xnkComment(node: XLangNode, ctx: ConversionContext): MyNimNode =
     result = newCommentStmtNode("## " & node.commentText)
   else:
     result = newCommentStmtNode("# " & node.commentText)
+
+proc conv_xnkNumberLit(node: XLangNode, ctx: ConversionContext): MyNimNode =
+  # Preserve the literal format from source when possible
+  var literal = node.numberValue
+
+  # Strip C#/Java type suffixes (L, l, D, d, F, f, M, m, U, u, UL, ul, etc.)
+  var hasFloatSuffix = false
+  if literal.len > 0:
+    let lastChar = literal[^1]
+    if lastChar in {'L', 'l', 'U', 'u', 'D', 'd', 'F', 'f', 'M', 'm'}:
+      if lastChar in {'D', 'd', 'F', 'f', 'M', 'm'}:
+        hasFloatSuffix = true
+      literal = literal[0..^2]  # Remove suffix
+      # Handle UL/ul suffix
+      if literal.len > 0 and literal[^1] in {'L', 'l', 'U', 'u'}:
+        literal = literal[0..^2]
+
+  # Check if it's a hex literal first (before checking for 'e')
+  if literal.len > 2 and literal[0..1].toLowerAscii() == "0x":
+    # Hex literal - preserve the exact format
+    try:
+      let value = parseHexInt(literal)
+      result = newIntLitNode(value)
+      result.literalText = literal.toLowerAscii()  # Nim uses lowercase 0x
+    except ValueError:
+      # Value too large - use literal as-is
+      result = newIntLitNode(0)  # Placeholder
+      result.literalText = literal.toLowerAscii()
+  # Check if it's a floating-point literal
+  elif '.' in literal or 'e' in literal or 'E' in literal or hasFloatSuffix:
+    result = newFloatLitNode(parseFloat(literal))
+  else:
+    # Regular decimal integer
+    try:
+      result = newIntLitNode(parseInt(literal))
+    except ValueError:
+      # Value too large - use literal as-is (for BigInt or similar)
+      result = newIntLitNode(0)  # Placeholder
+      result.literalText = literal
 
 proc conv_xnkIntLit(node: XLangNode, ctx: ConversionContext): MyNimNode =
   # Parse integer literal value and create integer literal node
@@ -1543,16 +1582,7 @@ proc conv_xnkProcPointer(node: XLangNode, ctx: ConversionContext): MyNimNode =
   # Just return the identifier - proc pointers are first-class in Nim
   newIdentNode(node.procPointerName)
 
-## Any number literal (int/float)
-## Nim: parse and create appropriate literal
-proc conv_xnkNumberLit(node: XLangNode, ctx: ConversionContext): MyNimNode =
-  # Try to parse as int, fallback to float
-  try:
-    echo node.literalValue
-    result = newIntLitNode(parseInt(node.literalValue))
-
-  except ValueError:
-    result = newFloatLitNode(parseFloat(node.literalValue))
+# conv_xnkNumberLit is defined earlier in the file (line 708)
 
 ## Ruby: `:symbol`
 ## Nim: (convert to string or ident)
@@ -1937,6 +1967,8 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
       result = conv_xnkIdentifier(node, ctx)
     of xnkComment:
       result = conv_xnkComment(node, ctx)
+    of xnkNumberLit:
+      result = conv_xnkNumberLit(node, ctx)
     of xnkIntLit:
       result = conv_xnkIntLit(node, ctx)
     of xnkFloatLit:
@@ -2126,8 +2158,6 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
       result = conv_xnkProcPointer(node, ctx)
     of xnkArrayLit:
       result = conv_xnkArrayLit(node, ctx)
-    of xnkNumberLit:
-      result = conv_xnkNumberLit(node, ctx)
     of xnkSymbolLit:
       result = conv_xnkSymbolLit(node, ctx)
     of xnkDynamicType:

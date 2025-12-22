@@ -490,9 +490,7 @@ partial class Program
 
         if (literal.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.NumericLiteralExpression)
         {
-            // Distinguish between integer and floating-point literals
-            var value = literal.Token.Value;
-            xlangKind = value is double or float or decimal ? "xnkFloatLit" : "xnkIntLit";
+            xlangKind = "xnkNumberLit";
         }
         else
         {
@@ -513,10 +511,14 @@ partial class Program
             ["kind"] = xlangKind
         };
 
-        // xnkBoolLit uses boolValue field, others use literalValue
+        // Different literal types use different field names
         if (xlangKind == "xnkBoolLit")
         {
             result["boolValue"] = literal.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.TrueLiteralExpression;
+        }
+        else if (xlangKind == "xnkNumberLit")
+        {
+            result["numberValue"] = literal.Token.Text;  // Preserve exact literal format
         }
         else
         {

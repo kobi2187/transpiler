@@ -190,6 +190,7 @@ type
 
   MyNimNodeObj* = object
     ## Independent NimNode structure based on the Nim compiler's TNode
+    literalText*: string  # Optional: preserves original literal format (e.g., "0xFF")
     case kind*: MyNodeKind
     # Literal nodes with int values
     of nnkCharLit, nnkIntLit, nnkInt8Lit, nnkInt16Lit, nnkInt32Lit, nnkInt64Lit,
