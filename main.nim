@@ -33,7 +33,7 @@ proc collectXljsFiles(path: string): seq[string] =
     return @[]
 
 proc main() =
-  var inputPath, outputFile: string
+  var inputPath, outputDir: string
   var verbose = false
   var skipTransforms = false
   var targetLang = "nim"
@@ -45,7 +45,7 @@ proc main() =
       inputPath = key
     of cmdLongOption, cmdShortOption:
       case key
-      of "out", "o": outputFile = val
+      of "out", "o", "output": outputDir = val
       of "verbose", "v": verbose = true
       of "skip-transforms": skipTransforms = true
       of "target-lang", "t": targetLang = val
@@ -55,14 +55,39 @@ proc main() =
   if inputPath == "":
     quit("No input path specified (file or directory)")
 
+  # Set default output directory if not specified
+  if outputDir == "":
+    outputDir = getCurrentDir() / "transpiler_output"
+
+  # Ensure output directory is absolute
+  outputDir = outputDir.absolutePath()
+
+  # Create output directory if it doesn't exist
+  if not dirExists(outputDir):
+    createDir(outputDir)
+    if verbose:
+      echo "Created output directory: ", outputDir
+
   # Collect all xljs files
   let xlsjFiles = collectXljsFiles(inputPath)
 
   if xlsjFiles.len == 0:
     quit("No .xljs files found at: " & inputPath)
 
+  # Determine the root directory for relative path calculation
+  # If inputPath is a directory, use it as root; if a file, use its parent
+  let inputRoot = if dirExists(inputPath):
+    inputPath.absolutePath()
+  elif fileExists(inputPath):
+    inputPath.parentDir().absolutePath()
+  else:
+    ""
+
   if verbose:
     echo "Found ", xlsjFiles.len, " .xljs file(s)"
+    echo "Output directory: ", outputDir
+    if inputRoot != "":
+      echo "Input root: ", inputRoot
     echo "Target language: ", targetLang
     if skipTransforms:
       echo "Transformations: DISABLED"
@@ -191,22 +216,16 @@ proc main() =
 
     # Step 5: Write outputs
     try:
-      # Determine output file name
-      var nimOutputFile: string
-      if outputFile != "" and xlsjFiles.len == 1:
-        # Single file with explicit output name
-        nimOutputFile = outputFile
-      else:
-        # Auto-generate output name from input based on namespace conventions
-        # Pass inputPath to preserve directory structure and avoid collisions
-        nimOutputFile = getOutputFileName(xlangAst, inputFile, ".nim", inputPath)
+      # Determine output file name relative to inputRoot, then place in outputDir
+      let relativeOutputPath = getOutputFileName(xlangAst, inputFile, ".nim", inputRoot)
+      let nimOutputFile = outputDir / relativeOutputPath
 
-        # Create parent directories if needed
-        let parentDir = nimOutputFile.parentDir()
-        if parentDir != "" and not dirExists(parentDir):
-          createDir(parentDir)
-          if verbose:
-            echo "DEBUG: Created directory: ", parentDir
+      # Create parent directories if needed
+      let parentDir = nimOutputFile.parentDir()
+      if parentDir != "" and not dirExists(parentDir):
+        createDir(parentDir)
+        if verbose:
+          echo "DEBUG: Created directory: ", parentDir
 
       if verbose:
         echo "DEBUG: About to write .nim file to: ", nimOutputFile
