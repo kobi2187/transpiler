@@ -34,7 +34,7 @@ proc isErrorCheckPattern(node: XLangNode): bool =
     return false
 
   # Check for: err != nil or err == nil
-  if cond.binaryOp notin ["!=", "=="]:
+  if cond.binaryOp notin [opNotEqual, opEqual]:
     return false
 
   # Check if one side is 'err' and other is nil
@@ -72,7 +72,7 @@ proc transformGoErrorHandling*(node: XLangNode): XLangNode {.noSideEffect, gcsaf
   # 3. if err != nil { log.Fatal(err) }  → Convert to Nim's error handling
 
   let cond = node.ifCondition
-  let isNotNil = cond.binaryOp == "!="
+  let isNotNil = cond.binaryOp == opNotEqual
 
   if node.ifBody.kind != xnkBlockStmt:
     return node
@@ -93,7 +93,7 @@ proc transformGoErrorHandling*(node: XLangNode): XLangNode {.noSideEffect, gcsaf
       kind: xnkIfStmt,
       ifCondition: XLangNode(
         kind: xnkBinaryExpr,
-        binaryOp: "!=",
+        binaryOp: opNotEqual,
         binaryLeft: XLangNode(kind: xnkIdentifier, identName: "err"),
         binaryRight: XLangNode(kind: xnkNoneLit)
       ),
@@ -130,7 +130,7 @@ proc transformGoErrorHandling*(node: XLangNode): XLangNode {.noSideEffect, gcsaf
           kind: xnkIfStmt,
           ifCondition: XLangNode(
             kind: xnkBinaryExpr,
-            binaryOp: "!=",
+            binaryOp: opNotEqual,
             binaryLeft: XLangNode(kind: xnkIdentifier, identName: "err"),
             binaryRight: XLangNode(kind: xnkNoneLit)
           ),

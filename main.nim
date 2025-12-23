@@ -6,6 +6,7 @@ import xlangtonim
 import src/transforms/pass_manager2
 import src/transforms/nim_passes
 import src/xlang/error_handling
+import src/passes/nim_identifier_sanitization
 import src/my_nim_node
 import src/astprinter
 import src/naming_conventions
@@ -169,6 +170,24 @@ proc main() =
           details = e.getStackTrace()
         )
         continue  # Skip to next file
+
+    # Step 2.5: Apply identifier sanitization (Nim-specific, runs once on whole tree)
+    try:
+      if verbose:
+        echo "DEBUG: Applying Nim identifier sanitization..."
+      xlangAst = applyNimIdentifierSanitization(xlangAst)
+      if verbose:
+        echo "✓ Identifier sanitization applied"
+    except Exception as e:
+      echo "ERROR: Identifier sanitization failed: ", e.msg
+      echo "Stack trace: ", e.getStackTrace()
+      errorCollector.addError(
+        tekTransformError,
+        "Identifier sanitization failed: " & e.msg,
+        location = "Nim identifier sanitization",
+        details = e.getStackTrace()
+      )
+      continue  # Skip to next file
 
     # Step 3: Convert XLang AST to Nim AST
     var nimAst: MyNimNode

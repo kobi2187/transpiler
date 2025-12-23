@@ -42,7 +42,7 @@ proc hoistThrowExpr(node: XLangNode, stmts: var seq[XLangNode]): XLangNode =
   of xnkBinaryExpr:
     # Check if this is null coalesce with throw on right
     # a ?? throw exc → if a == nil: raise exc; a
-    if node.binaryOp == "??":
+    if node.binaryOp == opNullCoalesce:
       let rightTransformed = hoistThrowExpr(node.binaryRight, stmts)
       if rightTransformed.kind == xnkNoneLit and stmts.len > 0 and stmts[^1].kind == xnkRaiseStmt:
         # Right side was a throw expression
@@ -50,7 +50,7 @@ proc hoistThrowExpr(node: XLangNode, stmts: var seq[XLangNode]): XLangNode =
         let condition = XLangNode(
           kind: xnkBinaryExpr,
           binaryLeft: node.binaryLeft,
-          binaryOp: "==",
+          binaryOp: opEqual,
           binaryRight: XLangNode(kind: xnkNoneLit)
         )
 

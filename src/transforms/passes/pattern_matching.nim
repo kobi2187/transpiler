@@ -58,7 +58,7 @@ proc transformPattern(pattern: XLangNode, matchExpr: XLangNode): tuple[condition
     # Literal pattern: value == literal
     result.condition = XLangNode(
       kind: xnkBinaryExpr,
-      binaryOp: "==",
+      binaryOp: opEqual,
       binaryLeft: matchExpr,
       binaryRight: pattern
     )
@@ -110,7 +110,7 @@ proc transformPattern(pattern: XLangNode, matchExpr: XLangNode): tuple[condition
       for i in 1..<conditions.len:
         result.condition = XLangNode(
           kind: xnkBinaryExpr,
-          binaryOp: "and",
+          binaryOp: opLogicalAnd,
           binaryLeft: result.condition,
           binaryRight: conditions[i]
         )
@@ -177,7 +177,7 @@ proc transformPatternMatching*(node: XLangNode): XLangNode {.noSideEffect, gcsaf
       for j in 1..<caseConditions.len:
         finalCondition = XLangNode(
           kind: xnkBinaryExpr,
-          binaryOp: "or",
+          binaryOp: opLogicalOr,
           binaryLeft: finalCondition,
           binaryRight: caseConditions[j]
         )

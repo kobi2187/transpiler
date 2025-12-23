@@ -85,7 +85,7 @@ proc transformEventSubscription*(node: XLangNode): XLangNode =
     return node
 
   # Check for += operator on event
-  if node.binaryOp != "+=":
+  if node.binaryOp != opAddAssign:
     return node
 
   # Assuming left side is event, right side is handler
@@ -131,7 +131,7 @@ proc transformEventUnsubscription*(node: XLangNode): XLangNode =
   if node.kind != xnkBinaryExpr:
     return node
 
-  if node.binaryOp != "-=":
+  if node.binaryOp != opSubAssign:
     return node
 
   let eventExpr = node.binaryLeft
@@ -315,9 +315,9 @@ proc transformCSharpEvents*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.}
 
   of xnkBinaryExpr:
     # Event subscription/unsubscription
-    if node.binaryOp == "+=":
+    if node.binaryOp == opAddAssign:
       return transformEventSubscription(node)
-    elif node.binaryOp == "-=":
+    elif node.binaryOp == opSubAssign:
       return transformEventUnsubscription(node)
 
   of xnkCallExpr:

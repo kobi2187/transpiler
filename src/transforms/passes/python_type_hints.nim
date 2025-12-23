@@ -261,7 +261,7 @@ proc transformPythonUnionSyntax*(node: XLangNode): XLangNode =
   ## Transform Python 3.10+ union operator (int | str)
   ## This should happen before general type hint transformation
 
-  if node.kind == xnkBinaryExpr and node.binaryOp == "|":
+  if node.kind == xnkBinaryExpr and node.binaryOp == opBitOr:
     # This might be a type union: int | str
     # Check if both operands are types
     # For now, convert to Union generic type

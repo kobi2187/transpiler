@@ -59,7 +59,7 @@ proc transformNormalizeSimple*(node: XLangNode): XLangNode {.noSideEffect, gcsaf
       kind: xnkIfStmt,
       ifCondition: XLangNode(
         kind: xnkUnaryExpr,
-        unaryOp: "not",
+        unaryOp: opNot,
         unaryOperand: transformNormalizeSimple(node.extUnlessCondition)
       ),
       ifBody: transformNormalizeSimple(node.extUnlessBody),
@@ -72,7 +72,7 @@ proc transformNormalizeSimple*(node: XLangNode): XLangNode {.noSideEffect, gcsaf
       kind: xnkWhileStmt,
       whileCondition: XLangNode(
         kind: xnkUnaryExpr,
-        unaryOp: "not",
+        unaryOp: opNot,
         unaryOperand: transformNormalizeSimple(node.extUntilCondition)
       ),
       whileBody: transformNormalizeSimple(node.extUntilBody)

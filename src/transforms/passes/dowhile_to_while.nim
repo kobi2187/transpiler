@@ -25,7 +25,7 @@ proc transformDoWhileToWhile*(node: XLangNode): XLangNode {.gcsafe.} =
     kind: xnkIfStmt,
     ifCondition: XLangNode(
       kind: xnkUnaryExpr,
-      unaryOp: "not",
+      unaryOp: opNot,
       unaryOperand: node.extDoWhileCondition
     ),
     ifBody: XLangNode(

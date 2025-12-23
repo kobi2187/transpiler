@@ -557,6 +557,57 @@ partial class Program
         };
     }
 
+    static string MapBinaryOpToSemantic(string csharpOp)
+    {
+        return csharpOp switch
+        {
+            // Arithmetic
+            "+" => "add",
+            "-" => "sub",
+            "*" => "mul",
+            "/" => "div",
+            "%" => "mod",
+
+            // Bitwise
+            "&" => "bitand",
+            "|" => "bitor",
+            "^" => "bitxor",
+            "<<" => "shl",
+            ">>" => "shr",
+
+            // Comparison
+            "==" => "eq",
+            "!=" => "neq",
+            "<" => "lt",
+            "<=" => "le",
+            ">" => "gt",
+            ">=" => "ge",
+
+            // Logical
+            "&&" => "and",
+            "||" => "or",
+
+            // Assignment (compound)
+            "+=" => "adda",
+            "-=" => "suba",
+            "*=" => "mula",
+            "/=" => "diva",
+            "%=" => "moda",
+            "&=" => "bitanda",
+            "|=" => "bitora",
+            "^=" => "bitxora",
+            "<<=" => "shla",
+            ">>=" => "shra",
+
+            // Special
+            "??" => "nullcoalesce",
+            "is" => "istype",
+            "as" => "as",
+
+            _ => csharpOp  // Fallback: return original if not mapped
+        };
+    }
+
     static JObject ConvertBinary(BinaryExpressionSyntax binary)
     {
         // Check for null coalescing operator ??
@@ -575,7 +626,7 @@ partial class Program
             ["kind"] = "xnkBinaryExpr",
             ["binaryLeft"] = ConvertExpression(binary.Left),
             ["binaryRight"] = ConvertExpression(binary.Right),
-            ["binaryOp"] = binary.OperatorToken.Text
+            ["binaryOp"] = MapBinaryOpToSemantic(binary.OperatorToken.Text)
         };
     }
 
@@ -773,15 +824,37 @@ partial class Program
         // For fields, we'll just return the first variable as a single field
         // Multiple field declarations like "int x, y;" are rare in modern C#
         var firstVar = field.Declaration.Variables[0];
-        return new JObject
+
+        // Check if this is a const declaration
+        bool isConst = field.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.ConstKeyword));
+        bool isStatic = field.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.StaticKeyword));
+
+        if (isConst || isStatic)
         {
-            ["kind"] = "xnkFieldDecl",
-            ["fieldName"] = firstVar.Identifier.Text,
-            ["fieldType"] = ConvertType(field.Declaration.Type),
-            ["fieldInitializer"] = firstVar.Initializer != null
-                ? ConvertExpression(firstVar.Initializer.Value)
-                : JValue.CreateNull()
-        };
+            // Emit as xnkConstDecl for const/static fields (both are module-level in Nim)
+            return new JObject
+            {
+                ["kind"] = "xnkConstDecl",
+                ["declName"] = firstVar.Identifier.Text,
+                ["declType"] = ConvertType(field.Declaration.Type),
+                ["initializer"] = firstVar.Initializer != null
+                    ? ConvertExpression(firstVar.Initializer.Value)
+                    : JValue.CreateNull()
+            };
+        }
+        else
+        {
+            // Regular instance field
+            return new JObject
+            {
+                ["kind"] = "xnkFieldDecl",
+                ["fieldName"] = firstVar.Identifier.Text,
+                ["fieldType"] = ConvertType(field.Declaration.Type),
+                ["fieldInitializer"] = firstVar.Initializer != null
+                    ? ConvertExpression(firstVar.Initializer.Value)
+                    : JValue.CreateNull()
+            };
+        }
     }
 
     static JObject ConvertProperty(PropertyDeclarationSyntax property)

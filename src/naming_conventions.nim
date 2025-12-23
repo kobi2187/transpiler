@@ -70,6 +70,16 @@ proc memberNameToNim*(memberName: string): string =
   else:
     result = memberName
 
+proc sanitizeNimIdentifier*(ident: string): string =
+  ## Sanitize identifier to be valid Nim
+  ## - Remove trailing underscores (C# convention, invalid in Nim)
+  ## - Keep leading underscores (valid in Nim for private/internal)
+  ## Examples:
+  ##   "SLOPE_MIN_" -> "SLOPE_MIN"
+  ##   "_privateField" -> "_privateField"
+  ##   "value_" -> "value"
+  result = ident.strip(chars = {'_'}, leading = false, trailing = true)
+
 proc extractNamespace*(xlangAst: XLangNode): Option[string] =
   ## Extract the namespace from an XLang AST
   ## Returns None if no namespace is found

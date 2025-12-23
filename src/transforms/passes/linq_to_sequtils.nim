@@ -180,7 +180,7 @@ proc transformLinqToSequtils*(node: XLangNode): XLangNode {.noSideEffect, gcsafe
       indexExpr: collection,
       indexArgs: @[XLangNode(
         kind: xnkUnaryExpr,
-        unaryOp: "^",
+        unaryOp: opNegate,
         unaryOperand: XLangNode(kind: xnkIntLit, literalValue: "1")
       )]
     )

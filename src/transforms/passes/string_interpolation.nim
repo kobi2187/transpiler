@@ -26,7 +26,7 @@ proc needsStringification(node: XLangNode): bool =
     return false
   of xnkBinaryExpr:
     # If it's string concatenation, assume it's already a string
-    return node.binaryOp != "&"
+    return node.binaryOp != opConcat
   of xnkCallExpr:
     # Assume function calls might not return strings
     return true
@@ -37,10 +37,15 @@ proc needsStringification(node: XLangNode): bool =
 proc wrapWithStringify(node: XLangNode): XLangNode =
   ## Wrap a node with $ operator for stringification if needed
   if needsStringification(node):
+    # Convert to string via function call (language-agnostic)
+    # Each target language will map this appropriately:
+    # - Nim: $value
+    # - Python: str(value)
+    # - C#: value.ToString()
     return XLangNode(
-      kind: xnkUnaryExpr,
-      unaryOp: "$",
-      unaryOperand: node
+      kind: xnkCallExpr,
+      callee: XLangNode(kind: xnkIdentifier, identName: "$"),
+      args: @[node]
     )
   else:
     return node
@@ -88,7 +93,7 @@ proc transformStringInterpolationHelper(node: XLangNode): XLangNode =
     for i in 1..<parts.len:
       result = XLangNode(
         kind: xnkBinaryExpr,
-        binaryOp: "&",
+        binaryOp: opConcat,
         binaryLeft: result,
         binaryRight: parts[i]
       )

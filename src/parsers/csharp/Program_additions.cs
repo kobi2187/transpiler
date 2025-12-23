@@ -9,15 +9,31 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 partial class Program
 {
+    // Map unary operator to semantic representation
+    static string MapUnaryOpToSemantic(string csharpOp, bool isPrefix)
+    {
+        return csharpOp switch
+        {
+            "+" => "pos",
+            "-" => "neg",
+            "!" => "not",
+            "~" => "bitnot",
+            "++" => isPrefix ? "preinc" : "postinc",
+            "--" => isPrefix ? "predec" : "postdec",
+            "&" => "addrof",
+            "*" => "deref",
+            _ => csharpOp  // Fallback
+        };
+    }
+
     // Additional Expression converters
     static JObject ConvertPrefixUnary(PrefixUnaryExpressionSyntax prefix)
     {
         return new JObject
         {
             ["kind"] = "xnkUnaryExpr",
-            ["unaryOp"] = prefix.OperatorToken.Text,
-            ["unaryOperand"] = ConvertExpression(prefix.Operand),
-            ["isPrefix"] = true
+            ["unaryOp"] = MapUnaryOpToSemantic(prefix.OperatorToken.Text, isPrefix: true),
+            ["unaryOperand"] = ConvertExpression(prefix.Operand)
         };
     }
     static JObject ConvertPostfixUnary(PostfixUnaryExpressionSyntax postfix)
@@ -25,9 +41,8 @@ partial class Program
         return new JObject
         {
             ["kind"] = "xnkUnaryExpr",
-            ["unaryOp"] = postfix.OperatorToken.Text,
-            ["unaryOperand"] = ConvertExpression(postfix.Operand),
-            ["isPrefix"] = false
+            ["unaryOp"] = MapUnaryOpToSemantic(postfix.OperatorToken.Text, isPrefix: false),
+            ["unaryOperand"] = ConvertExpression(postfix.Operand)
         };
     }
     static JObject ConvertCast(CastExpressionSyntax cast)

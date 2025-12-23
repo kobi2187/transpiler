@@ -18,7 +18,100 @@ import options
 #     return false
 #   return true
 
+# ==============================================================================
+# SEMANTIC OPERATORS
+# ==============================================================================
+# Operators are represented semantically, not syntactically.
+# Each source language parser maps its syntax to these semantic operators.
+# Each target language converter maps these semantic operators to its syntax.
+#
+# Examples:
+#   C# "<<" → opShiftLeft → Nim "shl"
+#   C# "&&" → opLogicalAnd → Nim "and"
+#   Python "**" → opPow → Nim "^" (or call to pow)
+# ==============================================================================
 
+type
+  BinaryOp* = enum
+    # Arithmetic operators
+    opAdd = "add"              # + (addition)
+    opSub = "sub"              # - (subtraction)
+    opMul = "mul"              # * (multiplication)
+    opDiv = "div"              # / (division)
+    opMod = "mod"              # % (modulo/remainder)
+    opPow = "pow"              # ** or ^ (exponentiation)
+    opIntDiv = "intdiv"        # // (integer division, Python/Nim)
+
+    # Bitwise operators
+    opBitAnd = "bitand"        # & (bitwise AND)
+    opBitOr = "bitor"          # | (bitwise OR)
+    opBitXor = "bitxor"        # ^ (bitwise XOR)
+    opShiftLeft = "shl"        # << (left shift)
+    opShiftRight = "shr"       # >> (right shift)
+    opShiftRightUnsigned = "shru"  # >>> (unsigned right shift, Java/JavaScript)
+
+    # Comparison operators
+    opEqual = "eq"             # == (equality)
+    opNotEqual = "neq"         # != (inequality)
+    opLess = "lt"              # < (less than)
+    opLessEqual = "le"         # <= (less than or equal)
+    opGreater = "gt"           # > (greater than)
+    opGreaterEqual = "ge"      # >= (greater than or equal)
+    opIdentical = "is"         # === (reference equality, JavaScript) or is (Python/Nim)
+    opNotIdentical = "isnot"   # !== (reference inequality)
+
+    # Logical operators
+    opLogicalAnd = "and"       # && or and (logical AND)
+    opLogicalOr = "or"         # || or or (logical OR)
+
+    # Assignment operators (compound)
+    opAddAssign = "adda"       # +=
+    opSubAssign = "suba"       # -=
+    opMulAssign = "mula"       # *=
+    opDivAssign = "diva"       # /=
+    opModAssign = "moda"       # %=
+    opBitAndAssign = "bitanda" # &=
+    opBitOrAssign = "bitora"   # |=
+    opBitXorAssign = "bitxora" # ^=
+    opShiftLeftAssign = "shla" # <<=
+    opShiftRightAssign = "shra"# >>=
+
+    # Special operators
+    opNullCoalesce = "nullcoalesce"  # ?? (C#/JavaScript)
+    opElvis = "elvis"                # ?: (Kotlin/Groovy)
+    opRange = "range"                # .. (range operator)
+    opIn = "in"                      # in (membership test)
+    opNotIn = "notin"                # not in
+    opIs = "istype"                  # is (type check)
+    opAs = "as"                      # as (type cast)
+    opConcat = "concat"              # string concatenation (when different from +)
+
+  UnaryOp* = enum
+    # Arithmetic
+    opNegate = "neg"           # - (negation)
+    opUnaryPlus = "pos"        # + (unary plus)
+
+    # Logical
+    opNot = "not"              # ! or not (logical NOT)
+
+    # Bitwise
+    opBitNot = "bitnot"        # ~ (bitwise NOT/complement)
+
+    # Increment/Decrement
+    opPreIncrement = "preinc"  # ++x (pre-increment)
+    opPostIncrement = "postinc"# x++ (post-increment)
+    opPreDecrement = "predec"  # --x (pre-decrement)
+    opPostDecrement = "postdec"# x-- (post-decrement)
+
+    # Pointer/Reference operations
+    opAddressOf = "addrof"     # & (address-of)
+    opDereference = "deref"    # * (dereference)
+
+    # Async
+    opAwait = "await"          # await (async/await)
+
+    # Spread/Splat
+    opSpread = "spread"        # ... (spread operator, JavaScript/Python)
 
 type
   XLangNodeKind* = enum
@@ -299,10 +392,10 @@ type
       typeSwitchCases*: seq[XLangNode]   # Contains xnkTypeCaseClause and xnkDefaultClause nodes
     of xnkBinaryExpr:
       binaryLeft*: XLangNode
-      binaryOp*: string
+      binaryOp*: BinaryOp      # Semantic operator (was string)
       binaryRight*: XLangNode
     of xnkUnaryExpr:
-      unaryOp*: string
+      unaryOp*: UnaryOp        # Semantic operator (was string)
       unaryOperand*: XLangNode
     # of xnkTernaryExpr:
     #   ternaryCondition*: XLangNode
@@ -903,9 +996,9 @@ proc `$`*(node: XLangNode): string =
   of xnkFieldDecl:
     result &= "(" & node.fieldName & ")"
   of xnkBinaryExpr:
-    result &= "(" & node.binaryOp & ")"
+    result &= "(" & $node.binaryOp & ")"
   of xnkUnaryExpr:
-    result &= "(" & node.unaryOp & ")"
+    result &= "(" & $node.unaryOp & ")"
   of xnkMemberAccessExpr:
     result &= "(" & node.memberName & ")"
   of xnkIntLit, xnkFloatLit, xnkStringLit, xnkCharLit:

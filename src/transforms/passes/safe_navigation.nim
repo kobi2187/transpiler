@@ -28,7 +28,7 @@ proc transformSafeNavigationHelper(node: XLangNode): XLangNode =
       extTernaryCondition: XLangNode(
         kind: xnkBinaryExpr,
         binaryLeft: obj,
-        binaryOp: "!=",
+        binaryOp: opNotEqual,
         binaryRight: XLangNode(kind: xnkNoneLit)
       ),
       extTernaryThen: XLangNode(

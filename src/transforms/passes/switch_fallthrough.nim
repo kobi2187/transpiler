@@ -33,7 +33,7 @@ proc buildOrCondition(switchExpr: XLangNode, values: seq[XLangNode]): XLangNode 
   if values.len == 1:
     return XLangNode(
       kind: xnkBinaryExpr,
-      binaryOp: "==",
+      binaryOp: opEqual,
       binaryLeft: switchExpr,
       binaryRight: values[0]
     )
@@ -41,7 +41,7 @@ proc buildOrCondition(switchExpr: XLangNode, values: seq[XLangNode]): XLangNode 
   # Build chain of 'or' expressions
   var condition = XLangNode(
     kind: xnkBinaryExpr,
-    binaryOp: "==",
+    binaryOp: opEqual,
     binaryLeft: switchExpr,
     binaryRight: values[0]
   )
@@ -49,14 +49,14 @@ proc buildOrCondition(switchExpr: XLangNode, values: seq[XLangNode]): XLangNode 
   for i in 1..<values.len:
     let nextCond = XLangNode(
       kind: xnkBinaryExpr,
-      binaryOp: "==",
+      binaryOp: opEqual,
       binaryLeft: switchExpr,
       binaryRight: values[i]
     )
 
     condition = XLangNode(
       kind: xnkBinaryExpr,
-      binaryOp: "or",
+      binaryOp: opLogicalOr,
       binaryLeft: condition,
       binaryRight: nextCond
     )

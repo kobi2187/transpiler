@@ -18,7 +18,7 @@ proc transformNullCoalesce*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.}
       kind: xnkIfStmt,
       ifCondition: XLangNode(
         kind: xnkBinaryExpr,
-        binaryOp: "!=",
+        binaryOp: opNotEqual,
         binaryLeft: node.extNullCoalesceLeft,
         binaryRight: XLangNode(kind: xnkNoneLit)
       ),

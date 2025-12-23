@@ -15,7 +15,7 @@ proc normalizeOperators*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
   case node.kind
   of xnkBinaryExpr:
     # ONLY transform if this is a special operator
-    if node.binaryOp == "??":
+    if node.binaryOp == opNullCoalesce:
       # Convert ?? to xnkExternal_NullCoalesce
       result = XLangNode(
         kind: xnkExternal_NullCoalesce,

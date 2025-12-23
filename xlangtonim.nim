@@ -478,9 +478,14 @@ proc conv_xnkClassDecl_structDecl(node: XLangNode, ctx: ConversionContext): MyNi
   typeSection.add(typeDef)
   result.add(typeSection)
 
+  # Add const/static members as module-level constants before the methods
+  for member in node.members:
+    if member.kind == xnkConstDecl:
+      result.add(convertToNimAST(member, ctx))
+
   # Add methods and constructors as separate procs
   for member in node.members:
-    if member.kind != xnkFieldDecl:
+    if member.kind != xnkFieldDecl and member.kind != xnkConstDecl:
       result.add(convertToNimAST(member, ctx))
 
 proc conv_xnkInterfaceDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
@@ -919,17 +924,98 @@ proc conv_xnkBracketExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result.add(convertToNimAST(node.index, ctx))
 
 
+proc binaryOpToNim(op: BinaryOp): string =
+  ## Map semantic binary operator to Nim syntax
+  case op
+  # Arithmetic
+  of opAdd: "+"
+  of opSub: "-"
+  of opMul: "*"
+  of opDiv: "/"
+  of opMod: "mod"
+  of opPow: "^"
+  of opIntDiv: "div"
+
+  # Bitwise
+  of opBitAnd: "and"
+  of opBitOr: "or"
+  of opBitXor: "xor"
+  of opShiftLeft: "shl"
+  of opShiftRight: "shr"
+  of opShiftRightUnsigned: "shr"  # Nim doesn't distinguish signed/unsigned shift
+
+  # Comparison
+  of opEqual: "=="
+  of opNotEqual: "!="
+  of opLess: "<"
+  of opLessEqual: "<="
+  of opGreater: ">"
+  of opGreaterEqual: ">="
+  of opIdentical: "is"
+  of opNotIdentical: "isnot"
+
+  # Logical
+  of opLogicalAnd: "and"
+  of opLogicalOr: "or"
+
+  # Assignment (compound) - these should be lowered by transforms
+  of opAddAssign: "+="
+  of opSubAssign: "-="
+  of opMulAssign: "*="
+  of opDivAssign: "/="
+  of opModAssign: "mod="
+  of opBitAndAssign: "and="
+  of opBitOrAssign: "or="
+  of opBitXorAssign: "xor="
+  of opShiftLeftAssign: "shl="
+  of opShiftRightAssign: "shr="
+
+  # Special
+  of opNullCoalesce: "?"  # Should be lowered by null_coalesce pass
+  of opElvis: "?"         # Should be lowered
+  of opRange: ".."
+  of opIn: "in"
+  of opNotIn: "notin"
+  of opIs: "is"
+  of opAs: "as"
+  of opConcat: "&"
+
+proc unaryOpToNim(op: UnaryOp): string =
+  ## Map semantic unary operator to Nim syntax
+  case op
+  of opNegate: "-"
+  of opUnaryPlus: "+"
+  of opNot: "not"
+  of opBitNot: "not"  # Nim uses 'not' for both logical and bitwise
+  of opPreIncrement: "inc"   # Will need special handling
+  of opPostIncrement: "inc"  # Will need special handling
+  of opPreDecrement: "dec"   # Will need special handling
+  of opPostDecrement: "dec"  # Will need special handling
+  of opAddressOf: "addr"
+  of opDereference: "[]"     # Will need special handling
+  of opAwait: "await"
+  of opSpread: "..."         # May need lowering
+
 proc conv_xnkBinaryExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result = newNimNode(nnkInfix)
   # nnkInfix structure: [operator, left, right]
-  result.add(newIdentNode(node.binaryOp))
+  result.add(newIdentNode(binaryOpToNim(node.binaryOp)))
   result.add(convertToNimAST(node.binaryLeft, ctx))
   result.add(convertToNimAST(node.binaryRight, ctx))
 
 proc conv_xnkUnaryExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
-  result = newNimNode(nnkPrefix)
-  result.add(newIdentNode(node.unaryOp))
-  result.add(convertToNimAST(node.unaryOperand, ctx))
+  # Handle increment/decrement specially as they need statement conversion
+  case node.unaryOp
+  of opPreIncrement, opPostIncrement, opPreDecrement, opPostDecrement:
+    # These should ideally be lowered by a transformation pass
+    # For now, convert to Nim idiom: inc(x) or dec(x)
+    result = newNimNode(nnkCall)
+    result.add(newIdentNode(unaryOpToNim(node.unaryOp)))
+    result.add(convertToNimAST(node.unaryOperand, ctx))
+  else:
+    result = newNimNode(nnkPrefix)
+    result.add(newIdentNode(unaryOpToNim(node.unaryOp)))
+    result.add(convertToNimAST(node.unaryOperand, ctx))
 
 
 # === ADDITIONAL CONVERTER IMPLEMENTATIONS ===

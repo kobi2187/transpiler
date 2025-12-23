@@ -60,7 +60,7 @@ proc transformTypeAssertion*(node: XLangNode): XLangNode =
     kind: xnkIfStmt,
     ifCondition: XLangNode(
       kind: xnkBinaryExpr,
-      binaryOp: "of",
+      binaryOp: opIs,
       binaryLeft: expr,
       binaryRight: targetType
     ),
@@ -162,7 +162,7 @@ proc transformTypeSwitch*(node: XLangNode): XLangNode =
         kind: xnkIfStmt,
         ifCondition: XLangNode(
           kind: xnkBinaryExpr,
-          binaryOp: "of",
+          binaryOp: opIs,
           binaryLeft: switchExpr,
           binaryRight: caseType
         ),
