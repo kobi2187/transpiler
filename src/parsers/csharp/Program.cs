@@ -149,13 +149,68 @@ partial class Program
         };
     }
 
+    static JArray ExtractDocComments(SyntaxNode node)
+    {
+        var comments = new JArray();
+
+        // Get leading trivia (comments that appear before the node)
+        var leadingTrivia = node.GetLeadingTrivia();
+
+        foreach (var trivia in leadingTrivia)
+        {
+            // Check for XML documentation comments (///)
+            if (trivia.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.SingleLineDocumentationCommentTrivia)
+            {
+                // Extract the comment text, removing the /// prefix and trimming
+                string commentText = trivia.ToString().Trim();
+
+                // Remove /// prefix from each line
+                var lines = commentText.Split('\n');
+                var cleanedLines = lines.Select(line =>
+                {
+                    line = line.Trim();
+                    if (line.StartsWith("///"))
+                        return line.Substring(3).TrimStart();
+                    return line;
+                }).Where(line => !string.IsNullOrWhiteSpace(line));
+
+                string cleanedText = string.Join("\n", cleanedLines);
+
+                if (!string.IsNullOrWhiteSpace(cleanedText))
+                {
+                    comments.Add(new JObject
+                    {
+                        ["kind"] = "xnkComment",
+                        ["commentText"] = cleanedText,
+                        ["isDocComment"] = true
+                    });
+                }
+            }
+        }
+
+        return comments;
+    }
+
     static JObject ConvertCompilationUnit(CompilationUnitSyntax cu, string fileName)
     {
+        var moduleDecls = new JArray();
+
+        // For each member, first add any doc comments, then the member itself
+        foreach (var member in cu.Members)
+        {
+            var docComments = ExtractDocComments(member);
+            foreach (var comment in docComments)
+            {
+                moduleDecls.Add(comment);
+            }
+            moduleDecls.Add(ConvertMember(member));
+        }
+
         var result = new JObject
         {
             ["kind"] = "xnkFile",
             ["fileName"] = Path.GetFileName(fileName),
-            ["moduleDecls"] = new JArray(cu.Members.Select(ConvertMember))
+            ["moduleDecls"] = moduleDecls
         };
         return result;
     }
@@ -178,16 +233,42 @@ partial class Program
 
     static JObject ConvertNamespace(NamespaceDeclarationSyntax ns)
     {
+        var namespaceBody = new JArray();
+
+        // For each member, first add any doc comments, then the member itself
+        foreach (var member in ns.Members)
+        {
+            var docComments = ExtractDocComments(member);
+            foreach (var comment in docComments)
+            {
+                namespaceBody.Add(comment);
+            }
+            namespaceBody.Add(ConvertMember(member));
+        }
+
         return new JObject
         {
             ["kind"] = "xnkNamespace",
             ["namespaceName"] = ns.Name.ToString(),
-            ["namespaceBody"] = new JArray(ns.Members.Select(ConvertMember))
+            ["namespaceBody"] = namespaceBody
         };
     }
 
     static JObject ConvertClass(ClassDeclarationSyntax cls)
     {
+        var members = new JArray();
+
+        // For each member, first add any doc comments, then the member itself
+        foreach (var member in cls.Members)
+        {
+            var docComments = ExtractDocComments(member);
+            foreach (var comment in docComments)
+            {
+                members.Add(comment);
+            }
+            members.Add(ConvertClassMember(member));
+        }
+
         return new JObject
         {
             ["kind"] = "xnkClassDecl",
@@ -199,7 +280,7 @@ partial class Program
                     ["typeName"] = t.Type.ToString()
                 }))
                 : new JArray(),
-            ["members"] = new JArray(cls.Members.Select(ConvertClassMember))
+            ["members"] = members
         };
     }
 

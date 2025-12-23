@@ -1072,6 +1072,19 @@ partial class Program
     }
     static JObject ConvertInterface(InterfaceDeclarationSyntax interfaceDecl)
     {
+        var members = new JArray();
+
+        // For each member, first add any doc comments, then the member itself
+        foreach (var member in interfaceDecl.Members)
+        {
+            var docComments = ExtractDocComments(member);
+            foreach (var comment in docComments)
+            {
+                members.Add(comment);
+            }
+            members.Add(ConvertMemberDeclaration(member));
+        }
+
         return new JObject
         {
             ["kind"] = "xnkExternal_Interface",
@@ -1083,11 +1096,24 @@ partial class Program
                     ["typeName"] = t.Type.ToString()
                 }))
                 : new JArray(),
-            ["extInterfaceMembers"] = new JArray(interfaceDecl.Members.Select(m => ConvertMemberDeclaration(m)))
+            ["extInterfaceMembers"] = members
         };
     }
     static JObject ConvertStruct(StructDeclarationSyntax structDecl)
     {
+        var members = new JArray();
+
+        // For each member, first add any doc comments, then the member itself
+        foreach (var member in structDecl.Members)
+        {
+            var docComments = ExtractDocComments(member);
+            foreach (var comment in docComments)
+            {
+                members.Add(comment);
+            }
+            members.Add(ConvertClassMember(member));
+        }
+
         return new JObject
         {
             ["kind"] = "xnkStructDecl",
@@ -1099,7 +1125,7 @@ partial class Program
                     ["typeName"] = t.Type.ToString()
                 }))
                 : new JArray(),
-            ["members"] = new JArray(structDecl.Members.Select(ConvertClassMember))
+            ["members"] = members
         };
     }
     static JObject ConvertDelegate(DelegateDeclarationSyntax delegateDecl)
