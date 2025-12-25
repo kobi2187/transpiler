@@ -1,0 +1,3 @@
+# Generated test outputs
+*.generated.nim
+*.xljs

@@ -1,0 +1,6 @@
+newNode(0)
+newNode(42)
+newNode(43)
+newNode(1)
+newNode(2)
+newNode(3)

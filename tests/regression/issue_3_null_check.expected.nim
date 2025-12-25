@@ -1,0 +1,2 @@
+text == nil
+obj == nil

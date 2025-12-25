@@ -37,10 +37,10 @@ output/
 *.bak
 *.log
 icu4_n/
-
+tests/icu4_n.tests/
 *.txt
 *.md
-test*
+
 
 
 
