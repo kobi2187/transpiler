@@ -20,17 +20,25 @@ partial class Program
         {
             Console.WriteLine("Usage:");
             Console.WriteLine("  Single file: csharp-to-xlang <file.cs>");
-            Console.WriteLine("  Batch mode:  csharp-to-xlang --batch <directory>");
+            Console.WriteLine("  Directory:   csharp-to-xlang <directory>");
             Environment.Exit(1);
         }
 
-        if (args[0] == "--batch" && args.Length >= 2)
+        string path = args[0];
+
+        // Auto-detect if it's a directory or file
+        if (Directory.Exists(path))
         {
-            BatchProcessDirectory(args[1]);
+            BatchProcessDirectory(path);
+        }
+        else if (File.Exists(path))
+        {
+            ProcessSingleFile(path, outputToConsole: true);
         }
         else
         {
-            ProcessSingleFile(args[0], outputToConsole: true);
+            Console.Error.WriteLine($"Error: Path not found: {path}");
+            Environment.Exit(1);
         }
     }
 
@@ -159,7 +167,7 @@ partial class Program
         foreach (var trivia in leadingTrivia)
         {
             // Check for XML documentation comments (///)
-            if (trivia.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.SingleLineDocumentationCommentTrivia)
+            if (trivia.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.SingleLineDocumentationCommentTrivia))
             {
                 // Extract the comment text, removing the /// prefix and trimming
                 string commentText = trivia.ToString().Trim();
@@ -655,6 +663,7 @@ partial class Program
             "^" => "bitxor",
             "<<" => "shl",
             ">>" => "shr",
+            ">>>" => "shru",
 
             // Comparison
             "==" => "eq",
@@ -679,6 +688,7 @@ partial class Program
             "^=" => "bitxora",
             "<<=" => "shla",
             ">>=" => "shra",
+            ">>>=" => "shrua",
 
             // Special
             "??" => "nullcoalesce",

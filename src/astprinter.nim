@@ -35,15 +35,71 @@ proc renderIdent(n: MyNimNode): string = n.identStr
 proc renderSym(n: MyNimNode): string = n.symName
 
 # Expression rendering helpers (no indent - expressions are inline)
+proc getOperatorPrecedence(op: string): int =
+  ## Get operator precedence level (higher = tighter binding)
+  ## Based on Nim's operator precedence rules
+  case op
+  of "or", "xor": return 2
+  of "and": return 3
+  of "==", "!=", "<", "<=", ">", ">=", "in", "notin", "is", "isnot": return 4
+  of "..": return 5
+  of "&": return 6
+  of "+", "-": return 7
+  of "*", "/", "div", "mod", "shl", "shr": return 8
+  of "=": return 1  # Assignment has very low precedence
+  else: return 10  # Unknown operators get high precedence
+
+proc getOpString(n: MyNimNode): string =
+  ## Get the operator string from a node
+  if n.kind == nnkIdent:
+    return n.identStr
+  elif n.kind == nnkSym:
+    return n.symName
+  else:
+    return ""
+
+proc needsParentheses(child: MyNimNode, parentOp: string): bool =
+  ## Check if a child expression needs parentheses when used with parent operator
+  var childOp: string
+
+  if child.kind == nnkInfix:
+    childOp = getOpString(child[0])
+  elif child.kind == nnkAsgn:
+    # Assignment has very low precedence
+    childOp = "="
+  else:
+    return false
+
+  let childPrec = getOperatorPrecedence(childOp)
+  let parentPrec = getOperatorPrecedence(parentOp)
+
+  # Need parens if child has lower precedence than parent
+  return childPrec < parentPrec
+
 proc renderInfix(n: MyNimNode): string =
   let op = renderNode(n[0])
-  let lhs = renderNode(n[1])
-  let rhs = renderNode(n[2])
+  let opStr = getOpString(n[0])
+
+  var lhs = renderNode(n[1])
+  var rhs = renderNode(n[2])
+
+  # Add parentheses if needed based on precedence
+  if needsParentheses(n[1], opStr):
+    lhs = "(" & lhs & ")"
+  if needsParentheses(n[2], opStr):
+    rhs = "(" & rhs & ")"
+
   result = lhs & " " & op & " " & rhs
 
 proc renderPrefix(n: MyNimNode): string =
   let op = renderNode(n[0])
-  let arg = renderNode(n[1])
+  var arg = renderNode(n[1])
+
+  # Add parentheses if the argument is an infix expression
+  # Prefix operators like 'not' typically need parens around complex expressions
+  if n[1].kind == nnkInfix:
+    arg = "(" & arg & ")"
+
   result = op & arg
 
 proc renderPostfix(n: MyNimNode): string =
@@ -134,7 +190,7 @@ proc renderIdentDefs(n: MyNimNode): string =
     result &= " = " & renderNode(n[2])
 
 proc renderAsgn(n: MyNimNode): string =
-  result = ind() & renderNode(n[0]) & " = " & renderNode(n[1])
+  result = renderNode(n[0]) & " = " & renderNode(n[1])
 
 proc renderVarSection(n: MyNimNode): string =
   for i, identDefs in n:
@@ -162,7 +218,8 @@ proc renderStmtList(n: MyNimNode): string =
   for i, stmt in n:
     if i > 0: result &= "\n"
     # Expression nodes when used as statements need indent
-    if stmt.kind in {nnkCall, nnkCommand, nnkPrefix, nnkPostfix, nnkInfix}:
+    # Also nnkAsgn needs indent when used as a statement
+    if stmt.kind in {nnkCall, nnkCommand, nnkPrefix, nnkPostfix, nnkInfix, nnkAsgn}:
       result &= ind() & renderNode(stmt)
     else:
       result &= renderNode(stmt)
@@ -517,9 +574,17 @@ proc renderPragmaExpr(n: MyNimNode): string =
 
 # Comment rendering
 proc renderCommentStmt(n: MyNimNode): string =
-  result = ind() & "# "
   if n.len > 0:
-    result &= renderNode(n[0])
+    let commentText = n[0].strVal
+    # Check if it's a multi-line doc comment (starts with ##[)
+    if commentText.startsWith("##["):
+      # For multi-line doc comments, output as-is without "# " prefix
+      result = ind() & commentText
+    else:
+      # Regular comment: add "# " prefix
+      result = ind() & "# " & commentText
+  else:
+    result = ind() & "# "
 
 # Main rendering dispatch
 proc renderNode(n: MyNimNode): string =

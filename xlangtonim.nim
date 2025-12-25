@@ -706,9 +706,11 @@ proc conv_xnkIdentifier(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 proc conv_xnkComment(node: XLangNode, ctx: ConversionContext): MyNimNode =
   if node.isDocComment:
-    result = newCommentStmtNode("## " & node.commentText)
+    # Use multi-line doc comment syntax for doc comments
+    result = newCommentStmtNode("##[ " & node.commentText & " ]##")
   else:
-    result = newCommentStmtNode("# " & node.commentText)
+    # Regular comments - just pass through without adding prefix (astprinter will add "# ")
+    result = newCommentStmtNode(node.commentText)
 
 proc conv_xnkNumberLit(node: XLangNode, ctx: ConversionContext): MyNimNode =
   # Preserve the literal format from source when possible
@@ -969,6 +971,7 @@ proc binaryOpToNim(op: BinaryOp): string =
   of opBitXorAssign: "xor="
   of opShiftLeftAssign: "shl="
   of opShiftRightAssign: "shr="
+  of opShiftRightUnsignedAssign: "shr="
 
   # Special
   of opNullCoalesce: "?"  # Should be lowered by null_coalesce pass
@@ -1205,17 +1208,36 @@ proc conv_xnkConstructorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode
   # Body
   let body = newNimNode(nnkStmtList)
 
+  # Helper to convert field assignment to result.field = value
+  proc convertConstructorFieldAssignment(stmt: XLangNode, ctx: ConversionContext): MyNimNode =
+    # Check if this is a simple field assignment (identifier = value)
+    if stmt.kind == xnkAsgn and stmt.asgnLeft.kind == xnkIdentifier:
+      let fieldName = stmt.asgnLeft.identName
+      # Check if it's a class field
+      if ctx.isClassField(fieldName):
+        # Convert to result.field = value
+        result = newNimNode(nnkAsgn)
+        let dotExpr = newNimNode(nnkDotExpr)
+        dotExpr.add(newIdentNode("result"))
+        dotExpr.add(newIdentNode(fieldName))
+        result.add(dotExpr)
+        result.add(convertToNimAST(stmt.asgnRight, ctx))
+        return
+
+    # Not a field assignment, convert normally
+    return convertToNimAST(stmt, ctx)
+
   # Add initializers first (field assignments)
   for init in node.constructorInitializers:
-    body.add(convertToNimAST(init, ctx))
+    body.add(convertConstructorFieldAssignment(init, ctx))
 
   # Add constructor body
   if not node.constructorBody.isNil:
     if node.constructorBody.kind == xnkBlockStmt:
       for stmt in node.constructorBody.blockBody:
-        body.add(convertToNimAST(stmt, ctx))
+        body.add(convertConstructorFieldAssignment(stmt, ctx))
     else:
-      body.add(convertToNimAST(node.constructorBody, ctx))
+      body.add(convertConstructorFieldAssignment(node.constructorBody, ctx))
 
   result.add(body)
 

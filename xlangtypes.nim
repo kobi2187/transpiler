@@ -75,6 +75,7 @@ type
     opBitXorAssign = "bitxora" # ^=
     opShiftLeftAssign = "shla" # <<=
     opShiftRightAssign = "shra"# >>=
+    opShiftRightUnsignedAssign = "shrua" # >>>=
 
     # Special operators
     opNullCoalesce = "nullcoalesce"  # ?? (C#/JavaScript)

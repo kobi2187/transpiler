@@ -7,6 +7,8 @@ import src/transforms/pass_manager2
 import src/transforms/nim_passes
 import src/xlang/error_handling
 import src/passes/nim_identifier_sanitization
+import src/passes/primitive_type_mapping
+import src/passes/fix_generic_type_syntax
 import src/my_nim_node
 import src/astprinter
 import src/naming_conventions
@@ -185,6 +187,43 @@ proc main() =
         tekTransformError,
         "Identifier sanitization failed: " & e.msg,
         location = "Nim identifier sanitization",
+        details = e.getStackTrace()
+      )
+      continue  # Skip to next file
+
+    # Step 2.6: Fix generic type syntax (List<T> -> proper generic nodes)
+    # Must be done BEFORE primitive type mapping so types inside generics get mapped
+    try:
+      if verbose:
+        echo "DEBUG: Fixing generic type syntax..."
+      xlangAst = applyGenericTypeFix(xlangAst)
+      if verbose:
+        echo "✓ Generic type syntax fixed"
+    except Exception as e:
+      echo "ERROR: Generic type fix failed: ", e.msg
+      echo "Stack trace: ", e.getStackTrace()
+      errorCollector.addError(
+        tekTransformError,
+        "Generic type fix failed: " & e.msg,
+        location = "Generic type syntax fix",
+        details = e.getStackTrace()
+      )
+      continue  # Skip to next file
+
+    # Step 2.7: Apply primitive type mapping (C#/Java types -> Nim types)
+    try:
+      if verbose:
+        echo "DEBUG: Applying primitive type mapping..."
+      xlangAst = applyPrimitiveTypeMapping(xlangAst)
+      if verbose:
+        echo "✓ Primitive type mapping applied"
+    except Exception as e:
+      echo "ERROR: Primitive type mapping failed: ", e.msg
+      echo "Stack trace: ", e.getStackTrace()
+      errorCollector.addError(
+        tekTransformError,
+        "Primitive type mapping failed: " & e.msg,
+        location = "Primitive type mapping",
         details = e.getStackTrace()
       )
       continue  # Skip to next file
