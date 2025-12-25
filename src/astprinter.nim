@@ -100,7 +100,7 @@ proc renderPrefix(n: MyNimNode): string =
   if n[1].kind == nnkInfix:
     arg = "(" & arg & ")"
 
-  result = op & arg
+  result = op & " " & arg
 
 proc renderPostfix(n: MyNimNode): string =
   let arg = renderNode(n[0])
@@ -110,12 +110,13 @@ proc renderPostfix(n: MyNimNode): string =
 proc renderCall(n: MyNimNode): string =
   if n.len == 0: return "()"
   result = renderNode(n[0])
+  # Always add parentheses for calls, even with no arguments
+  result &= "("
   if n.len > 1:
-    result &= "("
     for i in 1..<n.len:
       if i > 1: result &= ", "
       result &= renderNode(n[i])
-    result &= ")"
+  result &= ")"
 
 proc renderCommand(n: MyNimNode): string =
   result = renderNode(n[0])

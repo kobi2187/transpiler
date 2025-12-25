@@ -41,6 +41,7 @@ proc main() =
   var skipTransforms = false
   var targetLang = "nim"
   var outputJson = false
+  var useStdout = false
 
   for kind, key, val in getopt():
     case kind
@@ -53,23 +54,25 @@ proc main() =
       of "skip-transforms": skipTransforms = true
       of "target-lang", "t": targetLang = val
       of "output-json", "j": outputJson = true
+      of "stdout", "s": useStdout = true
     of cmdEnd: assert(false)  # Should not happen
 
   if inputPath == "":
     quit("No input path specified (file or directory)")
 
-  # Set default output directory if not specified
-  if outputDir == "":
-    outputDir = getCurrentDir() / "transpiler_output"
+  # Set default output directory if not specified (unless using stdout)
+  if not useStdout:
+    if outputDir == "":
+      outputDir = getCurrentDir() / "transpiler_output"
 
-  # Ensure output directory is absolute
-  outputDir = outputDir.absolutePath()
+    # Ensure output directory is absolute
+    outputDir = outputDir.absolutePath()
 
-  # Create output directory if it doesn't exist
-  if not dirExists(outputDir):
-    createDir(outputDir)
-    if verbose:
-      echo "Created output directory: ", outputDir
+    # Create output directory if it doesn't exist
+    if not dirExists(outputDir):
+      createDir(outputDir)
+      if verbose:
+        echo "Created output directory: ", outputDir
 
   # Collect all xljs files
   let xlsjFiles = collectXljsFiles(inputPath)
@@ -274,24 +277,28 @@ proc main() =
 
     # Step 5: Write outputs
     try:
-      # Determine output file name relative to inputRoot, then place in outputDir
-      let relativeOutputPath = getOutputFileName(xlangAst, inputFile, ".nim", inputRoot)
-      let nimOutputFile = outputDir / relativeOutputPath
+      if useStdout:
+        # Write to stdout
+        stdout.write(nimCode)
+      else:
+        # Determine output file name relative to inputRoot, then place in outputDir
+        let relativeOutputPath = getOutputFileName(xlangAst, inputFile, ".nim", inputRoot)
+        let nimOutputFile = outputDir / relativeOutputPath
 
-      # Create parent directories if needed
-      let parentDir = nimOutputFile.parentDir()
-      if parentDir != "" and not dirExists(parentDir):
-        createDir(parentDir)
+        # Create parent directories if needed
+        let parentDir = nimOutputFile.parentDir()
+        if parentDir != "" and not dirExists(parentDir):
+          createDir(parentDir)
+          if verbose:
+            echo "DEBUG: Created directory: ", parentDir
+
         if verbose:
-          echo "DEBUG: Created directory: ", parentDir
+          echo "DEBUG: About to write .nim file to: ", nimOutputFile
 
-      if verbose:
-        echo "DEBUG: About to write .nim file to: ", nimOutputFile
-
-      # Write .nim file
-      writeFile(nimOutputFile, nimCode)
-      if verbose:
-        echo "✓ Nim code written to: ", nimOutputFile
+        # Write .nim file
+        writeFile(nimOutputFile, nimCode)
+        if verbose:
+          echo "✓ Nim code written to: ", nimOutputFile
 
       # Optionally write .nimjs file
       if outputJson:
