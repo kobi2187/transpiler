@@ -35,6 +35,7 @@ src/parsers/*/*_json_to_xlang
 # Output
 output/
 *.bak
+*.log
 icu4_n/
 
 *.txt

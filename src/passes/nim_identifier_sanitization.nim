@@ -115,8 +115,10 @@ proc collectIdentifiersFromNode(node: XLangNode, ctx: var SanitizationContext) =
   else:
     discard
 
-proc getSanitizedIdentifier(ctx: var SanitizationContext, original: string): string =
+proc getSanitizedIdentifier(ctx: var SanitizationContext, original: string, convertCase: bool = false, skipCollisionCheck: bool = false): string =
   ## Get sanitized version of an identifier, handling collisions
+  ## If convertCase is true, also converts PascalCase to camelCase (for methods/members)
+  ## If skipCollisionCheck is true, doesn't check for collisions (for member accesses which are always qualified)
   if original.len == 0:
     return original
 
@@ -124,14 +126,24 @@ proc getSanitizedIdentifier(ctx: var SanitizationContext, original: string): str
   if original in ctx.renameMap:
     return ctx.renameMap[original]
 
-  # Apply basic sanitization (remove trailing underscores)
-  let sanitized = sanitizeNimIdentifier(original)
+  # Apply sanitization (remove trailing underscores)
+  var sanitized = sanitizeNimIdentifier(original)
+
+  # Optionally convert PascalCase to camelCase
+  if convertCase:
+    sanitized = memberNameToNim(sanitized)
 
   # If it didn't change, no need to check collisions
   if sanitized == original:
     ctx.renameMap[original] = original
     ctx.usedIdentifiers.incl(original)
     return original
+
+  # For member accesses, skip collision checking since they're always qualified (obj.member)
+  if skipCollisionCheck:
+    ctx.renameMap[original] = sanitized
+    ctx.usedIdentifiers.incl(sanitized)
+    return sanitized
 
   # Check for collision with existing identifiers or already-used sanitized names
   var candidate = sanitized
@@ -169,21 +181,21 @@ proc sanitizeNodeIdentifiers(node: var XLangNode, ctx: var SanitizationContext) 
   of xnkConceptDef:
     node.conceptName = getSanitizedIdentifier(ctx, node.conceptName)
 
-  # Function/method declarations
+  # Function/method declarations - convert to camelCase
   of xnkFuncDecl:
-    node.funcName = getSanitizedIdentifier(ctx, node.funcName)
+    node.funcName = getSanitizedIdentifier(ctx, node.funcName, convertCase = true)
   of xnkMethodDecl:
-    node.methodName = getSanitizedIdentifier(ctx, node.methodName)
+    node.methodName = getSanitizedIdentifier(ctx, node.methodName, convertCase = true)
   of xnkIteratorDecl:
-    node.iteratorName = getSanitizedIdentifier(ctx, node.iteratorName)
+    node.iteratorName = getSanitizedIdentifier(ctx, node.iteratorName, convertCase = true)
   of xnkTemplateDecl:
-    node.templateName = getSanitizedIdentifier(ctx, node.templateName)
+    node.templateName = getSanitizedIdentifier(ctx, node.templateName, convertCase = true)
   of xnkMacroDecl:
-    node.macroName = getSanitizedIdentifier(ctx, node.macroName)
+    node.macroName = getSanitizedIdentifier(ctx, node.macroName, convertCase = true)
 
-  # Variable/field declarations
+  # Variable/field declarations - convert to camelCase
   of xnkFieldDecl:
-    node.fieldName = getSanitizedIdentifier(ctx, node.fieldName)
+    node.fieldName = getSanitizedIdentifier(ctx, node.fieldName, convertCase = true)
   of xnkVarDecl, xnkLetDecl, xnkConstDecl:
     node.declName = getSanitizedIdentifier(ctx, node.declName)
   of xnkParameter:
@@ -193,11 +205,14 @@ proc sanitizeNodeIdentifiers(node: var XLangNode, ctx: var SanitizationContext) 
   of xnkIdentifier:
     node.identName = getSanitizedIdentifier(ctx, node.identName)
   of xnkMemberAccessExpr:
-    node.memberName = getSanitizedIdentifier(ctx, node.memberName)
+    # Member accesses (properties/methods) should be camelCase
+    # Skip collision check since they're always qualified (obj.member)
+    node.memberName = getSanitizedIdentifier(ctx, node.memberName, convertCase = true, skipCollisionCheck = true)
 
   # C#-specific external nodes
   of xnkExternal_Property:
-    node.extPropName = getSanitizedIdentifier(ctx, node.extPropName)
+    # Properties should be camelCase
+    node.extPropName = getSanitizedIdentifier(ctx, node.extPropName, convertCase = true)
   of xnkExternal_Event:
     node.extEventName = getSanitizedIdentifier(ctx, node.extEventName)
   of xnkExternal_Delegate:
