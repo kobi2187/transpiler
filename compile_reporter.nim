@@ -14,9 +14,13 @@ type
   ErrorCategory = enum
     ecTypeError
     ecUndeclaredIdentifier
+    ecUndeclaredField
+    ecUndeclaredRoutine
     ecSyntaxError
     ecImportError
     ecPragmaError
+    ecExpressionNoType
+    ecCannotAssign
     ecOther
 
   ErrorStats = object
@@ -27,16 +31,47 @@ type
 proc categorizeError(errMsg: string): ErrorCategory =
   ## Categorize an error message
   let lower = errMsg.toLowerAscii()
-  if "type mismatch" in lower or "got <" in lower or "expected" in lower:
+
+  # Check for undeclared field errors (including the mysterious "undeclared field: '.'")
+  if "undeclared field:" in lower:
+    return ecUndeclaredField
+
+  # Check for undeclared routine/procedure calls
+  elif "undeclared routine" in lower or "attempting to call undeclared" in lower:
+    return ecUndeclaredRoutine
+
+  # Check for "expression has no type" errors
+  elif "has no type" in lower or "expression '' has no type" in lower or "expression ''" in lower:
+    return ecExpressionNoType
+
+  # Check for assignment errors
+  elif "cannot be assigned to" in lower or "'' cannot be assigned" in lower:
+    return ecCannotAssign
+
+  # Type errors
+  elif "type mismatch" in lower or "got <" in lower:
     return ecTypeError
+
+  # Expression expected errors (often from syntax issues)
+  elif "expression expected" in lower:
+    return ecSyntaxError
+
+  # Undeclared identifiers
   elif "undeclared identifier" in lower or "not declared" in lower or "unknown identifier" in lower:
     return ecUndeclaredIdentifier
+
+  # Syntax errors
   elif "invalid" in lower and ("syntax" in lower or "pragma" in lower or "indentation" in lower):
     return ecSyntaxError
-  elif "cannot open" in lower or "module" in lower:
+
+  # Import/module errors
+  elif "cannot open" in lower or ("module" in lower and "invalid" in lower):
     return ecImportError
+
+  # Pragma errors
   elif "pragma" in lower:
     return ecPragmaError
+
   else:
     return ecOther
 

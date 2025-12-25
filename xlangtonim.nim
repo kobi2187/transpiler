@@ -418,10 +418,9 @@ proc conv_xnkNamespace(node: XLangNode, ctx: ConversionContext): MyNimNode =
   for stmt in node.namespaceBody:
     result.add(convertToNimAST(stmt, ctx))
 
-proc conv_xnkFuncDecl_method(node: XLangNode, ctx: ConversionContext): MyNimNode =
-  # Build a proc/method node using my_nim_node API
-  let kind = if node.kind == xnkFuncDecl: nnkProcDef else: nnkMethodDef
-  result = newNimNode(kind)
+proc conv_xnkFuncDecl_standalone(node: XLangNode, ctx: ConversionContext): MyNimNode =
+  ## Convert standalone function (not a class method)
+  result = newNimNode(nnkProcDef)
   # 0: name - add asterisk for public procs
   let procName = if node.funcVisibility == "public": node.funcName & "*" else: node.funcName
   result.add(newIdentNode(procName))
@@ -435,6 +434,46 @@ proc conv_xnkFuncDecl_method(node: XLangNode, ctx: ConversionContext): MyNimNode
     formalParams.add(convertToNimAST(node.returnType.get, ctx))
   else:
     formalParams.add(newEmptyNode())
+  for param in node.params:
+    formalParams.add(convertToNimAST(param, ctx))
+  result.add(formalParams)
+  # 4: pragmas
+  result.add(newEmptyNode())
+  # 5: reserved
+  result.add(newEmptyNode())
+  # 6: body
+  result.add(convertToNimAST(node.body, ctx))
+  if node.isAsync:
+    setPragma(result, newPragma(newIdentNode("async")))
+
+proc conv_xnkFuncDecl_instanceMethod(node: XLangNode, ctx: ConversionContext): MyNimNode =
+  ## Convert instance method (class member, non-static)
+  ## Adds 'self' parameter as first parameter
+  result = newNimNode(nnkProcDef)
+  # 0: name - add asterisk for public procs
+  let procName = if node.funcVisibility == "public": node.funcName & "*" else: node.funcName
+  result.add(newIdentNode(procName))
+  # 1: pattern/term rewriting placeholder
+  result.add(newEmptyNode())
+  # 2: generic params placeholder
+  result.add(newEmptyNode())
+  # 3: formal params
+  let formalParams = newNimNode(nnkFormalParams)
+  if node.returnType.isSome():
+    formalParams.add(convertToNimAST(node.returnType.get, ctx))
+  else:
+    formalParams.add(newEmptyNode())
+
+  # Add 'self' parameter as first parameter
+  let className = ctx.getClassName()
+  if className.len > 0:
+    let selfParam = newNimNode(nnkIdentDefs)
+    selfParam.add(newIdentNode("self"))
+    selfParam.add(newIdentNode(className))
+    selfParam.add(newEmptyNode())  # no default value
+    formalParams.add(selfParam)
+
+  # Add original parameters
   for param in node.params:
     formalParams.add(convertToNimAST(param, ctx))
   result.add(formalParams)
@@ -702,7 +741,15 @@ proc conv_xnkGenericParameter(node: XLangNode, ctx: ConversionContext): MyNimNod
   result.add(identDefs)
 
 proc conv_xnkIdentifier(node: XLangNode, ctx: ConversionContext): MyNimNode =
-  result = newIdentNode(node.identName)
+  # Check if this identifier is a class field being accessed in an instance method
+  if ctx.isInClassScope() and ctx.isClassField(node.identName):
+    # Convert to self.fieldName
+    result = newNimNode(nnkDotExpr)
+    result.add(newIdentNode("self"))
+    result.add(newIdentNode(node.identName))
+  else:
+    # Regular identifier
+    result = newIdentNode(node.identName)
 
 proc conv_xnkComment(node: XLangNode, ctx: ConversionContext): MyNimNode =
   if node.isDocComment:
@@ -2018,7 +2065,13 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
     of xnkNamespace:
       result = conv_xnkNamespace(node, context)
     of xnkFuncDecl, xnkMethodDecl:
-      result = conv_xnkFuncDecl_method(node, context)
+      # Choose converter based on whether we're in a class context
+      if context.isInClassScope():
+        # Instance method - add self parameter
+        result = conv_xnkFuncDecl_instanceMethod(node, context)
+      else:
+        # Standalone function
+        result = conv_xnkFuncDecl_standalone(node, context)
     of xnkClassDecl, xnkStructDecl:
       result = conv_xnkClassDecl_structDecl(node, context)
     of xnkInterfaceDecl:
