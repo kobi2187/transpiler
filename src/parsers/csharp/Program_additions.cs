@@ -895,6 +895,18 @@ partial class Program
     }
     static JObject ConvertQualifiedName(QualifiedNameSyntax qualifiedName)
     {
+        // Convert the right side properly - it could be an identifier or a generic name
+        JToken rightSide = qualifiedName.Right switch
+        {
+            GenericNameSyntax genericName => ConvertGenericName(genericName),
+            IdentifierNameSyntax identName => new JObject
+            {
+                ["kind"] = "xnkIdentifier",
+                ["identName"] = identName.Identifier.Text
+            },
+            _ => JToken.FromObject(qualifiedName.Right.ToString()) // Fallback to string
+        };
+
         return new JObject
         {
             ["kind"] = "xnkQualifiedName",
@@ -903,7 +915,7 @@ partial class Program
                 ["kind"] = "xnkIdentifier",
                 ["identName"] = qualifiedName.Left.ToString()
             },
-            ["qualifiedRight"] = qualifiedName.Right.ToString()
+            ["qualifiedRight"] = rightSide
         };
     }
     static JObject ConvertSwitchExpression(SwitchExpressionSyntax switchExpr)

@@ -741,7 +741,7 @@ type
     #   localFuncBody*: XLangNode
     of xnkQualifiedName:
       qualifiedLeft*: XLangNode
-      qualifiedRight*: string
+      qualifiedRight*: XLangNode
     of xnkAliasQualifiedName:
       aliasQualifier*: string
       aliasQualifiedName*: string
@@ -1074,7 +1074,7 @@ proc `$`*(node: XLangNode): string =
   of xnkGotoStmt:
     result &= "(" & node.gotoLabel & ")"
   of xnkQualifiedName:
-    result &= "(" & node.qualifiedRight & ")"
+    result &= "(" & $node.qualifiedRight.kind & ")"
   of xnkAliasQualifiedName:
     result &= "(" & node.aliasQualifier & "::" & node.aliasQualifiedName & ")"
   of xnkGenericName:

@@ -921,7 +921,16 @@ proc conv_xnkTupleUnpacking(node: XLangNode, ctx: ConversionContext): MyNimNode 
 
 proc conv_xnkCallExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result = newNimNode(nnkCall)
-  result.add(convertToNimAST(node.callee, ctx))
+
+  # Check if this is a constructor call (callee is a type name)
+  # Constructor calls should be converted to newTypeName()
+  if node.callee.kind == xnkNamedType:
+    # This is a constructor call: TypeName() -> newTypeName()
+    let typeName = node.callee.typeName
+    result.add(newIdentNode("new" & typeName))
+  else:
+    result.add(convertToNimAST(node.callee, ctx))
+
   for arg in node.args:
     result.add(convertToNimAST(arg, ctx))
 
@@ -1701,7 +1710,16 @@ proc conv_xnkArrowFunc(node: XLangNode, ctx: ConversionContext): MyNimNode =
 ## TypeScript: `x as string`
 ## Nim: `x`  (type assertion not needed at runtime)
 proc conv_xnkTypeAssertion(node: XLangNode, ctx: ConversionContext): MyNimNode =
-  convertToNimAST(node.assertExpr, ctx)  # Just convert the expression
+  # Check if this is a null check: `x is null`
+  if node.assertType.kind == xnkNamedType and node.assertType.typeName == "null":
+    # Convert to: x == nil
+    result = newNimNode(nnkInfix)
+    result.add(newIdentNode("=="))
+    result.add(convertToNimAST(node.assertExpr, ctx))
+    result.add(newIdentNode("nil"))
+  else:
+    # For other type assertions, just return the expression (may need proper implementation later)
+    result = convertToNimAST(node.assertExpr, ctx)
 
 ## C#: `(T)x`
 ## Nim: `cast[T](x)` or `T(x)`
@@ -1942,7 +1960,7 @@ proc conv_xnkQualifiedName(node: XLangNode, ctx: ConversionContext): MyNimNode =
   # Recursively build: left.right
   result = newNimNode(nnkDotExpr)
   result.add(convertToNimAST(node.qualifiedLeft, ctx))
-  result.add(newIdentNode(node.qualifiedRight))
+  result.add(convertToNimAST(node.qualifiedRight, ctx))
 
 ## Alias qualified name: `alias::Name`
 proc conv_xnkAliasQualifiedName(node: XLangNode, ctx: ConversionContext): MyNimNode =
