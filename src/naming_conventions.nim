@@ -74,10 +74,14 @@ proc sanitizeNimIdentifier*(ident: string): string =
   ## Sanitize identifier to be valid Nim
   ## - Remove trailing underscores (C# convention, invalid in Nim)
   ## - Keep leading underscores (valid in Nim for private/internal)
+  ## - Preserve "_" as-is (Nim's discard identifier for out parameters)
   ## Examples:
   ##   "SLOPE_MIN_" -> "SLOPE_MIN"
   ##   "_privateField" -> "_privateField"
   ##   "value_" -> "value"
+  ##   "_" -> "_"
+  if ident == "_":
+    return "_"
   result = ident.strip(chars = {'_'}, leading = false, trailing = true)
 
 proc extractNamespace*(xlangAst: XLangNode): Option[string] =

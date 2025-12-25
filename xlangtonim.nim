@@ -42,6 +42,9 @@ type
     # ^ The xnkFile/xnkModule being converted
     # Gives access to: moduleName, all top-level declarations
 
+    inConstructor*: bool
+    # ^ True if we're currently inside a constructor body
+
     currentFile*: string
     # ^ The source file path being processed (for error reporting)
     # Note: Similar to currentModule but stores the file path string
@@ -676,7 +679,9 @@ proc conv_xnkTryStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
     result.add(exceptBranch)
   if node.finallyClause.isSome:
     let finallyBranch = newNimNode(nnkFinally)
-    finallyBranch.add(convertToNimAST(node.finallyClause.get, ctx))
+    # Convert the body of the finally clause, not the xnkFinallyStmt node itself
+    # to avoid double-wrapping in nnkFinally nodes
+    finallyBranch.add(convertToNimAST(node.finallyClause.get.finallyBody, ctx))
     result.add(finallyBranch)
 
 proc conv_xnkRaiseStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
@@ -742,13 +747,14 @@ proc conv_xnkGenericParameter(node: XLangNode, ctx: ConversionContext): MyNimNod
 
 proc conv_xnkIdentifier(node: XLangNode, ctx: ConversionContext): MyNimNode =
   # Check if this identifier is a class field being accessed in an instance method
-  if ctx.isInClassScope() and ctx.isClassField(node.identName):
+  # In constructors, don't add self. prefix - fields will be accessed directly or via result.
+  if ctx.isInClassScope() and ctx.isClassField(node.identName) and not ctx.inConstructor:
     # Convert to self.fieldName
     result = newNimNode(nnkDotExpr)
     result.add(newIdentNode("self"))
     result.add(newIdentNode(node.identName))
   else:
-    # Regular identifier
+    # Regular identifier (or in constructor where we access params directly)
     result = newIdentNode(node.identName)
 
 proc conv_xnkComment(node: XLangNode, ctx: ConversionContext): MyNimNode =
@@ -1264,14 +1270,27 @@ proc conv_xnkConstructorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode
   # Body
   let body = newNimNode(nnkStmtList)
 
+  # Set constructor flag so field accesses use result. instead of self.
+  ctx.inConstructor = true
+
   # Helper to convert field assignment to result.field = value
   proc convertConstructorFieldAssignment(stmt: XLangNode, ctx: ConversionContext): MyNimNode =
-    # Check if this is a simple field assignment (identifier = value)
-    if stmt.kind == xnkAsgn and stmt.asgnLeft.kind == xnkIdentifier:
-      let fieldName = stmt.asgnLeft.identName
-      # Check if it's a class field
-      if ctx.isClassField(fieldName):
-        # Convert to result.field = value
+    # Check if this is a field assignment
+    if stmt.kind == xnkAsgn:
+      var fieldName = ""
+
+      # Check for: this.fieldName = value (C#/Java)
+      if stmt.asgnLeft.kind == xnkMemberAccessExpr and
+         stmt.asgnLeft.memberExpr.kind == xnkThisExpr:
+        fieldName = stmt.asgnLeft.memberName
+      # Check for: fieldName = value (simpler case)
+      elif stmt.asgnLeft.kind == xnkIdentifier:
+        let name = stmt.asgnLeft.identName
+        if ctx.isClassField(name):
+          fieldName = name
+
+      # If we found a field assignment, convert to result.field = value
+      if fieldName.len > 0:
         result = newNimNode(nnkAsgn)
         let dotExpr = newNimNode(nnkDotExpr)
         dotExpr.add(newIdentNode("result"))
@@ -1294,6 +1313,9 @@ proc conv_xnkConstructorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode
         body.add(convertConstructorFieldAssignment(stmt, ctx))
     else:
       body.add(convertConstructorFieldAssignment(node.constructorBody, ctx))
+
+  # Clear constructor flag
+  ctx.inConstructor = false
 
   result.add(body)
 
