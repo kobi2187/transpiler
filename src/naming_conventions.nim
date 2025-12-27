@@ -4,8 +4,20 @@
 ## - C# PascalCase namespaces (System.Collections.Generic)
 ## - Nim snake_case modules (system/collections/generic)
 
-import strutils, re, options, os
+import strutils, re, options, os, sets
 import ../xlangtypes
+
+# Nim keywords that cannot be used as identifiers
+const nimKeywords* = toHashSet([
+  "addr", "and", "as", "asm", "bind", "block", "break", "case", "cast",
+  "concept", "const", "continue", "converter", "defer", "discard", "distinct",
+  "div", "do", "elif", "else", "end", "enum", "except", "export", "finally",
+  "for", "from", "func", "if", "import", "in", "include", "interface",
+  "is", "isnot", "iterator", "let", "macro", "method", "mixin", "mod",
+  "nil", "not", "notin", "object", "of", "or", "out", "proc", "ptr",
+  "raise", "ref", "return", "shl", "shr", "static", "template", "try",
+  "tuple", "type", "using", "var", "when", "while", "xor", "yield"
+])
 
 proc pascalToSnake*(s: string): string =
   ## Convert PascalCase to snake_case using regex
@@ -72,17 +84,33 @@ proc memberNameToNim*(memberName: string): string =
 
 proc sanitizeNimIdentifier*(ident: string): string =
   ## Sanitize identifier to be valid Nim
+  ## - Remove @ prefix (C# keyword escaping, invalid in Nim)
   ## - Remove trailing underscores (C# convention, invalid in Nim)
+  ## - Add suffix if result is a Nim keyword
   ## - Keep leading underscores (valid in Nim for private/internal)
   ## - Preserve "_" as-is (Nim's discard identifier for out parameters)
   ## Examples:
+  ##   "@as" -> "asVar"
+  ##   "@event" -> "eventVar"
+  ##   "@class" -> "classVar"
   ##   "SLOPE_MIN_" -> "SLOPE_MIN"
   ##   "_privateField" -> "_privateField"
   ##   "value_" -> "value"
   ##   "_" -> "_"
   if ident == "_":
     return "_"
-  result = ident.strip(chars = {'_'}, leading = false, trailing = true)
+
+  # Remove @ prefix (C# keyword escaping)
+  result = ident
+  if result.len > 0 and result[0] == '@':
+    result = result[1..^1]
+
+  # Remove trailing underscores
+  result = result.strip(chars = {'_'}, leading = false, trailing = true)
+
+  # If the result is a Nim keyword, append "Var" suffix
+  if result in nimKeywords:
+    result = result & "Var"
 
 proc extractNamespace*(xlangAst: XLangNode): Option[string] =
   ## Extract the namespace from an XLang AST

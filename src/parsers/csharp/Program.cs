@@ -218,6 +218,7 @@ partial class Program
         {
             ["kind"] = "xnkFile",
             ["fileName"] = Path.GetFileName(fileName),
+            ["sourceLang"] = "csharp",
             ["moduleDecls"] = moduleDecls
         };
         return result;

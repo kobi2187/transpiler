@@ -1,0 +1,69 @@
+{
+  "kind": "xnkFile",
+  "fileName": "Sample1.cs",
+  "declarations": [
+    {
+      "kind": "xnkNamespace",
+      "name": "MyApp",
+      "declarations": [
+        {
+          "kind": "xnkClassDecl",
+          "className": "Calculator",
+          "members": [
+            {
+              "kind": "xnkFuncDecl",
+              "name": "Add",
+              "parameters": [],
+              "returnType": {
+                "kind": "xnkNamedType",
+                "name": "int"
+              },
+              "body": {
+                "kind": "xnkBlockStmt",
+                "statements": [
+                  {
+                    "kind": "xnkUnknown",
+                    "syntaxKind": "ReturnStatement",
+                    "nodeType": "ReturnStatementSyntax",
+                    "text": "return a + b;"
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "xnkFuncDecl",
+              "name": "PrintResult",
+              "parameters": [],
+              "returnType": {
+                "kind": "xnkNamedType",
+                "name": "void"
+              },
+              "body": {
+                "kind": "xnkBlockStmt",
+                "statements": [
+                  {
+                    "kind": "xnkCallExpr",
+                    "expr": {
+                      "kind": "xnkUnknown",
+                      "syntaxKind": "SimpleMemberAccessExpression",
+                      "nodeType": "MemberAccessExpressionSyntax",
+                      "text": "Console.WriteLine"
+                    },
+                    "args": [
+                      {
+                        "kind": "xnkUnknown",
+                        "syntaxKind": "IdentifierName",
+                        "nodeType": "IdentifierNameSyntax",
+                        "text": "result"
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

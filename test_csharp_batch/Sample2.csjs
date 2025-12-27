@@ -1,0 +1,93 @@
+{
+  "kind": "xnkFile",
+  "fileName": "Sample2.cs",
+  "declarations": [
+    {
+      "kind": "xnkNamespace",
+      "name": "MyApp.Utils",
+      "declarations": [
+        {
+          "kind": "xnkClassDecl",
+          "className": "StringHelper",
+          "members": [
+            {
+              "kind": "xnkUnknown",
+              "syntaxKind": "FieldDeclaration",
+              "nodeType": "FieldDeclarationSyntax",
+              "text": "private string data;"
+            },
+            {
+              "kind": "xnkUnknown",
+              "syntaxKind": "ConstructorDeclaration",
+              "nodeType": "ConstructorDeclarationSyntax",
+              "text": "public StringHelper(string initialData)\n        {\n            data = initialData;\n        }"
+            },
+            {
+              "kind": "xnkFuncDecl",
+              "name": "Reverse",
+              "parameters": [],
+              "returnType": {
+                "kind": "xnkNamedType",
+                "name": "string"
+              },
+              "body": {
+                "kind": "xnkBlockStmt",
+                "statements": [
+                  {
+                    "kind": "xnkUnknown",
+                    "syntaxKind": "LocalDeclarationStatement",
+                    "nodeType": "LocalDeclarationStatementSyntax",
+                    "text": "char[] arr = data.ToCharArray();"
+                  },
+                  {
+                    "kind": "xnkCallExpr",
+                    "expr": {
+                      "kind": "xnkUnknown",
+                      "syntaxKind": "SimpleMemberAccessExpression",
+                      "nodeType": "MemberAccessExpressionSyntax",
+                      "text": "Array.Reverse"
+                    },
+                    "args": [
+                      {
+                        "kind": "xnkUnknown",
+                        "syntaxKind": "IdentifierName",
+                        "nodeType": "IdentifierNameSyntax",
+                        "text": "arr"
+                      }
+                    ]
+                  },
+                  {
+                    "kind": "xnkUnknown",
+                    "syntaxKind": "ReturnStatement",
+                    "nodeType": "ReturnStatementSyntax",
+                    "text": "return new string(arr);"
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "xnkFuncDecl",
+              "name": "Split",
+              "parameters": [],
+              "returnType": {
+                "kind": "xnkNamedType",
+                "name": "List<string>"
+              },
+              "body": {
+                "kind": "xnkBlockStmt",
+                "statements": [
+                  {
+                    "kind": "xnkUnknown",
+                    "syntaxKind": "ReturnStatement",
+                    "nodeType": "ReturnStatementSyntax",
+                    "text": "return new List<string>(data.Split(delimiter));"
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

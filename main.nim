@@ -298,11 +298,11 @@ proc main() =
       ctx.currentFile = inputFile
       ctx.semanticInfo = semanticInfo
 
-      # Detect input language from the original source file name in the XLang AST
-      if xlangAst.kind == xnkFile and xlangAst.fileName != "":
-        ctx.inputLang = detectInputLang(xlangAst.fileName)
+      # Get input language from the XLang AST
+      if xlangAst.kind == xnkFile and xlangAst.sourceLang != "":
+        ctx.inputLang = xlangAst.sourceLang
         if verbose:
-          echo "DEBUG: Detected input language: ", ctx.inputLang, " from ", xlangAst.fileName
+          echo "DEBUG: Source language: ", ctx.inputLang
 
       nimAst = convertToNimAST(xlangAst, ctx)
       if verbose:

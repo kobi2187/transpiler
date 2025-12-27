@@ -38,6 +38,8 @@ output/
 *.log
 icu4_n/
 tests/icu4_n.tests/
+transpiler_output/
+*.xljs
 *.txt
 *.md
 

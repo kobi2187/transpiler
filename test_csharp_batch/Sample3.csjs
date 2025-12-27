@@ -1,0 +1,75 @@
+{
+  "kind": "xnkFile",
+  "fileName": "Sample3.cs",
+  "declarations": [
+    {
+      "kind": "xnkNamespace",
+      "name": "MyApp.Models",
+      "declarations": [
+        {
+          "kind": "xnkUnknown",
+          "syntaxKind": "InterfaceDeclaration",
+          "nodeType": "InterfaceDeclarationSyntax",
+          "text": "public interface IRepository<T>\n    {\n        T Get(int id);\n        void Save(T item);\n    }"
+        },
+        {
+          "kind": "xnkClassDecl",
+          "className": "User",
+          "members": [
+            {
+              "kind": "xnkUnknown",
+              "syntaxKind": "PropertyDeclaration",
+              "nodeType": "PropertyDeclarationSyntax",
+              "text": "public int Id { get; set; }"
+            },
+            {
+              "kind": "xnkUnknown",
+              "syntaxKind": "PropertyDeclaration",
+              "nodeType": "PropertyDeclarationSyntax",
+              "text": "public string Name { get; set; }"
+            }
+          ]
+        },
+        {
+          "kind": "xnkClassDecl",
+          "className": "UserRepository",
+          "members": [
+            {
+              "kind": "xnkFuncDecl",
+              "name": "Get",
+              "parameters": [],
+              "returnType": {
+                "kind": "xnkNamedType",
+                "name": "User"
+              },
+              "body": {
+                "kind": "xnkBlockStmt",
+                "statements": [
+                  {
+                    "kind": "xnkUnknown",
+                    "syntaxKind": "ReturnStatement",
+                    "nodeType": "ReturnStatementSyntax",
+                    "text": "return new User { Id = id, Name = \"Test\" };"
+                  }
+                ]
+              }
+            },
+            {
+              "kind": "xnkFuncDecl",
+              "name": "Save",
+              "parameters": [],
+              "returnType": {
+                "kind": "xnkNamedType",
+                "name": "void"
+              },
+              "body": {
+                "kind": "xnkBlockStmt",
+                "statements": []
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

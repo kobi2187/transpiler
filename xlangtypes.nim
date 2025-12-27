@@ -242,6 +242,7 @@ type
     case kind*: XLangNodeKind
     of xnkFile:
       fileName*: string
+      sourceLang*: string  ## Source language: "csharp", "java", "python", etc.
       moduleDecls*: seq[XLangNode]
     of xnkModule:
       moduleName*: string
