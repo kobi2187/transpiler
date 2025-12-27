@@ -3,6 +3,7 @@ import src/helpers
 import options, strutils, tables, sets, sequtils, algorithm
 import src/my_nim_node
 import src/naming_conventions
+import src/semantic/semantic_analysis
 
 # ==============================================================================
 # CONVERSION CONTEXT
@@ -49,6 +50,10 @@ type
     # ^ The source file path being processed (for error reporting)
     # Note: Similar to currentModule but stores the file path string
 
+    inputLang*: string
+    # ^ The source language being transpiled (e.g., "csharp", "java", "python")
+    # Used to import language-specific compatibility modules (e.g., cs_compat)
+
     nodeStack*: seq[XLangNode]
     # ^ Stack of nodes being converted (for error reporting - shows hierarchy)
 
@@ -73,6 +78,11 @@ type
     requiredImports*: HashSet[string]
     # ^ Nim modules to import (tables, options, asyncdispatch, etc.)
 
+    # ===== Semantic Analysis Results =====
+    semanticInfo*: SemanticInfo
+    # ^ Symbol tables and resolution from semantic analysis pass
+    # Use for: identifier resolution, rename lookups, closure detection
+
 # ===== Context Creation =====
 proc newContext*(): ConversionContext =
   result = ConversionContext(
@@ -81,6 +91,7 @@ proc newContext*(): ConversionContext =
     currentNamespace: none(XLangNode),
     currentModule: none(XLangNode),
     currentFile: "",
+    inputLang: "",
     nodeStack: @[],
     types: initTable[string, XLangNode](),
     variables: initTable[string, XLangNode](),
@@ -405,6 +416,14 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode
 # Helper procs for each XLang node kind — extract case logic here
 proc conv_xnkFile(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result = newStmtList()
+
+  # Add language-specific compatibility import based on input language
+  if ctx.inputLang != "" and ctx.inputLang != "unknown" and ctx.inputLang != "nim":
+    let compatImport = newNimNode(nnkImportStmt)
+    let compatModuleName = ctx.inputLang & "_compat"
+    compatImport.add(newIdentNode(compatModuleName))
+    result.add(compatImport)
+
   for decl in node.moduleDecls:
     result.add(convertToNimAST(decl, ctx))
 
@@ -746,16 +765,23 @@ proc conv_xnkGenericParameter(node: XLangNode, ctx: ConversionContext): MyNimNod
   result.add(identDefs)
 
 proc conv_xnkIdentifier(node: XLangNode, ctx: ConversionContext): MyNimNode =
+  # Get the effective name (handles keyword renames from semantic analysis)
+  var identName = node.identName
+  if ctx.semanticInfo != nil:
+    let effectiveName = ctx.semanticInfo.getEffectiveName(node)
+    if effectiveName.isSome:
+      identName = effectiveName.get
+
   # Check if this identifier is a class field being accessed in an instance method
   # In constructors, don't add self. prefix - fields will be accessed directly or via result.
   if ctx.isInClassScope() and ctx.isClassField(node.identName) and not ctx.inConstructor:
     # Convert to self.fieldName
     result = newNimNode(nnkDotExpr)
     result.add(newIdentNode("self"))
-    result.add(newIdentNode(node.identName))
+    result.add(newIdentNode(identName))
   else:
     # Regular identifier (or in constructor where we access params directly)
-    result = newIdentNode(node.identName)
+    result = newIdentNode(identName)
 
 proc conv_xnkComment(node: XLangNode, ctx: ConversionContext): MyNimNode =
   if node.isDocComment:

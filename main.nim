@@ -1,4 +1,4 @@
-import os, parseopt, strutils, sequtils
+import os, parseopt, strutils, sequtils, tables
 import std/json
 import xlangtypes
 import jsontoxlangtypes
@@ -12,7 +12,40 @@ import src/passes/fix_generic_type_syntax
 import src/my_nim_node
 import src/astprinter
 import src/naming_conventions
+import src/semantic/semantic_analysis
 
+# Nim keywords that identifiers must not conflict with
+const NimKeywords = @[
+  # Reserved words
+  "addr", "and", "as", "asm", "bind", "block", "break", "case", "cast",
+  "concept", "const", "continue", "converter", "defer", "discard", "distinct",
+  "div", "do", "elif", "else", "end", "enum", "except", "export", "finally",
+  "for", "from", "func", "if", "import", "in", "include", "interface",
+  "is", "isnot", "iterator", "let", "macro", "method", "mixin", "mod",
+  "nil", "not", "notin", "object", "of", "or", "out", "proc", "ptr",
+  "raise", "ref", "return", "shl", "shr", "static", "template", "try",
+  "tuple", "type", "using", "var", "when", "while", "xor", "yield",
+  # Common builtins/identifiers to avoid
+  "result", "self", "this", "true", "false", "echo", "quit", "assert"
+]
+
+proc detectInputLang(fileName: string): string =
+  ## Detect input language from file extension
+  ## Returns: "csharp", "java", "python", "typescript", etc.
+  let ext = fileName.splitFile().ext.toLowerAscii()
+  case ext
+  of ".cs": return "csharp"
+  of ".java": return "java"
+  of ".py": return "python"
+  of ".ts": return "typescript"
+  of ".js": return "javascript"
+  of ".go": return "go"
+  of ".rs": return "rust"
+  of ".cpp", ".cc", ".cxx": return "cpp"
+  of ".c": return "c"
+  of ".d": return "d"
+  of ".nim": return "nim"
+  else: return "unknown"
 
 proc collectXljsFiles(path: string): seq[string] =
   ## Recursively collect all .xljs files from a path (file or directory)
@@ -141,6 +174,30 @@ proc main() =
       )
       continue  # Skip to next file
 
+    # Step 1.5: Run semantic analysis (symbol tables, identifier resolution)
+    var semanticInfo: SemanticInfo
+    try:
+      if verbose:
+        echo "DEBUG: Running semantic analysis..."
+      semanticInfo = analyzeProgram(xlangAst, NimKeywords)
+      if verbose:
+        echo "✓ Semantic analysis complete"
+        echo "  - Symbols: ", semanticInfo.allSymbols.len
+        echo "  - Scopes: ", semanticInfo.allScopes.len
+        echo "  - Renames: ", semanticInfo.renames.len
+        if semanticInfo.warnings.len > 0:
+          echo "  - Warnings: ", semanticInfo.warnings.len
+    except Exception as e:
+      echo "ERROR: Semantic analysis failed: ", e.msg
+      echo "Stack trace: ", e.getStackTrace()
+      errorCollector.addError(
+        tekValidationError,
+        "Semantic analysis failed: " & e.msg,
+        location = inputFile,
+        details = e.getStackTrace()
+      )
+      continue  # Skip to next file
+
     # Step 2: Apply transformation passes (unless disabled)
     if not skipTransforms:
       if verbose:
@@ -149,7 +206,7 @@ proc main() =
       try:
         if verbose:
           echo "DEBUG: About to run passes on AST..."
-        xlangAst = passManager.run(xlangAst, verbose)
+        xlangAst = passManager.run(xlangAst, verbose, semanticInfo)
 
         # Check for infinite loop
         if passManager.result.maxIterationsReached:
@@ -236,9 +293,17 @@ proc main() =
     try:
       if verbose:
         echo "DEBUG: About to convert XLang AST to Nim AST..."
-      # Create context with file information for better error reporting
+      # Create context with file information and semantic info for better error reporting
       let ctx = newContext()
       ctx.currentFile = inputFile
+      ctx.semanticInfo = semanticInfo
+
+      # Detect input language from the original source file name in the XLang AST
+      if xlangAst.kind == xnkFile and xlangAst.fileName != "":
+        ctx.inputLang = detectInputLang(xlangAst.fileName)
+        if verbose:
+          echo "DEBUG: Detected input language: ", ctx.inputLang, " from ", xlangAst.fileName
+
       nimAst = convertToNimAST(xlangAst, ctx)
       if verbose:
         echo "DEBUG: Nim AST root kind: ", nimAst.kind

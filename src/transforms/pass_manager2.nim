@@ -10,6 +10,7 @@
 import ../../xlangtypes
 import types
 import ../xlang/error_handling
+import ../semantic/semantic_analysis
 import tables
 import sets, strutils, sequtils
 
@@ -31,6 +32,7 @@ type
     activeKinds*: HashSet[XLangNodeKind]
     maxIterations*: int
     errorCollector*: ErrorCollector
+    semanticInfo*: SemanticInfo  # Symbol tables from semantic analysis pass
     result*: PassManagerResult
 
 proc newPassManager2*(maxIterations: int = 10000,
@@ -74,8 +76,11 @@ proc applyTransform*(pm: PassManager2, node: var XLangNode,
       if node.kind in pm.activeKinds:
         reintroducedKinds.incl(node.kind)
 
-proc run*(pm: PassManager2, root: var XLangNode, verbose: bool = false): XLangNode =
-  ## Run the pass manager on the given AST until fixed point is reached
+proc run*(pm: PassManager2, root: var XLangNode, verbose: bool = false,
+          semanticInfo: SemanticInfo = nil): XLangNode =
+  ## Run the pass manager on the given AST until fixed point is reached.
+  ## If semanticInfo is provided, transforms can access it via pm.semanticInfo.
+  pm.semanticInfo = semanticInfo
   var counter = 1  # Initialize to 1 to enter the loop
   var iterations = 0
   const loopWarningThreshold = 20
