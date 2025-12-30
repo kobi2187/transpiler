@@ -44,3 +44,13 @@ proc equals*(value: string, other: string): bool =
 
 proc equals*(value: string, obj: RootObj): bool =
   false
+
+# StringComparison enum (from .NET BCL)
+type
+  StringComparison* = enum
+    scCurrentCulture = 0
+    scCurrentCultureIgnoreCase = 1
+    scInvariantCulture = 2
+    scInvariantCultureIgnoreCase = 3
+    scOrdinal = 4
+    scOrdinalIgnoreCase = 5
