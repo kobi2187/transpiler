@@ -14,6 +14,9 @@ partial class Program
     private static Dictionary<string, int> constructStats = new Dictionary<string, int>();
     private static List<string> errorLog = new List<string>();
 
+    // Semantic model for type resolution
+    private static SemanticModel? semanticModel = null;
+
     static void Main(string[] args)
     {
         if (args.Length < 1)
@@ -108,6 +111,32 @@ partial class Program
         string sourceCode = File.ReadAllText(filePath);
         var tree = CSharpSyntaxTree.ParseText(sourceCode);
         var root = tree.GetRoot();
+
+        // Create a compilation to enable semantic analysis
+        // Add all .NET framework assemblies for complete type resolution
+        var assemblyPath = Path.GetDirectoryName(typeof(object).Assembly.Location);
+        var references = new List<MetadataReference>();
+
+        // Add all DLL files from the .NET runtime directory
+        if (assemblyPath != null)
+        {
+            foreach (var dll in Directory.GetFiles(assemblyPath, "*.dll"))
+            {
+                try
+                {
+                    references.Add(MetadataReference.CreateFromFile(dll));
+                }
+                catch
+                {
+                    // Skip assemblies that can't be loaded
+                }
+            }
+        }
+
+        var compilation = CSharpCompilation.Create("TempCompilation")
+            .AddReferences(references)
+            .AddSyntaxTrees(tree);
+        semanticModel = compilation.GetSemanticModel(tree);
 
         var xlangNode = ConvertToXLang(root, filePath);
         var json = JsonConvert.SerializeObject(xlangNode, Formatting.Indented);
@@ -630,12 +659,30 @@ partial class Program
 
     static JObject ConvertMemberAccess(MemberAccessExpressionSyntax memberAccess)
     {
-        return new JObject
+        var result = new JObject
         {
             ["kind"] = "xnkMemberAccessExpr",
             ["memberExpr"] = ConvertExpression(memberAccess.Expression),
             ["memberName"] = memberAccess.Name.Identifier.Text
         };
+
+        // Check if this is an enum member access using semantic model
+        if (semanticModel != null)
+        {
+            var symbolInfo = semanticModel.GetSymbolInfo(memberAccess.Expression);
+            if (symbolInfo.Symbol != null)
+            {
+                // For enum access, the expression is typically a NamedTypeSymbol (the enum type itself)
+                if (symbolInfo.Symbol is INamedTypeSymbol namedType && namedType.TypeKind == TypeKind.Enum)
+                {
+                    result["isEnumAccess"] = true;
+                    result["enumTypeName"] = namedType.Name;
+                    result["enumFullName"] = namedType.ToDisplayString();
+                }
+            }
+        }
+
+        return result;
     }
 
     static JObject ConvertAssignment(AssignmentExpressionSyntax assignment)

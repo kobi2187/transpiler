@@ -113,7 +113,8 @@ proc buildNimPassRegistry*(): Table[TransformPassID, TransformPass] =
   reg[tpLambdaNormalization] = newTransformPass(tpLambdaNormalization, toClosure(transformLambdaNormalization), @[])
   reg[tpGoTypeAssertions] = newTransformPass(tpGoTypeAssertions, toClosure(transformGoTypeAssertions), @[])
   reg[tpGoImplicitInterfaces] = newTransformPass(tpGoImplicitInterfaces, toClosure(transformGoImplicitInterfaces), @[])
-  reg[tpEnumNormalization] = newTransformPass(tpEnumNormalization, toClosure(transformEnumNormalization), @[])
+  # Enum normalization is now called separately in main.nim, not through the pass manager
+  # reg[tpEnumNormalization] = newTransformPass(tpEnumNormalization, toClosure(transformEnumNormalization), @[])
   reg[tpPythonMultipleInheritance] = newTransformPass(tpPythonMultipleInheritance, toClosure(transformMultipleInheritance), @[])
   reg[tpSafeNavigation] = newTransformPass(tpSafeNavigation, toClosure(transformSafeNavigation), @[xnkExternal_SafeNavigation])
   reg[tpGeneratorExpressions] = newTransformPass(tpGeneratorExpressions, toClosure(transformGeneratorExpressions), @[xnkExternal_Generator])
@@ -138,7 +139,7 @@ proc buildNimPassRegistry*(): Table[TransformPassID, TransformPass] =
 let nimDefaultPassIDs = @[tpNormalizeOperators, tpForToWhile, tpDoWhileToWhile, tpTernaryToIf, tpNimInterfaceToConcept, tpPropertyToProcs, tpSwitchFallthrough,
                          tpNullCoalesce, tpMultipleCatch, tpDestructuring, tpListComprehension, tpNormalizeSimple,
                          tpWithToDefer, tpAsyncNormalization, tpUnionToVariant, tpLinqToSequtils, tpOperatorOverload, tpPatternMatching,
-                         tpDecoratorAttribute, tpExtensionMethods, tpLambdaNormalization, tpEnumNormalization, tpSafeNavigation,
+                         tpDecoratorAttribute, tpExtensionMethods, tpLambdaNormalization, tpSafeNavigation,
                          tpResourceToDefer, tpThrowExpression, tpGeneratorExpressions, tpStringInterpolation, tpIndexerToProcs,
                          tpSwitchExprToCase, tpLockToWithLock, tpStackAllocToSeq, tpCheckedToBlock, tpFixedToBlock,
                          tpLocalFunctionToProc, tpUnsafeToNimBlock, tpDelegateToProcType, tpNullableToOption] # , tpConversionOpToProc - using direct impl in xlangtonim instead # , tpAddSelfParameter - DISABLED temporarily

@@ -640,6 +640,10 @@ proc conv_xnkBlockStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 # Patch member access and index kinds to xlangtypes style
 proc conv_xnkMemberAccess(node: XLangNode, ctx: ConversionContext): MyNimNode =
+  # Note: Enum member access should already be normalized by the enum transformation pass
+  # (transformEnumNormalization) which converts EnumType.Value → etValue
+  # This includes both source-defined enums and external BCL enums detected via isEnumAccess
+
   result = newNimNode(nnkDotExpr)
 
   # Convert the left side (memberExpr)

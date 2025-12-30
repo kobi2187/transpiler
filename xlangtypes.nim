@@ -421,6 +421,9 @@ type
     of xnkMemberAccessExpr:
       memberExpr*: XLangNode
       memberName*: string
+      isEnumAccess*: bool = false  # True if this is accessing an enum value (from C# parser semantic analysis)
+      enumTypeName*: string = ""  # Short name of the enum type (e.g., "RegexOptions")
+      enumFullName*: string = ""  # Fully qualified name (e.g., "System.Text.RegularExpressions.RegexOptions")
     # of xnkSafeNavigationExpr:
     #   safeNavObject*: XLangNode
     #   safeNavMember*: string             # For user?.Name

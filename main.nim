@@ -5,6 +5,7 @@ import jsontoxlangtypes
 import xlangtonim
 import src/transforms/pass_manager2
 import src/transforms/nim_passes
+import src/transforms/passes/enum_transformations
 import src/xlang/error_handling
 import src/passes/nim_identifier_sanitization
 import src/passes/primitive_type_mapping
@@ -90,6 +91,14 @@ proc stepSemanticAnalysis(xlangAst: XLangNode, verbose: bool): SemanticInfo =
     echo "  - Renames: ", result.renames.len
     if result.warnings.len > 0:
       echo "  - Warnings: ", result.warnings.len
+
+proc stepEnumNormalization(xlangAst: var XLangNode, verbose: bool) =
+  ## Step 1.7: Normalize enum member access
+  if verbose:
+    echo "DEBUG: Running enum normalization..."
+  xlangAst = transformEnumNormalization(xlangAst)
+  if verbose:
+    echo "✓ Enum normalization complete"
 
 proc stepTransformPasses(xlangAst: var XLangNode, semanticInfo: SemanticInfo, passManager: PassManager2,
                         inputFile: string, infiniteLoopFiles: var seq[tuple[file: string, iterations: int, kinds: seq[XLangNodeKind]]],
@@ -316,6 +325,15 @@ proc main() =
       echo "ERROR: Semantic analysis failed: ", e.msg
       echo "Stack trace: ", e.getStackTrace()
       errorCollector.addError(tekValidationError, "Semantic analysis failed: " & e.msg, location = inputFile, details = e.getStackTrace())
+      continue
+
+    # Step 1.7: Normalize enum member access
+    try:
+      stepEnumNormalization(xlangAst, verbose)
+    except Exception as e:
+      echo "ERROR: Enum normalization failed: ", e.msg
+      echo "Stack trace: ", e.getStackTrace()
+      errorCollector.addError(tekTransformError, "Enum normalization failed: " & e.msg, location = "Enum normalization", details = e.getStackTrace())
       continue
 
     # Step 2: Apply transformation passes
