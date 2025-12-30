@@ -215,15 +215,18 @@ proc renderConstSection(n: MyNimNode): string =
     result &= "\n"
   decIndent()
 
+proc renderStmtOrExpr(n: MyNimNode): string =
+  ## Render a node that could be either a statement or expression
+  ## Expressions used as statements need indent prefix
+  if n.kind in {nnkCall, nnkCommand, nnkPrefix, nnkPostfix, nnkInfix, nnkAsgn, nnkDotExpr, nnkBracketExpr}:
+    result = ind() & renderNode(n)
+  else:
+    result = renderNode(n)
+
 proc renderStmtList(n: MyNimNode): string =
   for i, stmt in n:
     if i > 0: result &= "\n"
-    # Expression nodes when used as statements need indent
-    # Also nnkAsgn needs indent when used as a statement
-    if stmt.kind in {nnkCall, nnkCommand, nnkPrefix, nnkPostfix, nnkInfix, nnkAsgn}:
-      result &= ind() & renderNode(stmt)
-    else:
-      result &= renderNode(stmt)
+    result &= renderStmtOrExpr(stmt)
 
 proc renderBlockStmt(n: MyNimNode): string =
   if n[0].kind != nnkEmpty:
@@ -241,7 +244,7 @@ proc renderIfStmt(n: MyNimNode): string =
       let keyword = if i == 0: "if" else: "elif"
       result &= ind() & keyword & " " & renderNode(branch[0]) & ":\n"
       incIndent()
-      result &= renderNode(branch[1])
+      result &= renderStmtOrExpr(branch[1])
       decIndent()
     elif branch.kind == nnkElse:
       # Check if else body is a single nnkIfStmt - flatten to elif
@@ -253,7 +256,7 @@ proc renderIfStmt(n: MyNimNode): string =
           if innerBranch.kind == nnkElifBranch:
             result &= ind() & "elif " & renderNode(innerBranch[0]) & ":\n"
             incIndent()
-            result &= renderNode(innerBranch[1])
+            result &= renderStmtOrExpr(innerBranch[1])
             decIndent()
           elif innerBranch.kind == nnkElse:
             # Recursively handle nested else-if
@@ -263,38 +266,38 @@ proc renderIfStmt(n: MyNimNode): string =
             else:
               result &= ind() & "else:\n"
               incIndent()
-              result &= renderNode(innerBranch[0])
+              result &= renderStmtOrExpr(innerBranch[0])
               decIndent()
       else:
         result &= ind() & "else:\n"
         incIndent()
-        result &= renderNode(branch[0])
+        result &= renderStmtOrExpr(branch[0])
         decIndent()
 
 
 proc renderElifBranch(n: MyNimNode): string =
   result = ind() & "elif " & renderNode(n[0]) & ":\n"
   incIndent()
-  result &= renderNode(n[1])
+  result &= renderStmtOrExpr(n[1])
   decIndent()
 
 proc renderElse(n: MyNimNode): string =
   result = ind() & "else:\n"
   incIndent()
-  result &= renderNode(n[0])
+  result &= renderStmtOrExpr(n[0])
   decIndent()
 
 proc renderWhileStmt(n: MyNimNode): string =
   result = ind() & "while " & renderNode(n[0]) & ":\n"
   incIndent()
-  result &= renderNode(n[1])
+  result &= renderStmtOrExpr(n[1])
   decIndent()
 
 proc renderForStmt(n: MyNimNode): string =
   result = ind() & "for " & renderNode(n[0])
   result &= " in " & renderNode(n[1]) & ":\n"
   incIndent()
-  result &= renderNode(n[2])
+  result &= renderStmtOrExpr(n[2])
   decIndent()
 
 proc renderCaseStmt(n: MyNimNode): string =
@@ -310,7 +313,7 @@ proc renderOfBranch(n: MyNimNode): string =
     result &= renderNode(n[i])
   result &= ":\n"
   incIndent()
-  result &= renderNode(n[n.len-1])
+  result &= renderStmtOrExpr(n[n.len-1])
   decIndent()
 
 proc renderReturnStmt(n: MyNimNode): string =
@@ -359,14 +362,21 @@ proc renderExceptBranch(n: MyNimNode): string =
       result &= renderNode(n[i])
   result &= ":\n"
   incIndent()
-  result &= renderNode(n[n.len - 1])
+  result &= renderStmtOrExpr(n[n.len - 1])
   decIndent()
 
 proc renderFinally(n: MyNimNode): string =
   result = ind() & "finally:\n"
   incIndent()
   if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= renderNode(n[0])
+    result &= renderStmtOrExpr(n[0])
+  decIndent()
+
+proc renderDefer(n: MyNimNode): string =
+  result = ind() & "defer:\n"
+  incIndent()
+  if n.len > 0 and n[0].kind != nnkEmpty:
+    result &= renderStmtOrExpr(n[0])
   decIndent()
 
 # Procedure/function rendering
@@ -692,6 +702,8 @@ proc renderNode(n: MyNimNode): string =
     result = renderExceptBranch(n)
   of nnkFinally:
     result = renderFinally(n)
+  of nnkDefer:
+    result = renderDefer(n)
 
   # Procedures/functions
   of nnkProcDef:

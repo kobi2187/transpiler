@@ -22,11 +22,12 @@ proc addSelfParameter*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
 
     for member in node.members:
       if member.kind == xnkFuncDecl:
-        # Check if this is a static method (would have metadata)
-        # For now, assume all methods need self parameter
-        # TODO: Check for static modifier
+        # Skip static functions - they don't need self parameter
+        if member.funcIsStatic:
+          newMembers.add(member)
+          continue
 
-        # Add self parameter as first parameter
+        # Add self parameter as first parameter for instance methods
         let selfParam = XLangNode(
           kind: xnkParameter,
           paramName: "self",
@@ -43,6 +44,9 @@ proc addSelfParameter*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
         var newMember = member
         newMember.params = newParams
         newMembers.add(newMember)
+      elif member.kind == xnkMethodDecl:
+        # Methods already have receiver info - don't add self parameter
+        newMembers.add(member)
       elif member.kind == xnkConstructorDecl:
         # Constructors don't need self, but we need to track that result is available
         # This is handled by the Nim code generator

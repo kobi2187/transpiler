@@ -140,8 +140,8 @@ let nimDefaultPassIDs = @[tpNormalizeOperators, tpForToWhile, tpDoWhileToWhile, 
                          tpWithToDefer, tpAsyncNormalization, tpUnionToVariant, tpLinqToSequtils, tpOperatorOverload, tpPatternMatching,
                          tpDecoratorAttribute, tpExtensionMethods, tpLambdaNormalization, tpEnumNormalization, tpSafeNavigation,
                          tpResourceToDefer, tpThrowExpression, tpGeneratorExpressions, tpStringInterpolation, tpIndexerToProcs,
-                         tpSwitchExprToCase, tpLockToWithLock, tpStackAllocToSeq, tpConversionOpToProc, tpCheckedToBlock, tpFixedToBlock,
-                         tpLocalFunctionToProc, tpUnsafeToNimBlock, tpDelegateToProcType, tpNullableToOption] # , tpAddSelfParameter - DISABLED temporarily
+                         tpSwitchExprToCase, tpLockToWithLock, tpStackAllocToSeq, tpCheckedToBlock, tpFixedToBlock,
+                         tpLocalFunctionToProc, tpUnsafeToNimBlock, tpDelegateToProcType, tpNullableToOption] # , tpConversionOpToProc - using direct impl in xlangtonim instead # , tpAddSelfParameter - DISABLED temporarily
 
 let goDefaultPassIDs = @[tpGoErrorHandling, tpGoDefer, tpGoConcurrency, tpGoTypeAssertions, tpGoImplicitInterfaces, tpGoPanicRecover]
 

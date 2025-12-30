@@ -1166,7 +1166,12 @@ proc conv_xnkYieldFromStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
 ## C#: `this.x`
 ## Nim: `self.x`
 proc conv_xnkThisExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
-  newIdentNode("self")
+  # In constructors, 'this' should be 'result'
+  # In instance methods, 'this' should be 'self'
+  if ctx.inConstructor:
+    newIdentNode("result")
+  else:
+    newIdentNode("self")
 
 ## C#: `break;`
 ## Nim: `break`
@@ -1295,6 +1300,15 @@ proc conv_xnkConstructorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode
 
   # Body
   let body = newNimNode(nnkStmtList)
+
+  # Add result = TypeName() initialization at the start
+  if className.len > 0:
+    let initStmt = newNimNode(nnkAsgn)
+    initStmt.add(newIdentNode("result"))
+    let objConstr = newNimNode(nnkObjConstr)
+    objConstr.add(newIdentNode(className))
+    initStmt.add(objConstr)
+    body.add(initStmt)
 
   # Set constructor flag so field accesses use result. instead of self.
   ctx.inConstructor = true
@@ -1427,7 +1441,79 @@ proc conv_xnkOperatorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
   result.add(body)
 
-proc conv_xnkConversionOperatorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode = notYetImpl("xnkConversionOperatorDecl")
+proc conv_xnkConversionOperatorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
+  ## Convert C# conversion operators to Nim procs
+  ## C#: public static implicit operator int(Integer value) => value.Value;
+  ## Nim: proc toInt*(value: Integer): int = value.value
+  result = newNimNode(nnkProcDef)
+
+  # Generate function name from target type
+  let toTypeName = if node.extConversionToType.kind == xnkNamedType:
+    node.extConversionToType.typeName
+  else:
+    "Converted"
+  let funcName = "to" & toTypeName[0].toUpperAscii & toTypeName[1..^1] & "*"  # public
+
+  # 0: name
+  result.add(newIdentNode(funcName))
+  # 1: empty
+  result.add(newEmptyNode())
+  # 2: empty
+  result.add(newEmptyNode())
+
+  # 3: formal params (return type + parameters)
+  let formalParams = newNimNode(nnkFormalParams)
+  formalParams.add(convertToNimAST(node.extConversionToType, ctx))  # return type
+
+  # Add the conversion parameter
+  let param = newNimNode(nnkIdentDefs)
+  param.add(newIdentNode(node.extConversionParamName))
+  param.add(convertToNimAST(node.extConversionFromType, ctx))
+  param.add(newEmptyNode())  # no default
+  formalParams.add(param)
+
+  result.add(formalParams)
+  # 4: pragmas - empty for now (could add {.inline.} or {.converter.})
+  result.add(newEmptyNode())
+  # 5: reserved
+  result.add(newEmptyNode())
+  # 6: body - Get the expression from the XLang body and return it
+  # The body is a BlockStmt with a ReturnStmt that has a returnExpr (or returnValue)
+  # We'll extract the expression directly from the XLang AST before conversion
+  let newBody = newStmtList()
+
+  if node.extConversionBody.kind == xnkBlockStmt and node.extConversionBody.blockBody.len > 0:
+    let firstStmt = node.extConversionBody.blockBody[0]
+    if firstStmt.kind == xnkReturnStmt:
+      # Extract the return expression from XLang and convert it
+      if firstStmt.returnExpr.isSome:
+        let exprToReturn = firstStmt.returnExpr.get
+        # Create: let convResult = <expression>
+        let letSection = newNimNode(nnkLetSection)
+        let identDefs = newNimNode(nnkIdentDefs)
+        identDefs.add(newIdentNode("convResult"))
+        identDefs.add(newEmptyNode())
+        identDefs.add(convertToNimAST(exprToReturn, ctx))
+        letSection.add(identDefs)
+        newBody.add(letSection)
+        # Create: return convResult
+        let returnStmt = newNimNode(nnkReturnStmt)
+        returnStmt.add(newIdentNode("convResult"))
+        newBody.add(returnStmt)
+      else:
+        # No expression, just return
+        let returnStmt = newNimNode(nnkReturnStmt)
+        returnStmt.add(newEmptyNode())
+        newBody.add(returnStmt)
+    else:
+      # Not a return statement - convert normally
+      newBody.add(convertToNimAST(firstStmt, ctx))
+  else:
+    # Fallback - convert the whole body
+    for stmt in node.extConversionBody.blockBody:
+      newBody.add(convertToNimAST(stmt, ctx))
+
+  result.add(newBody)
 proc conv_xnkEnumMember(node: XLangNode, ctx: ConversionContext): MyNimNode = notYetImpl("xnkEnumMember")
 
 ## C: `extern void foo(int x);`
@@ -2131,12 +2217,12 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
     of xnkNamespace:
       result = conv_xnkNamespace(node, context)
     of xnkFuncDecl, xnkMethodDecl:
-      # Choose converter based on whether we're in a class context
-      if context.isInClassScope():
+      # Choose converter based on whether we're in a class context and if it's static
+      if context.isInClassScope() and not node.funcIsStatic:
         # Instance method - add self parameter
         result = conv_xnkFuncDecl_instanceMethod(node, context)
       else:
-        # Standalone function
+        # Standalone function or static method
         result = conv_xnkFuncDecl_standalone(node, context)
     of xnkClassDecl, xnkStructDecl:
       result = conv_xnkClassDecl_structDecl(node, context)

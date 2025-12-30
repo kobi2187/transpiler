@@ -405,7 +405,7 @@ proc visit*(node: var XLangNode, p: proc (x: var XLangNode)) =
   of xnkExternal_ConversionOp:
     visit node.extConversionFromType, p
     visit node.extConversionToType, p
-    if node.extConversionBody.isSome(): visit node.extConversionBody.get, p
+    visit node.extConversionBody, p  # No longer Option
   of xnkRefExpr:
     visit node.refExpr, p
   of xnkDefaultExpr:

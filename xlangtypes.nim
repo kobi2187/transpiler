@@ -256,6 +256,7 @@ type
       returnType*: Option[XLangNode]
       body*: XLangNode
       isAsync*: bool
+      funcIsStatic*: bool  # Static functions don't get self parameter
       funcVisibility*: string  # "public", "private", "internal", "protected", etc.
 
     of xnkMethodDecl:
@@ -793,9 +794,10 @@ type
     # C# Conversion Operator → shares fields with xnkConversionOperatorDecl
     of xnkExternal_ConversionOp:
       extConversionIsImplicit*: bool
+      extConversionParamName*: string
       extConversionFromType*: XLangNode
       extConversionToType*: XLangNode
-      extConversionBody*: Option[XLangNode]
+      extConversionBody*: XLangNode  # Changed from Option - C# parser always provides body
 
     # C# using / Java try-with-resources → shares fields with xnkResourceStmt
     of xnkExternal_Resource:

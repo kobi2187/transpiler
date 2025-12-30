@@ -1191,10 +1191,45 @@ partial class Program
     }
     static JObject ConvertConversionOperator(ConversionOperatorDeclarationSyntax conversionOp)
     {
+        // Handle both block bodies and expression bodies (=>)
+        JToken bodyJson;
+        if (conversionOp.Body != null)
+        {
+            bodyJson = ConvertBlock(conversionOp.Body);
+        }
+        else if (conversionOp.ExpressionBody != null)
+        {
+            // Convert expression body (=>) to a block with return statement
+            bodyJson = new JObject
+            {
+                ["kind"] = "xnkBlockStmt",
+                ["blockBody"] = new JArray
+                {
+                    new JObject
+                    {
+                        ["kind"] = "xnkReturnStmt",
+                        ["returnExpr"] = ConvertExpression(conversionOp.ExpressionBody.Expression)
+                    }
+                }
+            };
+        }
+        else
+        {
+            bodyJson = JValue.CreateNull();
+        }
+
+        // Extract parameter name for conversion function
+        var paramName = "value";  // default
+        if (conversionOp.ParameterList.Parameters.Count > 0)
+        {
+            paramName = conversionOp.ParameterList.Parameters[0].Identifier.Text;
+        }
+
         return new JObject
         {
             ["kind"] = "xnkExternal_ConversionOp",
             ["extConversionIsImplicit"] = conversionOp.ImplicitOrExplicitKeyword.Text == "implicit",
+            ["extConversionParamName"] = paramName,
             ["extConversionFromType"] = conversionOp.ParameterList.Parameters.Count > 0
                 ? new JObject
                 {
@@ -1207,7 +1242,7 @@ partial class Program
                 ["kind"] = "xnkNamedType",
                 ["typeName"] = conversionOp.Type.ToString()
             },
-            ["extConversionBody"] = conversionOp.Body != null ? ConvertBlock(conversionOp.Body) : JValue.CreateNull()
+            ["extConversionBody"] = bodyJson
         };
     }
     static JObject ConvertIndexer(IndexerDeclarationSyntax indexer)

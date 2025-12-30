@@ -780,7 +780,11 @@ proc analyzeReferences(a: Analyzer, node: XLangNode) =
     a.analyzeReferencesOption(node.sliceEnd)
     a.analyzeReferencesOption(node.sliceStep)
 
-  of xnkCastExpr, xnkTypeAssertion:
+  of xnkCastExpr:
+    a.analyzeReferences(node.castExpr)
+    a.analyzeReferences(node.castType)
+
+  of xnkTypeAssertion:
     a.analyzeReferences(node.assertExpr)
     a.analyzeReferences(node.assertType)
 

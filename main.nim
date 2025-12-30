@@ -68,14 +68,136 @@ proc collectXljsFiles(path: string): seq[string] =
   else:
     return @[]
 
-proc main() =
-  var inputPath, outputDir: string
-  var verbose = false
-  var skipTransforms = false
-  var targetLang = "nim"
-  var outputJson = false
-  var useStdout = false
+proc stepParseXLang(inputFile: string, errorCollector: ErrorCollector, verbose: bool): XLangNode =
+  ## Step 1: Parse JSON to XLang AST
+  if verbose:
+    echo "DEBUG: About to parse xljs file..."
+  result = parseXLangJson(inputFile)
+  if verbose:
+    echo "DEBUG: XLang AST kind: ", result.kind
+    echo "DEBUG: XLang AST has ", (if result.kind == xnkFile: $result.moduleDecls.len else: "N/A"), " module declarations"
+    echo "✓ XLang AST created successfully"
 
+proc stepSemanticAnalysis(xlangAst: XLangNode, verbose: bool): SemanticInfo =
+  ## Step 1.5: Run semantic analysis
+  if verbose:
+    echo "DEBUG: Running semantic analysis..."
+  result = analyzeProgram(xlangAst, NimKeywords)
+  if verbose:
+    echo "✓ Semantic analysis complete"
+    echo "  - Symbols: ", result.allSymbols.len
+    echo "  - Scopes: ", result.allScopes.len
+    echo "  - Renames: ", result.renames.len
+    if result.warnings.len > 0:
+      echo "  - Warnings: ", result.warnings.len
+
+proc stepTransformPasses(xlangAst: var XLangNode, semanticInfo: SemanticInfo, passManager: PassManager2,
+                        inputFile: string, infiniteLoopFiles: var seq[tuple[file: string, iterations: int, kinds: seq[XLangNodeKind]]],
+                        verbose: bool) =
+  ## Step 2: Apply transformation passes
+  if verbose:
+    echo "DEBUG: Running transformation passes..."
+    echo "DEBUG: About to run passes on AST..."
+  xlangAst = passManager.run(xlangAst, verbose, semanticInfo)
+  if passManager.result.maxIterationsReached:
+    infiniteLoopFiles.add((
+      file: inputFile,
+      iterations: passManager.result.iterations,
+      kinds: passManager.result.loopKinds
+    ))
+    echo "WARNING: Max iterations reached for: ", inputFile
+  elif passManager.result.loopWarning and verbose:
+    echo "WARNING: Potential infinite loop detected (", passManager.result.iterations, " iterations)"
+  if verbose:
+    echo "DEBUG: After transformations, AST kind: ", xlangAst.kind
+    echo "✓ Transformations applied successfully"
+
+proc stepSanitizeIdentifiers(xlangAst: var XLangNode, verbose: bool) =
+  ## Step 2.5: Apply identifier sanitization
+  if verbose:
+    echo "DEBUG: Applying Nim identifier sanitization..."
+  xlangAst = applyNimIdentifierSanitization(xlangAst)
+  if verbose:
+    echo "✓ Identifier sanitization applied"
+
+proc stepFixGenericTypes(xlangAst: var XLangNode, verbose: bool) =
+  ## Step 2.6: Fix generic type syntax
+  if verbose:
+    echo "DEBUG: Fixing generic type syntax..."
+  xlangAst = applyGenericTypeFix(xlangAst)
+  if verbose:
+    echo "✓ Generic type syntax fixed"
+
+proc stepMapPrimitiveTypes(xlangAst: var XLangNode, verbose: bool) =
+  ## Step 2.7: Apply primitive type mapping
+  if verbose:
+    echo "DEBUG: Applying primitive type mapping..."
+  xlangAst = applyPrimitiveTypeMapping(xlangAst)
+  if verbose:
+    echo "✓ Primitive type mapping applied"
+
+proc stepConvertToNim(xlangAst: XLangNode, semanticInfo: SemanticInfo, inputFile: string, verbose: bool): MyNimNode =
+  ## Step 3: Convert XLang AST to Nim AST
+  if verbose:
+    echo "DEBUG: About to convert XLang AST to Nim AST..."
+  let ctx = newContext()
+  ctx.currentFile = inputFile
+  ctx.semanticInfo = semanticInfo
+  if xlangAst.kind == xnkFile and xlangAst.sourceLang != "":
+    ctx.inputLang = xlangAst.sourceLang
+    if verbose:
+      echo "DEBUG: Source language: ", ctx.inputLang
+  result = convertToNimAST(xlangAst, ctx)
+  if verbose:
+    echo "DEBUG: Nim AST root kind: ", result.kind
+    echo "DEBUG: Nim AST has ", result.sons.len, " sons"
+    echo "✓ Nim AST created successfully"
+
+proc stepGenerateCode(nimAst: MyNimNode, verbose: bool): string =
+  ## Step 4: Generate Nim code from AST
+  if verbose:
+    echo "DEBUG: About to generate Nim code from AST..."
+  result = nimAst.toNimCode()
+  if verbose:
+    echo "DEBUG: Generated Nim code length: ", result.len, " characters"
+    echo "✓ Nim code generated successfully"
+
+proc stepWriteOutputs(nimCode: string, nimAst: MyNimNode, xlangAst: XLangNode, inputFile, outputDir, inputRoot: string,
+                     useStdout, outputJson, verbose: bool) =
+  ## Step 5: Write outputs
+  if useStdout:
+    stdout.write(nimCode)
+  else:
+    let relativeOutputPath = getOutputFileName(xlangAst, inputFile, ".nim", inputRoot)
+    let nimOutputFile = outputDir / relativeOutputPath
+    let parentDir = nimOutputFile.parentDir()
+    if parentDir != "" and not dirExists(parentDir):
+      createDir(parentDir)
+      if verbose:
+        echo "DEBUG: Created directory: ", parentDir
+    if verbose:
+      echo "DEBUG: About to write .nim file to: ", nimOutputFile
+    writeFile(nimOutputFile, nimCode)
+    if verbose:
+      echo "✓ Nim code written to: ", nimOutputFile
+
+  if outputJson:
+    let nimJsonFile = inputFile.changeFileExt(".nimjs")
+    if verbose:
+      echo "DEBUG: About to serialize Nim AST to JSON using %* operator..."
+    let jsonNode = %nimAst
+    if verbose:
+      echo "DEBUG: JSON node created, about to pretty-print..."
+    let jsonContent = pretty(jsonNode)
+    if verbose:
+      echo "DEBUG: JSON content length: ", jsonContent.len, " characters"
+      echo "DEBUG: About to write .nimjs file to: ", nimJsonFile
+    writeFile(nimJsonFile, jsonContent)
+    if verbose:
+      echo "✓ Nim AST JSON written to: ", nimJsonFile
+      echo "DEBUG: First 200 chars of nimjs: ", jsonContent[0..<min(200, jsonContent.len)]
+
+proc parseArgs(inputPath, outputDir: var string, verbose, skipTransforms, outputJson, useStdout: var bool, targetLang: var string) =
   for kind, key, val in getopt():
     case kind
     of cmdArgument:
@@ -88,24 +210,47 @@ proc main() =
       of "target-lang", "t": targetLang = val
       of "output-json", "j": outputJson = true
       of "stdout", "s": useStdout = true
-    of cmdEnd: assert(false)  # Should not happen
+    of cmdEnd: assert(false)
+
+proc setupOutputDir(inputPath: string, useStdout, verbose: bool): string =
+  ## Sets up output directory as "transpiler_output" at the root of the input path
+  ## Returns the absolute path to the output directory
+  if useStdout:
+    return ""
+
+  # Determine the root directory for output
+  let rootDir = if dirExists(inputPath):
+    inputPath.absolutePath()
+  elif fileExists(inputPath):
+    inputPath.parentDir().absolutePath()
+  else:
+    getCurrentDir()
+
+  # Output directory is always "transpiler_output" at the root
+  result = rootDir / "transpiler_output"
+
+  if not dirExists(result):
+    createDir(result)
+    if verbose:
+      echo "Created output directory: ", result
+  elif verbose:
+    echo "Using output directory: ", result
+
+proc main() =
+  var inputPath: string
+  var outputDirIgnored: string  # For backward compatibility with parseArgs, but ignored
+  var verbose = false
+  var skipTransforms = false
+  var targetLang = "nim"
+  var outputJson = false
+  var useStdout = false
+
+  parseArgs(inputPath, outputDirIgnored, verbose, skipTransforms, outputJson, useStdout, targetLang)
 
   if inputPath == "":
     quit("No input path specified (file or directory)")
 
-  # Set default output directory if not specified (unless using stdout)
-  if not useStdout:
-    if outputDir == "":
-      outputDir = getCurrentDir() / "transpiler_output"
-
-    # Ensure output directory is absolute
-    outputDir = outputDir.absolutePath()
-
-    # Create output directory if it doesn't exist
-    if not dirExists(outputDir):
-      createDir(outputDir)
-      if verbose:
-        echo "Created output directory: ", outputDir
+  let outputDir = setupOutputDir(inputPath, useStdout, verbose)
 
   # Collect all xljs files
   let xlsjFiles = collectXljsFiles(inputPath)
@@ -156,242 +301,88 @@ proc main() =
     # Step 1: Parse JSON to XLang AST
     var xlangAst: XLangNode
     try:
-      if verbose:
-        echo "DEBUG: About to parse xljs file..."
-      xlangAst = parseXLangJson(inputFile)
-      if verbose:
-        echo "DEBUG: XLang AST kind: ", xlangAst.kind
-        echo "DEBUG: XLang AST has ", (if xlangAst.kind == xnkFile: $xlangAst.moduleDecls.len else: "N/A"), " module declarations"
-        echo "✓ XLang AST created successfully"
+      xlangAst = stepParseXLang(inputFile, errorCollector, verbose)
     except Exception as e:
       echo "ERROR: Failed to parse input file: ", e.msg
       echo "Stack trace: ", e.getStackTrace()
-      errorCollector.addError(
-        tekParseError,
-        "Failed to parse input file: " & e.msg,
-        location = inputFile,
-        details = e.getStackTrace()
-      )
-      continue  # Skip to next file
+      errorCollector.addError(tekParseError, "Failed to parse input file: " & e.msg, location = inputFile, details = e.getStackTrace())
+      continue
 
-    # Step 1.5: Run semantic analysis (symbol tables, identifier resolution)
+    # Step 1.5: Run semantic analysis
     var semanticInfo: SemanticInfo
     try:
-      if verbose:
-        echo "DEBUG: Running semantic analysis..."
-      semanticInfo = analyzeProgram(xlangAst, NimKeywords)
-      if verbose:
-        echo "✓ Semantic analysis complete"
-        echo "  - Symbols: ", semanticInfo.allSymbols.len
-        echo "  - Scopes: ", semanticInfo.allScopes.len
-        echo "  - Renames: ", semanticInfo.renames.len
-        if semanticInfo.warnings.len > 0:
-          echo "  - Warnings: ", semanticInfo.warnings.len
+      semanticInfo = stepSemanticAnalysis(xlangAst, verbose)
     except Exception as e:
       echo "ERROR: Semantic analysis failed: ", e.msg
       echo "Stack trace: ", e.getStackTrace()
-      errorCollector.addError(
-        tekValidationError,
-        "Semantic analysis failed: " & e.msg,
-        location = inputFile,
-        details = e.getStackTrace()
-      )
-      continue  # Skip to next file
+      errorCollector.addError(tekValidationError, "Semantic analysis failed: " & e.msg, location = inputFile, details = e.getStackTrace())
+      continue
 
-    # Step 2: Apply transformation passes (unless disabled)
+    # Step 2: Apply transformation passes
     if not skipTransforms:
-      if verbose:
-        echo "DEBUG: Running transformation passes..."
-
       try:
-        if verbose:
-          echo "DEBUG: About to run passes on AST..."
-        xlangAst = passManager.run(xlangAst, verbose, semanticInfo)
-
-        # Check for infinite loop
-        if passManager.result.maxIterationsReached:
-          infiniteLoopFiles.add((
-            file: inputFile,
-            iterations: passManager.result.iterations,
-            kinds: passManager.result.loopKinds
-          ))
-          echo "WARNING: Max iterations reached for: ", inputFile
-        elif passManager.result.loopWarning and verbose:
-          echo "WARNING: Potential infinite loop detected (", passManager.result.iterations, " iterations)"
-
-        if verbose:
-          echo "DEBUG: After transformations, AST kind: ", xlangAst.kind
-          echo "✓ Transformations applied successfully"
+        stepTransformPasses(xlangAst, semanticInfo, passManager, inputFile, infiniteLoopFiles, verbose)
       except Exception as e:
         echo "ERROR: Transformation pipeline failed: ", e.msg
         echo "Stack trace: ", e.getStackTrace()
-        errorCollector.addError(
-          tekTransformError,
-          "Transformation pipeline failed: " & e.msg,
-          location = "Pass manager",
-          details = e.getStackTrace()
-        )
-        continue  # Skip to next file
+        errorCollector.addError(tekTransformError, "Transformation pipeline failed: " & e.msg, location = "Pass manager", details = e.getStackTrace())
+        continue
 
-    # Step 2.5: Apply identifier sanitization (Nim-specific, runs once on whole tree)
+    # Step 2.5: Apply identifier sanitization
     try:
-      if verbose:
-        echo "DEBUG: Applying Nim identifier sanitization..."
-      xlangAst = applyNimIdentifierSanitization(xlangAst)
-      if verbose:
-        echo "✓ Identifier sanitization applied"
+      stepSanitizeIdentifiers(xlangAst, verbose)
     except Exception as e:
       echo "ERROR: Identifier sanitization failed: ", e.msg
       echo "Stack trace: ", e.getStackTrace()
-      errorCollector.addError(
-        tekTransformError,
-        "Identifier sanitization failed: " & e.msg,
-        location = "Nim identifier sanitization",
-        details = e.getStackTrace()
-      )
-      continue  # Skip to next file
+      errorCollector.addError(tekTransformError, "Identifier sanitization failed: " & e.msg, location = "Nim identifier sanitization", details = e.getStackTrace())
+      continue
 
-    # Step 2.6: Fix generic type syntax (List<T> -> proper generic nodes)
-    # Must be done BEFORE primitive type mapping so types inside generics get mapped
+    # Step 2.6: Fix generic type syntax
     try:
-      if verbose:
-        echo "DEBUG: Fixing generic type syntax..."
-      xlangAst = applyGenericTypeFix(xlangAst)
-      if verbose:
-        echo "✓ Generic type syntax fixed"
+      stepFixGenericTypes(xlangAst, verbose)
     except Exception as e:
       echo "ERROR: Generic type fix failed: ", e.msg
       echo "Stack trace: ", e.getStackTrace()
-      errorCollector.addError(
-        tekTransformError,
-        "Generic type fix failed: " & e.msg,
-        location = "Generic type syntax fix",
-        details = e.getStackTrace()
-      )
-      continue  # Skip to next file
+      errorCollector.addError(tekTransformError, "Generic type fix failed: " & e.msg, location = "Generic type syntax fix", details = e.getStackTrace())
+      continue
 
-    # Step 2.7: Apply primitive type mapping (C#/Java types -> Nim types)
+    # Step 2.7: Apply primitive type mapping
     try:
-      if verbose:
-        echo "DEBUG: Applying primitive type mapping..."
-      xlangAst = applyPrimitiveTypeMapping(xlangAst)
-      if verbose:
-        echo "✓ Primitive type mapping applied"
+      stepMapPrimitiveTypes(xlangAst, verbose)
     except Exception as e:
       echo "ERROR: Primitive type mapping failed: ", e.msg
       echo "Stack trace: ", e.getStackTrace()
-      errorCollector.addError(
-        tekTransformError,
-        "Primitive type mapping failed: " & e.msg,
-        location = "Primitive type mapping",
-        details = e.getStackTrace()
-      )
-      continue  # Skip to next file
+      errorCollector.addError(tekTransformError, "Primitive type mapping failed: " & e.msg, location = "Primitive type mapping", details = e.getStackTrace())
+      continue
 
     # Step 3: Convert XLang AST to Nim AST
     var nimAst: MyNimNode
     try:
-      if verbose:
-        echo "DEBUG: About to convert XLang AST to Nim AST..."
-      # Create context with file information and semantic info for better error reporting
-      let ctx = newContext()
-      ctx.currentFile = inputFile
-      ctx.semanticInfo = semanticInfo
-
-      # Get input language from the XLang AST
-      if xlangAst.kind == xnkFile and xlangAst.sourceLang != "":
-        ctx.inputLang = xlangAst.sourceLang
-        if verbose:
-          echo "DEBUG: Source language: ", ctx.inputLang
-
-      nimAst = convertToNimAST(xlangAst, ctx)
-      if verbose:
-        echo "DEBUG: Nim AST root kind: ", nimAst.kind
-        echo "DEBUG: Nim AST has ", nimAst.sons.len, " sons"
-        echo "✓ Nim AST created successfully"
+      nimAst = stepConvertToNim(xlangAst, semanticInfo, inputFile, verbose)
     except Exception as e:
       echo "ERROR [", inputFile, "]: Failed to convert XLang to Nim AST: ", e.msg
       echo "Stack trace: ", e.getStackTrace()
-      errorCollector.addError(
-        tekConversionError,
-        "Failed to convert XLang to Nim AST: " & e.msg,
-        location = inputFile,
-        details = e.getStackTrace()
-      )
-      continue  # Skip to next file
+      errorCollector.addError(tekConversionError, "Failed to convert XLang to Nim AST: " & e.msg, location = inputFile, details = e.getStackTrace())
+      continue
 
     # Step 4: Generate Nim code from AST
     var nimCode: string
     try:
-      if verbose:
-        echo "DEBUG: About to generate Nim code from AST..."
-      nimCode = nimAst.toNimCode()
-      if verbose:
-        echo "DEBUG: Generated Nim code length: ", nimCode.len, " characters"
-        echo "✓ Nim code generated successfully"
+      nimCode = stepGenerateCode(nimAst, verbose)
     except Exception as e:
       echo "ERROR: Failed to generate Nim code: ", e.msg
       echo "Stack trace: ", e.getStackTrace()
-      errorCollector.addError(
-        tekCodegenError,
-        "Failed to generate Nim code: " & e.msg,
-        location = "astprinter",
-        details = e.getStackTrace()
-      )
-      continue  # Skip to next file
+      errorCollector.addError(tekCodegenError, "Failed to generate Nim code: " & e.msg, location = "astprinter", details = e.getStackTrace())
+      continue
 
     # Step 5: Write outputs
     try:
-      if useStdout:
-        # Write to stdout
-        stdout.write(nimCode)
-      else:
-        # Determine output file name relative to inputRoot, then place in outputDir
-        let relativeOutputPath = getOutputFileName(xlangAst, inputFile, ".nim", inputRoot)
-        let nimOutputFile = outputDir / relativeOutputPath
-
-        # Create parent directories if needed
-        let parentDir = nimOutputFile.parentDir()
-        if parentDir != "" and not dirExists(parentDir):
-          createDir(parentDir)
-          if verbose:
-            echo "DEBUG: Created directory: ", parentDir
-
-        if verbose:
-          echo "DEBUG: About to write .nim file to: ", nimOutputFile
-
-        # Write .nim file
-        writeFile(nimOutputFile, nimCode)
-        if verbose:
-          echo "✓ Nim code written to: ", nimOutputFile
-
-      # Optionally write .nimjs file
-      if outputJson:
-        let nimJsonFile = inputFile.changeFileExt(".nimjs")
-        if verbose:
-          echo "DEBUG: About to serialize Nim AST to JSON using %* operator..."
-        let jsonNode = %nimAst  # Uses the %* operator we defined
-        if verbose:
-          echo "DEBUG: JSON node created, about to pretty-print..."
-        let jsonContent = pretty(jsonNode)
-        if verbose:
-          echo "DEBUG: JSON content length: ", jsonContent.len, " characters"
-          echo "DEBUG: About to write .nimjs file to: ", nimJsonFile
-        writeFile(nimJsonFile, jsonContent)
-        if verbose:
-          echo "✓ Nim AST JSON written to: ", nimJsonFile
-          echo "DEBUG: First 200 chars of nimjs: ", jsonContent[0..<min(200, jsonContent.len)]
-
+      stepWriteOutputs(nimCode, nimAst, xlangAst, inputFile, outputDir, inputRoot, useStdout, outputJson, verbose)
     except Exception as e:
       echo "ERROR: Failed to write output: ", e.msg
       echo "Stack trace: ", e.getStackTrace()
-      errorCollector.addError(
-        tekCodegenError,
-        "Failed to write output: " & e.msg,
-        location = inputFile,
-        details = e.getStackTrace()
-      )
-      continue  # Skip to next file
+      errorCollector.addError(tekCodegenError, "Failed to write output: " & e.msg, location = inputFile, details = e.getStackTrace())
+      continue
 
   # Report infinite loop files
   if infiniteLoopFiles.len > 0:

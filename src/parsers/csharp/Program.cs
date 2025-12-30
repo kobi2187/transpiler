@@ -456,7 +456,8 @@ partial class Program
                 ["returnType"] = new JObject { ["kind"] = "xnkNamedType", ["typeName"] = method.ReturnType.ToString() },
                 ["body"] = bodyToken,
                 ["isAsync"] = method.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.AsyncKeyword)),
-                ["funcVisibility"] = ExtractVisibility(method.Modifiers)
+                ["funcVisibility"] = ExtractVisibility(method.Modifiers),
+                ["funcIsStatic"] = method.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.StaticKeyword))
             };
         }
     }
@@ -905,7 +906,11 @@ partial class Program
                 ["catchBody"] = ConvertBlock(c.Block)
             })),
             ["finallyClause"] = tryStmt.Finally != null
-                ? ConvertBlock(tryStmt.Finally.Block)
+                ? new JObject
+                {
+                    ["kind"] = "xnkFinallyStmt",
+                    ["finallyBody"] = ConvertBlock(tryStmt.Finally.Block)
+                }
                 : JValue.CreateNull()
         };
     }

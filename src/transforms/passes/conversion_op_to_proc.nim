@@ -43,9 +43,10 @@ proc transformConversionOpToProc*(node: XLangNode): XLangNode {.noSideEffect, gc
 
   # Extract conversion information
   let isImplicit = node.extConversionIsImplicit
+  let paramName = node.extConversionParamName
   let fromType = node.extConversionFromType
   let toType = node.extConversionToType
-  let bodyOpt = node.extConversionBody
+  let body = node.extConversionBody  # No longer Option
 
   # Generate function name based on target type
   let funcName = getFuncNameFromType(toType)
@@ -54,26 +55,21 @@ proc transformConversionOpToProc*(node: XLangNode): XLangNode {.noSideEffect, gc
   # C# conversion operators take one parameter of the source type
   let param = XLangNode(
     kind: xnkParameter,
-    paramName: "value",
+    paramName: paramName,
     paramType: some(fromType),
     defaultValue: none(XLangNode)
   )
 
-  # Determine if this is an abstract/interface declaration (no body)
-  # For abstract declarations, we'll create an empty block
-  let actualBody = if bodyOpt.isNone:
-    XLangNode(kind: xnkBlockStmt, blockBody: @[])
-  else:
-    bodyOpt.get
-
   # Create the function declaration
+  # Conversion operators are static in C#, so mark as static
   var funcNode = XLangNode(
     kind: xnkFuncDecl,
     funcName: funcName,
     params: @[param],
     returnType: some(toType),
-    body: actualBody,
-    isAsync: false
+    body: body,
+    isAsync: false,
+    funcIsStatic: true  # Conversion operators are static - no self parameter
   )
 
   # For implicit conversions, we could add a pragma or annotation

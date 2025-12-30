@@ -1,5 +1,4 @@
 import std/json
-# import jsony
 import xlangtypes
 
 
@@ -12,12 +11,13 @@ proc stripBOM(s: string): string =
 proc parseXLangJson*(filePath: string): XLangNode =
   ## Parse XLang AST from a JSON file
   ## Returns the root XLangNode
+  ## Note: Relies on natural failures when JSON fields don't match type definitions
+  ## Option fields will be none if JSON field name is wrong, causing errors downstream
   var jsonString = readFile(filePath).stripBOM()
 
   try:
     result = jsonString.parseJson().to(XLangNode)
   except JsonParsingError as e:
-    # If jsony fails, provide more helpful error message
     raise newException(IOError, "Failed to parse JSON from " & filePath & ": " & e.msg)
 
 
