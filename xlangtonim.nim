@@ -1,6 +1,6 @@
 import xlangtypes
 import src/helpers
-import options, strutils, tables, sets, sequtils, algorithm
+import options, strutils, tables, sets, sequtils, algorithm, os
 import src/my_nim_node
 import src/naming_conventions
 import src/semantic/semantic_analysis
@@ -418,10 +418,12 @@ proc conv_xnkFile(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result = newStmtList()
 
   # Add language-specific compatibility import based on input language
+  # Import from fixed location: ~/.transpiler/compat/
   if ctx.inputLang != "" and ctx.inputLang != "unknown" and ctx.inputLang != "nim":
     let compatImport = newNimNode(nnkImportStmt)
-    let compatModuleName = ctx.inputLang & "_compat"
-    compatImport.add(newIdentNode(compatModuleName))
+    let homeDir = getEnv("HOME")
+    let compatPath = homeDir & "/.transpiler/compat/" & ctx.inputLang & "_compat"
+    compatImport.add(newStrLitNode(compatPath))
     result.add(compatImport)
 
   for decl in node.moduleDecls:
@@ -639,7 +641,22 @@ proc conv_xnkBlockStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
 # Patch member access and index kinds to xlangtypes style
 proc conv_xnkMemberAccess(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result = newNimNode(nnkDotExpr)
-  result.add(convertToNimAST(node.memberExpr, ctx))
+
+  # Convert the left side (memberExpr)
+  # If it's an identifier referring to a type (used for static member access),
+  # convert PascalCase to snake_case following Nim module conventions
+  var leftSide = convertToNimAST(node.memberExpr, ctx)
+
+  if node.memberExpr.kind == xnkIdentifier:
+    # Check if this identifier might be a type name being used for static member access
+    # Type names in C# are PascalCase, Nim modules are snake_case
+    let originalName = node.memberExpr.identName
+    if originalName.len > 0 and originalName[0].isUpperAscii:
+      # This looks like a type name - convert to snake_case for module access
+      let snakeName = pascalToSnake(originalName)
+      leftSide = newIdentNode(snakeName)
+
+  result.add(leftSide)
   result.add(newIdentNode(node.memberName))
 
 proc conv_xnkIndexExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
@@ -1480,6 +1497,12 @@ proc conv_xnkConversionOperatorDecl(node: XLangNode, ctx: ConversionContext): My
   # 6: body - Get the expression from the XLang body and return it
   # The body is a BlockStmt with a ReturnStmt that has a returnExpr (or returnValue)
   # We'll extract the expression directly from the XLang AST before conversion
+
+  # IMPORTANT: Conversion operators are ALWAYS static in C#
+  # Create a non-class context to prevent identifier resolution from adding implicit self.
+  let savedClass = ctx.currentClass
+  ctx.clearCurrentClass()
+
   let newBody = newStmtList()
 
   if node.extConversionBody.kind == xnkBlockStmt and node.extConversionBody.blockBody.len > 0:
@@ -1512,6 +1535,9 @@ proc conv_xnkConversionOperatorDecl(node: XLangNode, ctx: ConversionContext): My
     # Fallback - convert the whole body
     for stmt in node.extConversionBody.blockBody:
       newBody.add(convertToNimAST(stmt, ctx))
+
+  # Restore class context
+  ctx.currentClass = savedClass
 
   result.add(newBody)
 proc conv_xnkEnumMember(node: XLangNode, ctx: ConversionContext): MyNimNode = notYetImpl("xnkEnumMember")
