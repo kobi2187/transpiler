@@ -125,6 +125,7 @@ proc getOutputFileName*(xlangAst: XLangNode, inputFile: string, extension: strin
   ## Determine the output filename based on input file structure
   ## Uses source directory structure relative to inputRoot to preserve uniqueness
   ## Each C# source file maps to its own Nim file with the same relative directory structure
+  ## Converts filenames to snake_case following Nim conventions
   ##
   ## Args:
   ##   xlangAst: The XLang AST (unused, kept for API compatibility)
@@ -132,10 +133,11 @@ proc getOutputFileName*(xlangAst: XLangNode, inputFile: string, extension: strin
   ##   extension: Output file extension (default ".nim")
   ##   inputRoot: The root input directory to make paths relative to
   let inputBaseName = inputFile.splitFile().name  # filename without extension
+  let snakeBaseName = pascalToSnake(inputBaseName)  # Convert to snake_case
 
   # If no inputRoot provided, use just the filename
   if inputRoot == "":
-    return inputBaseName & extension
+    return snakeBaseName & extension
 
   # Compute relative path from inputRoot to inputFile's directory
   let inputDir = inputFile.parentDir()
@@ -150,6 +152,6 @@ proc getOutputFileName*(xlangAst: XLangNode, inputFile: string, extension: strin
 
   # Convert relative path to snake_case for Nim conventions
   if relativeDir != "":
-    return pascalToSnake(relativeDir) & "/" & inputBaseName & extension
+    return pascalToSnake(relativeDir) & "/" & snakeBaseName & extension
   else:
-    return inputBaseName & extension
+    return snakeBaseName & extension

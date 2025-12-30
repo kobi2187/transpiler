@@ -112,21 +112,27 @@ proc compileNimFile(filePath: string, verbose: bool = false): CompileResult =
   if verbose and result.success:
     echo "✓ ", filePath
 
-proc generateReport(results: seq[CompileResult], outputPath: string = "") =
+proc generateReport(results: seq[CompileResult], outputPath: string = "", filterCategories: seq[ErrorCategory] = @[]) =
   ## Generate a detailed compilation report
   var errorsByCategory = initTable[ErrorCategory, seq[tuple[file: string, msg: string]]]()
   var totalFiles = results.len
   var successCount = 0
   var totalErrors = 0
 
-  # Collect statistics
+  # Collect statistics (with optional filtering)
+  var filteredErrors = 0
   for res in results:
     if res.success:
       successCount.inc
     else:
-      totalErrors += res.errorCount
       for err in res.errors:
         let cat = categorizeError(err)
+        # If filter is set, ONLY include filtered categories
+        if filterCategories.len > 0:
+          if cat notin filterCategories:
+            filteredErrors.inc
+            continue
+        totalErrors.inc
         if not errorsByCategory.hasKey(cat):
           errorsByCategory[cat] = @[]
         errorsByCategory[cat].add((file: res.file, msg: err))
@@ -141,7 +147,10 @@ proc generateReport(results: seq[CompileResult], outputPath: string = "") =
   report.add &"Total files tested:  {totalFiles}\n"
   report.add &"Successful:          {successCount} ({(successCount*100/totalFiles).formatFloat(ffDecimal, 2)}%)\n"
   report.add &"Failed:              {totalFiles - successCount} ({((totalFiles-successCount)*100/totalFiles).formatFloat(ffDecimal, 2)}%)\n"
-  report.add &"Total errors:        {totalErrors}\n\n"
+  report.add &"Total errors:        {totalErrors}\n"
+  if filteredErrors > 0:
+    report.add &"Excluded errors:     {filteredErrors} (not matching filter)\n"
+  report.add "\n"
 
   if successCount > 0:
     report.add "Successfully compiled files:\n"
@@ -214,6 +223,8 @@ proc main() =
   var outputPath = ""
   var verbose = false
   var maxFiles = 0  # 0 means all files
+  var maxErrors = 0  # 0 means unlimited
+  var filterCategories: seq[ErrorCategory] = @[]
 
   # Parse command line arguments
   var i = 1
@@ -230,18 +241,38 @@ proc main() =
       i.inc
       if i <= paramCount():
         maxFiles = parseInt(paramStr(i))
+    of "--max-errors":
+      i.inc
+      if i <= paramCount():
+        maxErrors = parseInt(paramStr(i))
+    of "--filter":
+      i.inc
+      if i <= paramCount():
+        let filterStr = paramStr(i).toLowerAscii()
+        case filterStr
+        of "import": filterCategories.add(ecImportError)
+        of "syntax": filterCategories.add(ecSyntaxError)
+        of "type": filterCategories.add(ecTypeError)
+        of "undeclared":
+          filterCategories.add(ecUndeclaredIdentifier)
+          filterCategories.add(ecUndeclaredField)
+          filterCategories.add(ecUndeclaredRoutine)
+        else:
+          echo "Unknown filter: ", filterStr
     else:
       if dirPath == "":
         dirPath = arg
     i.inc
 
   if dirPath == "":
-    echo "Usage: compile_reporter <directory> [-o output_file] [-v] [--max N]"
+    echo "Usage: compile_reporter <directory> [-o output_file] [-v] [--max N] [--max-errors N] [--filter CATEGORY]"
     echo ""
     echo "Options:"
-    echo "  -o, --output <file>  Write report to file"
-    echo "  -v, --verbose        Show progress"
-    echo "  --max N              Limit to first N files"
+    echo "  -o, --output <file>     Write report to file"
+    echo "  -v, --verbose           Show progress"
+    echo "  --max N                 Limit to first N files"
+    echo "  --max-errors N          Stop after collecting N errors (0 = unlimited)"
+    echo "  --filter CATEGORY       Show ONLY errors of this category (import, syntax, type, undeclared)"
     quit(1)
 
   if not dirExists(dirPath):
@@ -265,6 +296,7 @@ proc main() =
   # Test compilation of each file
   var results: seq[CompileResult] = @[]
   var fileNum = 0
+  var totalErrorsSoFar = 0
   for file in nimFiles:
     fileNum.inc
     if verbose or (fileNum mod 10 == 0):
@@ -273,11 +305,18 @@ proc main() =
     let result = compileNimFile(file, verbose)
     results.add(result)
 
+    # Check if we've hit max errors limit
+    if maxErrors > 0 and not result.success:
+      totalErrorsSoFar += result.errorCount
+      if totalErrorsSoFar >= maxErrors:
+        echo &"\nReached error limit ({maxErrors}). Stopping after {fileNum} files."
+        break
+
   echo "\n"
   echo "Compilation testing complete!"
   echo "Generating report...\n"
 
-  generateReport(results, outputPath)
+  generateReport(results, outputPath, filterCategories)
 
 when isMainModule:
   main()
