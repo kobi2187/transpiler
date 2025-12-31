@@ -15,10 +15,10 @@
 ##                 yield x
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 
-proc transformGeneratorExpressions*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode {.gcsafe.}
+proc transformGeneratorExpressions*(node: XLangNode, ctx: TransformContext): XLangNode {.gcsafe.}
 
 var generatorCounter = 0
 
@@ -158,7 +158,7 @@ proc transformGeneratorExpressionsHelper(node: XLangNode, hoistedIterators: var 
   else:
     result = node
 
-proc transformGeneratorExpressions*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformGeneratorExpressions*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform generator expressions to iterators
   var hoistedIterators: seq[XLangNode] = @[]
   result = transformGeneratorExpressionsHelper(node, hoistedIterators)

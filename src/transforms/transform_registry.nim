@@ -13,6 +13,7 @@ import core/xlangtypes
 import semantic/semantic_analysis
 import std/tables
 import types
+import transform_context
 
 # Import core/tested transforms only
 import passes/for_to_while
@@ -66,9 +67,9 @@ import passes/from_go/go_implicit_interfaces
 import passes/from_python/python_multiple_inheritance
 
 # Helper template to convert transform functions to closures
-template toClosure(p: untyped): proc(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode {.closure.} =
-  proc(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode {.closure.} =
-    p(node, semanticInfo)
+template toClosure(p: untyped): proc(node: XLangNode, ctx: TransformContext): XLangNode {.closure.} =
+  proc(node: XLangNode, ctx: TransformContext): XLangNode {.closure.} =
+    p(node, ctx)
 
 # Global registry - built once at module load
 # Maps each transform ID to its TransformPass implementation

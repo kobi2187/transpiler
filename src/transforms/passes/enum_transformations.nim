@@ -11,7 +11,7 @@
 ##   scOrdinal     (StringComparison → sc)
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 import strutils
 import collections/tables
@@ -154,7 +154,7 @@ proc collectSourceEnums(n: XLangNode) =
   else:
     discard
 
-proc transformEnumNormalization*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformEnumNormalization*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Main enum normalization transformation
   ##
   ## Three-pass approach:

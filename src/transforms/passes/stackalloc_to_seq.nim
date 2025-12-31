@@ -14,11 +14,11 @@
 ## seq (heap-allocated) is safer and provides automatic memory management.
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 import strutils
 
-proc transformStackAllocToSeq*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformStackAllocToSeq*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform C# stackalloc expressions into Nim newSeq calls
   if node.kind != xnkExternal_StackAlloc:
     return node

@@ -4,14 +4,16 @@
 ## Into:       init; while condition: body; update
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 
-proc transformForToWhile*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformForToWhile*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform C-style for loops into while loops
   ## This is needed because Nim doesn't have C-style for loops
   if node.kind != xnkExternal_ForStmt:
     return node
+
+  ctx.log("Transforming C-style for loop to while loop")
 
   # C-style for has: init, condition, update, body
   # Transform to: block containing init, while loop with condition and body+update

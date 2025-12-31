@@ -20,9 +20,9 @@
 ## We simply unwrap these blocks since we can't preserve the exact semantics.
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 
-proc transformCheckedToBlock*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformCheckedToBlock*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform C# checked/unchecked blocks by unwrapping them
   if node.kind != xnkExternal_Checked:
     return node

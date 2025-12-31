@@ -14,10 +14,10 @@
 ##   # use file
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 
-proc transformCSharpUsing*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformCSharpUsing*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform C# using statements to Nim defer pattern
   ##
   ## C# using ensures Dispose() is called on IDisposable objects
@@ -110,7 +110,7 @@ proc transformCSharpUsing*(node: XLangNode, semanticInfo: var SemanticInfo): XLa
 #
 # This is even closer to Nim's defer pattern
 
-proc transformCSharpUsingDeclaration*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformCSharpUsingDeclaration*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform C# 8.0+ using declarations
   ## These are variable declarations with automatic disposal
 

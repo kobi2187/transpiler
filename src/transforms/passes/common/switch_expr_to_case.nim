@@ -16,10 +16,10 @@
 ##   else: DefaultResult
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 
-proc transformSwitchExprToCase*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformSwitchExprToCase*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform C# switch expressions into Nim case expressions
   if node.kind != xnkExternal_SwitchExpr:
     return node

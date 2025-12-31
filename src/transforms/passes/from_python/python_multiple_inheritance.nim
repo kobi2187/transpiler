@@ -21,7 +21,7 @@
 ##   proc fly(self: Bird) = self.flyerMixin.fly()
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 import strutils
 import sequtils
@@ -33,7 +33,7 @@ proc hasMultipleInheritance*(node: XLangNode): bool =
 
   return node.baseTypes.len > 1
 
-proc transformMultipleInheritance*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformMultipleInheritance*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform multiple inheritance to single inheritance + composition
   ##
   ## Strategy:
@@ -182,7 +182,7 @@ proc isMixinClass*(className: string): bool =
 # Abstract Base Classes (ABC) in multiple inheritance
 # Python's ABC module + multiple inheritance
 
-proc transformABCMultipleInheritance*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformABCMultipleInheritance*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Handle multiple inheritance involving abstract base classes
   ##
   ## If one base is ABC, it should become the primary inheritance
@@ -204,7 +204,7 @@ proc transformABCMultipleInheritance*(node: XLangNode, semanticInfo: var Semanti
         break
 
   if abcBase.isNone:
-    return transformMultipleInheritance(node, semanticInfo)
+    return transformMultipleInheritance(node, ctx)
 
   # Reorder bases to put ABC first
   var reorderedBases = node.baseTypes
@@ -220,7 +220,7 @@ proc transformABCMultipleInheritance*(node: XLangNode, semanticInfo: var Semanti
   var modifiedNode = node
   modifiedNode.baseTypes = reorderedBases
 
-  return transformMultipleInheritance(modifiedNode, semanticInfo)
+  return transformMultipleInheritance(modifiedNode, ctx)
 
 # Diamond problem in multiple inheritance
 # Python resolves this with MRO
@@ -240,7 +240,7 @@ proc detectDiamondInheritance*(node: XLangNode): bool =
 # Python's super() works with MRO
 # In Nim composition, need explicit calls
 
-proc transformSuperCallWithMI*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformSuperCallWithMI*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform super() calls in multiple inheritance context
   ##
   ## Python: super().method()
@@ -253,18 +253,18 @@ proc transformSuperCallWithMI*(node: XLangNode, semanticInfo: var SemanticInfo):
   result = node  # Placeholder
 
 # Main transformation
-proc transformPythonMultipleInheritance*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformPythonMultipleInheritance*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Main multiple inheritance transformation
 
   case node.kind
   of xnkClassDecl:
     # Check for ABC multiple inheritance first
-    let abcResult = transformABCMultipleInheritance(node, semanticInfo)
+    let abcResult = transformABCMultipleInheritance(node, ctx)
     if abcResult != node:
       return abcResult
 
     # Regular multiple inheritance
-    return transformMultipleInheritance(node, semanticInfo)
+    return transformMultipleInheritance(node, ctx)
 
   else:
     return node

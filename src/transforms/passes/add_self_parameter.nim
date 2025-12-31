@@ -9,11 +9,11 @@
 ## Nim: proc newMyType(x: int): MyType = result = MyType(); result.value = x
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 import strutils
 
-proc addSelfParameter*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc addSelfParameter*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Add self parameter to instance methods in classes/structs
   case node.kind
   of xnkClassDecl, xnkStructDecl:

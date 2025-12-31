@@ -18,10 +18,10 @@
 ##     f.close()
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 
-proc transformResourceToTryFinally*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformResourceToTryFinally*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform unified resource statements to try-finally pattern
 
   if node.kind != xnkExternal_Resource:

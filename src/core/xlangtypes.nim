@@ -1,4 +1,5 @@
 import options
+import uuid4
 # import strutils
 
 # type
@@ -239,7 +240,11 @@ type
 
 
   XLangNode* = ref object
-    case kind*: XLangNodeKind
+    ## Common fields (available for all node kinds)
+    id*: Uuid              ## Unique identifier for this node
+    parentId*: Option[Uuid]  ## Parent node's UUID (for traversing up the tree)
+
+    case kind*: XLangNodeKind  ## Variant fields (depends on node kind)
     of xnkFile:
       fileName*: string
       sourceLang*: string  ## Source language: "csharp", "java", "python", etc.

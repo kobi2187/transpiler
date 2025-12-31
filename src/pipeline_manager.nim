@@ -13,6 +13,7 @@ import std/tables
 import core/xlangtypes
 import transforms/fixed_point_transformer
 import transforms/transform_registry
+import transforms/transform_context
 import transforms/types
 import error_collector
 import semantic/semantic_analysis
@@ -112,7 +113,7 @@ proc run*[B: BackendOps](pipeline: TranspilationPipeline[B]): PipelineResult =
 
   # Step 1.7: Normalize enum member access
   try:
-    stepEnumNormalization(xlangAst, verbose, semanticInfo)
+    stepEnumNormalization(xlangAst, verbose, semanticInfo, pipeline.errorCollector)
   except Exception as e:
     result.errors.add("Enum normalization failed: " & e.msg)
     return
@@ -120,8 +121,9 @@ proc run*[B: BackendOps](pipeline: TranspilationPipeline[B]): PipelineResult =
   # Step 2: Apply transformation passes
   if not pipeline.config.skipTransforms:
     try:
+      let targetLangStr = $pipeline.config.targetLang  # Convert enum to string
       stepTransformPasses(xlangAst, semanticInfo, pipeline.transformManager,
-                         inputFile, pipeline.infiniteLoopFiles, verbose)
+                         inputFile, targetLangStr, pipeline.infiniteLoopFiles, verbose)
     except Exception as e:
       result.errors.add("Transformation pipeline failed: " & e.msg)
       return

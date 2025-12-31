@@ -20,10 +20,10 @@
 ## and Nim nested procs have the same capability through closure semantics.
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 
-proc transformLocalFunctionToProc*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformLocalFunctionToProc*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform C# local functions into Nim nested procs
   if node.kind != xnkExternal_LocalFunction:
     return node

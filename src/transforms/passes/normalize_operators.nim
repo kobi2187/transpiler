@@ -7,10 +7,10 @@
 ## - Other special operators can be added here
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 
-proc normalizeOperators*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc normalizeOperators*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Convert special operators to their External node types
   ## ONLY runs on binary expressions with special operators
   case node.kind

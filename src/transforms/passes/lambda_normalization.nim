@@ -11,11 +11,11 @@
 ## Nim: proc(x, y: int): int = x + y
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 import strutils
 
-proc transformLambda*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformLambda*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform lambda expressions to Nim anonymous procs
 
   if node.kind != xnkLambdaExpr:
@@ -58,7 +58,7 @@ proc transformLambda*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNod
 # Arrow functions with implicit return (JavaScript, C#)
 # x => x * 2  vs  x => { return x * 2; }
 
-proc transformArrowFunction*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformArrowFunction*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform arrow functions with special handling for implicit return
   ##
   ## JS: x => x * 2  (expression body, implicit return)
@@ -122,7 +122,7 @@ proc markAsClosure*(node: XLangNode): XLangNode =
 # Java method references
 # Class::method → Nim proc reference
 
-proc transformMethodReference*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformMethodReference*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform Java method references to Nim proc references
   ##
   ## Java: list.forEach(System.out::println)
@@ -149,7 +149,7 @@ proc transformMethodReference*(node: XLangNode, semanticInfo: var SemanticInfo):
 
 # Python functools.partial → Nim partial application
 
-proc transformPartialApplication*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformPartialApplication*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform partial function application
   ##
   ## Python: partial(func, arg1, arg2)
@@ -179,7 +179,7 @@ proc transformPartialApplication*(node: XLangNode, semanticInfo: var SemanticInf
 # Default parameters in lambdas (Python, JavaScript ES6)
 # lambda x, y=10: x + y
 
-proc transformLambdaDefaults*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformLambdaDefaults*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform lambda with default parameters
   ##
   ## Python: lambda x, y=10: x + y
@@ -192,12 +192,12 @@ proc transformLambdaDefaults*(node: XLangNode, semanticInfo: var SemanticInfo): 
   # Already handled by parameter transformation
   # Just ensure they're preserved
 
-  result = transformLambda(node, semanticInfo)
+  result = transformLambda(node, ctx)
 
 # Rest parameters in lambdas (JavaScript, Python)
 # (...args) => args.length  or  lambda *args: len(args)
 
-proc transformRestParameters*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformRestParameters*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform rest/varargs parameters in lambdas
   ##
   ## JS: (...args) => args.length
@@ -217,7 +217,7 @@ proc transformRestParameters*(node: XLangNode, semanticInfo: var SemanticInfo): 
 # JavaScript: (function() { ... })()
 # Transform to Nim block
 
-proc transformIIFE*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformIIFE*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform IIFE to Nim block
   ##
   ## JS: (function() { var x = 1; return x * 2; })()
@@ -254,25 +254,25 @@ proc transformIIFE*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode 
     result = node
 
 # Main transformation
-proc transformLambdaNormalization*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformLambdaNormalization*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Main lambda normalization transformation
 
   case node.kind
   of xnkLambdaExpr:
-    return transformLambda(node, semanticInfo)
+    return transformLambda(node, ctx)
 
   of xnkArrowFunc:
-    return transformArrowFunction(node, semanticInfo)
+    return transformArrowFunction(node, ctx)
 
   of xnkMethodReference:
-    return transformMethodReference(node, semanticInfo)
+    return transformMethodReference(node, ctx)
 
   of xnkCallExpr:
     # Check for IIFE or partial application
-    let iife = transformIIFE(node, semanticInfo)
+    let iife = transformIIFE(node, ctx)
     if iife.kind != xnkCallExpr:
       return iife
-    return transformPartialApplication(node, semanticInfo)
+    return transformPartialApplication(node, ctx)
 
   else:
     return node

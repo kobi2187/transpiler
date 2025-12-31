@@ -23,7 +23,7 @@
 ##   of string: ...
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 import strutils
 
@@ -33,7 +33,7 @@ proc isTypeAssertion(node: XLangNode): bool =
     return false
   return true
 
-proc transformTypeAssertion*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformTypeAssertion*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform Go type assertion to Nim type check and cast
   ##
   ## Go: value, ok := x.(ConcreteType)
@@ -84,7 +84,7 @@ proc transformTypeAssertion*(node: XLangNode, semanticInfo: var SemanticInfo): X
     ))
   )
 
-proc transformTypeSwitch*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformTypeSwitch*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform Go type switch to Nim case with type checking
   ##
   ## Go:
@@ -183,7 +183,7 @@ proc transformTypeSwitch*(node: XLangNode, semanticInfo: var SemanticInfo): XLan
 # Go's empty interface (interface{}) can hold any value
 # Type assertions are the only way to get the value back
 
-proc transformEmptyInterface*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformEmptyInterface*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform Go empty interface type
   ##
   ## Go: interface{} or any (Go 1.18+)
@@ -219,18 +219,18 @@ proc transformCommaOkTypeAssertion*(assignNode: XLangNode): XLangNode =
   result = assignNode  # Placeholder
 
 # Main transformation
-proc transformGoTypeAssertions*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformGoTypeAssertions*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Main type assertion transformation
 
   case node.kind
   of xnkTypeAssertion:
-    return transformTypeAssertion(node, semanticInfo)
+    return transformTypeAssertion(node, ctx)
 
   of xnkTypeSwitchStmt:
-    return transformTypeSwitch(node, semanticInfo)
+    return transformTypeSwitch(node, ctx)
 
   of xnkNamedType:
-    return transformEmptyInterface(node, semanticInfo)
+    return transformEmptyInterface(node, ctx)
 
   else:
     return node

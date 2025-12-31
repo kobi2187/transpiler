@@ -13,10 +13,10 @@
 ## assigned to variables, passed as parameters, etc.
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 
-proc transformDelegateToTypeAlias*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformDelegateToTypeAlias*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform C# delegate declarations into Nim type aliases for proc types
   if node.kind != xnkExternal_Delegate:
     return node

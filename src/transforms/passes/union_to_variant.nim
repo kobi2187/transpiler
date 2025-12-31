@@ -15,7 +15,7 @@
 ##     of sonkNumber: numVal: float
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 import strutils
 import strformat
@@ -65,7 +65,7 @@ proc generateEnumPrefix(unionTypeName: string): string =
 
   result.add("k")  # Add 'k' for Kind
 
-proc transformUnionToVariant*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformUnionToVariant*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform union type declarations to variant objects
   if node.kind != xnkTypeDecl:
     return node

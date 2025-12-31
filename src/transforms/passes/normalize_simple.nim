@@ -6,10 +6,10 @@
 ## - Clean up redundant constructs
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 
-proc transformNormalizeSimple*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformNormalizeSimple*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Perform simple normalizations
   case node.kind
   of xnkExternal_Pass:
@@ -61,9 +61,9 @@ proc transformNormalizeSimple*(node: XLangNode, semanticInfo: var SemanticInfo):
       ifCondition: XLangNode(
         kind: xnkUnaryExpr,
         unaryOp: opNot,
-        unaryOperand: transformNormalizeSimple(node.extUnlessCondition, semanticInfo)
+        unaryOperand: transformNormalizeSimple(node.extUnlessCondition, ctx)
       ),
-      ifBody: transformNormalizeSimple(node.extUnlessBody, semanticInfo),
+      ifBody: transformNormalizeSimple(node.extUnlessBody, ctx),
       elseBody: none(XLangNode)
     )
 
@@ -74,9 +74,9 @@ proc transformNormalizeSimple*(node: XLangNode, semanticInfo: var SemanticInfo):
       whileCondition: XLangNode(
         kind: xnkUnaryExpr,
         unaryOp: opNot,
-        unaryOperand: transformNormalizeSimple(node.extUntilCondition, semanticInfo)
+        unaryOperand: transformNormalizeSimple(node.extUntilCondition, ctx)
       ),
-      whileBody: transformNormalizeSimple(node.extUntilBody, semanticInfo)
+      whileBody: transformNormalizeSimple(node.extUntilBody, ctx)
     )
 
   else:

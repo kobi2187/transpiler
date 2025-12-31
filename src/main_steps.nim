@@ -9,6 +9,7 @@ import backends/nim/astprinter
 import backends/nim/naming_conventions
 import backends/nim/nim_constants
 import transforms/fixed_point_transformer
+import transforms/transform_context
 import transforms/passes/enum_transformations
 import error_collector
 import passes/nim_identifier_sanitization
@@ -39,22 +40,55 @@ proc stepSemanticAnalysis*(xlangAst: XLangNode, verbose: bool): SemanticInfo =
     if result.warnings.len > 0:
       echo "  - Warnings: ", result.warnings.len
 
-proc stepEnumNormalization*(xlangAst: var XLangNode, verbose: bool, semanticInfo: var SemanticInfo) =
+proc stepEnumNormalization*(xlangAst: var XLangNode, verbose: bool, semanticInfo: SemanticInfo, errorCollector: ErrorCollector) =
   ## Step 1.7: Normalize enum member access
   if verbose:
     echo "DEBUG: Running enum normalization..."
-  xlangAst = transformEnumNormalization(xlangAst, semanticInfo)
+
+  # Create a minimal transform context for enum normalization
+  var sourceLang = ""
+  if xlangAst.kind == xnkFile and xlangAst.sourceLang != "":
+    sourceLang = xlangAst.sourceLang
+
+  let ctx = newTransformContext(
+    semanticInfo = semanticInfo,
+    errorCollector = errorCollector,
+    targetLang = "",  # Not needed for enum normalization
+    sourceLang = sourceLang,
+    currentFile = "",
+    verbose = verbose
+  )
+
+  xlangAst = transformEnumNormalization(xlangAst, ctx)
   if verbose:
     echo "✓ Enum normalization complete"
 
-proc stepTransformPasses*(xlangAst: var XLangNode, semanticInfo: var SemanticInfo, passManager: FixedPointTransformer,
-                        inputFile: string, infiniteLoopFiles: var seq[tuple[file: string, iterations: int, kinds: seq[XLangNodeKind]]],
+proc stepTransformPasses*(xlangAst: var XLangNode, semanticInfo: SemanticInfo, passManager: FixedPointTransformer,
+                        inputFile: string, targetLang: string, infiniteLoopFiles: var seq[tuple[file: string, iterations: int, kinds: seq[XLangNodeKind]]],
                         verbose: bool) =
   ## Step 2: Apply transformation passes
   if verbose:
     echo "DEBUG: Running transformation passes..."
     echo "DEBUG: About to run passes on AST..."
-  xlangAst = passManager.run(xlangAst, verbose, semanticInfo)
+
+  # Create transform context with all services
+  var sourceLang = ""
+  if xlangAst.kind == xnkFile and xlangAst.sourceLang != "":
+    sourceLang = xlangAst.sourceLang
+
+  let ctx = newTransformContext(
+    semanticInfo = semanticInfo,
+    errorCollector = passManager.errorCollector,
+    targetLang = targetLang,
+    sourceLang = sourceLang,
+    currentFile = inputFile,
+    verbose = verbose
+  )
+
+  # Build node index for parent navigation (needed by property transforms)
+  ctx.buildNodeIndex(xlangAst)
+
+  xlangAst = passManager.run(xlangAst, verbose, ctx)
   if passManager.result.maxIterationsReached:
     infiniteLoopFiles.add((
       file: inputFile,

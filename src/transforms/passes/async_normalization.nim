@@ -6,10 +6,10 @@
 ## This transformation ensures async functions and await expressions are properly normalized
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 
-proc transformAsyncNormalization*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformAsyncNormalization*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Normalize async/await patterns to Nim conventions
   case node.kind
   of xnkFuncDecl, xnkMethodDecl:

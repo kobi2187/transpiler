@@ -12,11 +12,11 @@
 ## process(f)
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 import strutils
 
-proc transformWithToDefer*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformWithToDefer*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform with statements to defer pattern
   if node.kind != xnkExternal_With:
     return node

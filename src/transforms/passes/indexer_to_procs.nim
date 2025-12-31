@@ -13,10 +13,10 @@
 ##   proc `[]=`(self: var MyClass, i: int, value: int) = data[i] = value
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 
-proc transformIndexerToProcs*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode
+proc transformIndexerToProcs*(node: XLangNode, ctx: TransformContext): XLangNode
 
 proc convertIndexerDecl(node: XLangNode): seq[XLangNode] =
   ## Convert a single indexer declaration to getter/setter procs
@@ -97,7 +97,7 @@ proc transformIndexerHelper(node: XLangNode): seq[XLangNode] =
   else:
     return @[node]
 
-proc transformIndexerToProcs*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformIndexerToProcs*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform indexer declarations to operator procs
   case node.kind
   of xnkClassDecl, xnkStructDecl:

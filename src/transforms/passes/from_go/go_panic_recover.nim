@@ -17,7 +17,7 @@
 ##     echo "Recovered: ", e.msg
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 import strutils
 
@@ -41,7 +41,7 @@ proc isRecoverCall(node: XLangNode): bool =
 
   return false
 
-proc transformPanic*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformPanic*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform Go panic to Nim raise
   ##
   ## Go: panic(message) or panic(error)
@@ -210,7 +210,7 @@ proc wrapWithTryExcept*(funcNode: XLangNode): XLangNode =
 # Go panic for programming errors can map to Nim defects
 # which can be caught with {.raises: [Defect].}
 
-proc transformPanicToDefect*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformPanicToDefect*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform panic to Nim defect for programming errors
   ##
   ## Go: panic("index out of bounds")
@@ -244,14 +244,14 @@ proc transformPanicToDefect*(node: XLangNode, semanticInfo: var SemanticInfo): X
   )
 
 # Main transformation function
-proc transformGoPanicRecover*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformGoPanicRecover*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Main transformation for panic/recover
 
   case node.kind
   of xnkCallExpr:
     # Transform panic calls
     if isPanicCall(node):
-      return transformPanic(node, semanticInfo)
+      return transformPanic(node, ctx)
 
   of xnkFuncDecl, xnkMethodDecl:
     # Check if function uses recover, wrap with try/except

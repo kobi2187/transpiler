@@ -4,10 +4,10 @@
 ## Into:       if condition: valueA else: valueB
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 
-proc transformTernaryToIf*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformTernaryToIf*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform ternary expressions into if expressions
   ## This is needed for languages that don't have ternary operators
   ## but do have if expressions (like Nim)
@@ -15,8 +15,8 @@ proc transformTernaryToIf*(node: XLangNode, semanticInfo: var SemanticInfo): XLa
     return node
 
   # Recursively transform nested ternaries
-  let transformedThen = transformTernaryToIf(node.extTernaryThen, semanticInfo)
-  let transformedElse = transformTernaryToIf(node.extTernaryElse, semanticInfo)
+  let transformedThen = transformTernaryToIf(node.extTernaryThen, ctx)
+  let transformedElse = transformTernaryToIf(node.extTernaryElse, ctx)
 
   # Create if expression
   # In Nim, if expressions work like: if cond: a else: b

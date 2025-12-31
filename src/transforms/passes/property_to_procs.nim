@@ -5,12 +5,13 @@
 ##             proc setAge(value: T) = {...}
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
+import error_collector
 import options
 import strutils
 import tables
 
-proc transformPropertyHelper(node: XLangNode, semanticInfo: var SemanticInfo, parentClass: XLangNode): XLangNode =
+proc transformPropertyHelper(node: XLangNode, ctx: TransformContext, parentClass: XLangNode): XLangNode =
   ## Transform a single property node
   case node.kind
   of xnkExternal_Property:
@@ -22,27 +23,33 @@ proc transformPropertyHelper(node: XLangNode, semanticInfo: var SemanticInfo, pa
 
     # Register the property rename in semantic info
     # Look up the property symbol and register its getter/setter names
-    if semanticInfo != nil:
-      let propSym = semanticInfo.getDeclSymbol(node)
+    if ctx.semanticInfo != nil:
+      let propSym = ctx.getDeclSymbol(node)
       if propSym.isSome():
         let sym = propSym.get()
         # Register getter as the primary rename for property access
         let getterName = "get" & prop.extPropName
-        semanticInfo.renames[sym] = getterName
+        ctx.semanticInfo.renames[sym] = getterName
 
-    # For auto-properties, create a private backing field
+    # For auto-properties, create a private backing field and add it to the containing class
     # Following C# convention: PropertyName -> _propertyName
     if isAutoProperty:
       let backingFieldName = "_" & prop.extPropName[0].toLowerAscii() & prop.extPropName[1..^1]
-      stderr.writeLine("DEBUG: Creating backing field: ", backingFieldName, " for property ", prop.extPropName)
-      let backingField = XLangNode(
-        kind: xnkFieldDecl,
-        fieldName: backingFieldName,
-        fieldType: if prop.extPropType.isSome(): prop.extPropType.get else: XLangNode(kind: xnkNamedType, typeName: "auto"),
-        fieldInitializer: none(XLangNode)
-      )
-      results.add(backingField)
-      stderr.writeLine("DEBUG: Added backing field to results, results.len = ", results.len)
+
+      # Find the containing class and add the backing field to it
+      let containingClass = ctx.findContainingClass(node)
+      if containingClass != nil:
+        let backingField = XLangNode(
+          kind: xnkFieldDecl,
+          fieldName: backingFieldName,
+          fieldType: if prop.extPropType.isSome(): prop.extPropType.get else: XLangNode(kind: xnkNamedType, typeName: "auto"),
+          fieldInitializer: none(XLangNode)
+        )
+        ctx.addFieldToClass(containingClass, backingField)
+      else:
+        ctx.addWarning(tekTransformError,
+          "Auto-property '" & prop.extPropName & "' not inside a class - cannot create backing field",
+          ctx.currentFile)
 
       # Create getter that returns backing field
       let getterName = "get" & prop.extPropName
@@ -157,11 +164,11 @@ proc transformPropertyHelper(node: XLangNode, semanticInfo: var SemanticInfo, pa
   else:
     return node
 
-proc transformPropertyToProcs*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformPropertyToProcs*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform property declarations into getter/setter procedures
   case node.kind
   of xnkExternal_Property:
-    result = transformPropertyHelper(node, semanticInfo, nil)
+    result = transformPropertyHelper(node, ctx, nil)
 
   else:
     result = node

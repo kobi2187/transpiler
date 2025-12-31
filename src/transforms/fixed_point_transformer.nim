@@ -11,6 +11,7 @@
 
 import core/xlangtypes
 import types
+import transform_context
 import error_collector
 import semantic/semantic_analysis
 import tables
@@ -35,7 +36,7 @@ type
     activeKinds*: HashSet[XLangNodeKind]
     maxIterations*: int
     errorCollector*: ErrorCollector
-    semanticInfo*: SemanticInfo  # Symbol tables from semantic analysis pass
+    transformContext*: TransformContext  # Central context for transforms
     result*: FixedPointResult
 
 proc newFixedPointTransformer*(maxIterations: int = 10000,
@@ -69,7 +70,7 @@ proc applyTransform*(pm: FixedPointTransformer, node: var XLangNode,
 
   let transform = pm.kindToTransform.getOrDefault(kind, nil)
   if transform != nil:
-    let newNode = transform.transform(node, pm.semanticInfo)
+    let newNode = transform.transform(node, pm.transformContext)
     # Only count as transformation if the node actually changed
     if newNode != node:
       node = newNode
@@ -80,10 +81,11 @@ proc applyTransform*(pm: FixedPointTransformer, node: var XLangNode,
         reintroducedKinds.incl(node.kind)
 
 proc run*(pm: FixedPointTransformer, root: var XLangNode, verbose: bool = false,
-          semanticInfo: var SemanticInfo): XLangNode =
+          ctx: TransformContext): XLangNode =
   ## Run the pass manager on the given AST until fixed point is reached.
-  ## If semanticInfo is provided, transforms can access it via pm.semanticInfo.
-  pm.semanticInfo = semanticInfo
+  ## Transforms access all services via the TransformContext.
+  pm.transformContext = ctx
+  pm.transformContext.transformCount = 0
   var counter = 1  # Initialize to 1 to enter the loop
   var iterations = 0
   const loopWarningThreshold = 20

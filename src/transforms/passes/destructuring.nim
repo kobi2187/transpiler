@@ -7,12 +7,12 @@
 ## Because JS/Python style destructuring needs to be explicit in Nim
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 import sequtils
 import strutils
 
-proc transformDestructuring*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformDestructuring*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform destructuring assignments into explicit assignments
   case node.kind
   of xnkExternal_Destructure:

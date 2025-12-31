@@ -18,9 +18,9 @@
 ## handles this automatically when using addr or ptr.
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 
-proc transformFixedToBlock*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformFixedToBlock*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform C# fixed statements by unwrapping them into regular blocks
   if node.kind != xnkExternal_Fixed:
     return node

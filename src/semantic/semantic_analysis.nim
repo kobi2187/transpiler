@@ -9,6 +9,7 @@
 # - SemanticInfo: The analysis result - maps AST nodes to their resolved symbols
 
 import std/[tables, sets, options, hashes, strutils]
+import uuid4
 import core/xlangtypes
 
 # Nim builtin identifiers that don't need to be declared
@@ -78,6 +79,7 @@ type
     skModule        # module declarations
 
   Symbol* = ref object
+    id*: Uuid                  # Unique identifier for this symbol
     name*: string              # Original name from source
     mangledName*: string       # Target language name (empty = no rename needed)
     kind*: SymbolKind
@@ -98,6 +100,7 @@ type
     scopeLoop       # for/while - for break/continue analysis
 
   Scope* = ref object
+    id*: Uuid                  # Unique identifier for this scope
     kind*: ScopeKind
     parent*: Scope
     node*: XLangNode           # The AST node that created this scope
@@ -114,6 +117,10 @@ type
     # Global registries
     allSymbols*: seq[Symbol]
     allScopes*: seq[Scope]
+
+    # UUID-based lookups
+    symbolById*: Table[Uuid, Symbol]          # UUID → Symbol (for stable lookups)
+    scopeById*: Table[Uuid, Scope]            # UUID → Scope (for stable lookups)
 
     # For rename tracking
     renames*: Table[Symbol, string]           # Symbol → target name
@@ -140,6 +147,7 @@ proc hash*(sym: Symbol): Hash =
 
 proc newScope(parent: Scope, kind: ScopeKind, node: XLangNode): Scope =
   result = Scope(
+    id: uuid4(),               # Generate unique ID for scope
     kind: kind,
     parent: parent,
     node: node,
@@ -154,6 +162,7 @@ proc addSymbol*(scope: Scope, name: string, kind: SymbolKind,
                 node: XLangNode, info: SemanticInfo): Symbol =
   ## Add a symbol to the scope. Returns the created symbol.
   result = Symbol(
+    id: uuid4(),               # Generate unique ID for symbol
     name: name,
     mangledName: "",
     kind: kind,
@@ -167,6 +176,7 @@ proc addSymbol*(scope: Scope, name: string, kind: SymbolKind,
   scope.symbols[name] = result
   info.allSymbols.add(result)
   info.declToSymbol[node] = result
+  info.symbolById[result.id] = result  # Register by UUID for stable lookup
 
 proc lookup*(scope: Scope, name: string): Option[Symbol] =
   ## Look up a symbol by name, searching up the scope chain.
@@ -192,6 +202,7 @@ template withScope(a: Analyzer, kind: ScopeKind, node: XLangNode, body: untyped)
   a.currentScope = newScope(saved, kind, node)
   a.info.nodeToScope[node] = a.currentScope
   a.info.allScopes.add(a.currentScope)
+  a.info.scopeById[a.currentScope.id] = a.currentScope  # Register by UUID for stable lookup
   body
   a.currentScope = saved
 
@@ -1024,6 +1035,8 @@ proc analyzeProgram*(root: XLangNode, targetKeywords: seq[string] = @[]): Semant
     nodeToScope: initTable[XLangNode, Scope](),
     allSymbols: @[],
     allScopes: @[],
+    symbolById: initTable[Uuid, Symbol](),
+    scopeById: initTable[Uuid, Scope](),
     renames: initTable[Symbol, string](),
     targetKeywords: targetKeywords.toHashSet,
     errors: @[],
@@ -1038,6 +1051,7 @@ proc analyzeProgram*(root: XLangNode, targetKeywords: seq[string] = @[]): Semant
   analyzer.currentScope = analyzer.globalScope
   result.nodeToScope[root] = analyzer.globalScope
   result.allScopes.add(analyzer.globalScope)
+  result.scopeById[analyzer.globalScope.id] = analyzer.globalScope  # Register global scope by UUID
 
   # Two-pass analysis to handle forward references
   # Pass 1: Collect all declarations without analyzing bodies
@@ -1101,13 +1115,32 @@ proc isCaptured*(info: SemanticInfo, node: XLangNode): bool =
   return false
 
 proc getPropertyRename*(info: SemanticInfo, propertyName: string): Option[string] =
+  ## DEPRECATED: Use getPropertyRenameBySymbol instead for UUID-based lookup.
   ## Check if a member name corresponds to a renamed property.
   ## Returns the getter name if the property was renamed (e.g., "WaveFormat" → "getWaveFormat")
   ## Performs case-insensitive matching since member names may be converted to camelCase
+  ## WARNING: This name-based lookup can fail after renames - use UUID-based lookup when possible
   for sym in info.allSymbols:
     if sym.kind == skProperty and sym.name.toLowerAscii() == propertyName.toLowerAscii():
       if sym in info.renames:
         return some(info.renames[sym])
+  return none(string)
+
+proc getPropertyRenameBySymbol*(info: SemanticInfo, sym: Symbol): Option[string] =
+  ## Check if a symbol corresponds to a renamed property.
+  ## Returns the getter name if the property was renamed (e.g., "WaveFormat" → "getWaveFormat")
+  ## Uses UUID-based lookup, so it works correctly even after the symbol has been renamed.
+  if sym.kind == skProperty and sym in info.renames:
+    return some(info.renames[sym])
+  return none(string)
+
+proc getPropertyRenameByNode*(info: SemanticInfo, node: XLangNode): Option[string] =
+  ## Check if a node corresponds to a renamed property by looking up its symbol.
+  ## Returns the getter name if the property was renamed.
+  ## Uses UUID-based symbol lookup, so it works correctly even after renames.
+  if node in info.nodeToSymbol:
+    let sym = info.nodeToSymbol[node]
+    return getPropertyRenameBySymbol(info, sym)
   return none(string)
 
 # =============================================================================

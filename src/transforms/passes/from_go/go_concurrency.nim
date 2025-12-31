@@ -19,7 +19,7 @@
 ##   # Use AsyncChannel for communication
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 import strutils
 
@@ -42,7 +42,7 @@ proc isChannelOperation(node: XLangNode): bool =
   ## Go: ch <- val or val := <-ch
   false  # Placeholder - would need metadata
 
-proc transformGoStatement*(node: XLangNode, semanticInfo: SemanticInfo, model: ConcurrencyModel = DEFAULT_MODEL): XLangNode =
+proc transformGoStatement*(node: XLangNode, ctx: TransformContext, model: ConcurrencyModel = DEFAULT_MODEL): XLangNode =
   ## Transform Go's 'go' statement to Nim's concurrency
   ##
   ## go functionCall() → spawn functionCall() or asyncCheck functionCall()
@@ -166,7 +166,7 @@ proc transformChannelReceive*(chanExpr: XLangNode, model: ConcurrencyModel = DEF
       extAwaitExpr: recvCall
     )
 
-proc transformSelectStatement*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformSelectStatement*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform Go's select statement for channel operations
   ##
   ## Go:
@@ -194,7 +194,7 @@ proc transformSelectStatement*(node: XLangNode, semanticInfo: var SemanticInfo):
 # Go: var wg sync.WaitGroup; wg.Add(1); wg.Done(); wg.Wait()
 # Nim: Use Barrier or FlowVar synchronization
 
-proc transformWaitGroup*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformWaitGroup*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform sync.WaitGroup to Nim synchronization primitives
   ##
   ## Go:
@@ -215,7 +215,7 @@ proc transformWaitGroup*(node: XLangNode, semanticInfo: var SemanticInfo): XLang
 # Go: var mu sync.Mutex; mu.Lock(); defer mu.Unlock()
 # Nim: var lock: Lock; lock.acquire(); defer: lock.release()
 
-proc transformMutex*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformMutex*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform sync.Mutex to Nim Lock
   ##
   ## Go:

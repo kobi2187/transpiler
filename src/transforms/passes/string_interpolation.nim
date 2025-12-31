@@ -14,10 +14,10 @@
 ## - Non-string expressions automatically get $ for stringification
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options, sequtils
 
-proc transformStringInterpolation*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode
+proc transformStringInterpolation*(node: XLangNode, ctx: TransformContext): XLangNode
 
 proc needsStringification(node: XLangNode): bool =
   ## Check if a node needs $ for string conversion
@@ -167,7 +167,7 @@ proc transformStringInterpolationHelper(node: XLangNode): XLangNode =
     # For all other nodes, return as-is (don't recurse into everything)
     result = node
 
-proc transformStringInterpolation*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformStringInterpolation*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform string interpolation into string concatenation with & operator
   ## Automatically adds $ operator for non-string expressions
   ## Recursively handles interpolations in all expression contexts

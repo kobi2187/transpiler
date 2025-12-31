@@ -8,7 +8,7 @@
 ## - C#: public static Type operator+(Type a, Type b) → proc `+`(a, b: Type): Type
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 import strutils
 import tables
@@ -102,7 +102,7 @@ proc buildOperatorNode*(k: XLangNodeKind, src: XLangNode, opSymbol: string): XLa
   else:
     result = src
 
-proc transformOperatorOverload*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformOperatorOverload*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Normalize operator overload definitions to Nim syntax
   case node.kind
   of xnkExternal_Operator:

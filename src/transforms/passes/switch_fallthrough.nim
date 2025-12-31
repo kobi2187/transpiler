@@ -4,7 +4,7 @@
 ## Because Nim's case statement doesn't support fallthrough
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 
 proc mergeBlocks(body1, body2: XLangNode): XLangNode =
@@ -64,7 +64,7 @@ proc buildOrCondition(switchExpr: XLangNode, values: seq[XLangNode]): XLangNode 
 
   result = condition
 
-proc transformSwitchFallthrough*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformSwitchFallthrough*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform switch statements with fallthrough into if-elif chains
   if node.kind != xnkSwitchStmt:
     return node

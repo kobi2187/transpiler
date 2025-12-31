@@ -21,7 +21,7 @@
 ##   # use result
 
 import core/xlangtypes
-import semantic/semantic_analysis
+import transforms/transform_context
 import options
 import strutils
 
@@ -61,7 +61,7 @@ proc isErrorReturn(node: XLangNode): bool =
   let retVal = node.returnExpr.get
   return retVal.kind == xnkIdentifier and retVal.identName == "err"
 
-proc transformGoErrorHandling*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformGoErrorHandling*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform Go error handling patterns to Nim exception handling
   if not isErrorCheckPattern(node):
     return node
@@ -163,7 +163,7 @@ proc transformGoErrorHandling*(node: XLangNode, semanticInfo: var SemanticInfo):
 # Go: func foo() (Result, error)
 # Nim: proc foo(): Result (raises exception on error)
 
-proc transformErrorReturnType*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
+proc transformErrorReturnType*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform Go functions that return (T, error) to Nim functions that return T
   ## The error becomes an exception
 
