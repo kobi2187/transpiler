@@ -1,11 +1,13 @@
-## Simple Pass Manager - Fixed-Point Iteration
+## Fixed-Point Transformer (Lowering Manager)
 ##
-## Much simpler approach than pass_manager.nim:
-## 1. Collect all transforms and their targetKinds into a HashSet and Table
-## 2. Traverse full AST tree
-## 3. When node.kind matches a transform's targetKinds, apply the transform
-## 4. Count each application
-## 5. Repeat entire tree traversal until counter = 0 (fixed point reached)
+## Repeatedly applies lowering transformations until a fixed point is reached.
+## Purpose: Transform language-specific AST nodes into output-language-compatible forms.
+##
+## Algorithm:
+## 1. Collect all transforms and their target node kinds
+## 2. Traverse entire AST tree
+## 3. Apply matching transforms to nodes
+## 4. Repeat until no more transformations occur (fixed point)
 
 import core/xlangtypes
 import types
@@ -18,36 +20,37 @@ import core/helpers
 
 
 type
-  PassManagerResult* = object
-    ## Result of running the pass manager
+  FixedPointResult* = object
+    ## Result of running the fixed-point transformer
     success*: bool
     iterations*: int
     loopWarning*: bool
     loopKinds*: seq[XLangNodeKind]
     maxIterationsReached*: bool
 
-  PassManager2* = ref object
-    ## Simplified pass manager using fixed-point iteration
+  FixedPointTransformer* = ref object
+    ## Fixed-point lowering transformer
+    ## Repeatedly applies transforms until AST stabilizes
     kindToTransform*: Table[XLangNodeKind, TransformPass]
     activeKinds*: HashSet[XLangNodeKind]
     maxIterations*: int
     errorCollector*: ErrorCollector
     semanticInfo*: SemanticInfo  # Symbol tables from semantic analysis pass
-    result*: PassManagerResult
+    result*: FixedPointResult
 
-proc newPassManager2*(maxIterations: int = 10000,
-                      errorCollector: ErrorCollector = nil): PassManager2 =
-  ## Create a new simplified pass manager
-  PassManager2(
+proc newFixedPointTransformer*(maxIterations: int = 10000,
+                                errorCollector: ErrorCollector = nil): FixedPointTransformer =
+  ## Create a new fixed-point transformer
+  FixedPointTransformer(
     kindToTransform: initTable[XLangNodeKind, TransformPass](), # 1:1 mapping
     activeKinds: initHashSet[XLangNodeKind](),
     maxIterations: maxIterations,
     errorCollector: if errorCollector != nil: errorCollector else: newErrorCollector(),
-    result: PassManagerResult(success: true, iterations: 0, loopWarning: false, loopKinds: @[], maxIterationsReached: false)
+    result: FixedPointResult(success: true, iterations: 0, loopWarning: false, loopKinds: @[], maxIterationsReached: false)
   )
 
 # [v]
-proc addTransforms*(pm: PassManager2, transforms: seq[TransformPass]) =
+proc addTransforms*(pm: FixedPointTransformer, transforms: seq[TransformPass]) =
   ## Add transforms to the manager, building the kind->transform mapping
   for transform in transforms:       
     # Map each target kind to this transform
@@ -56,7 +59,7 @@ proc addTransforms*(pm: PassManager2, transforms: seq[TransformPass]) =
       pm.kindToTransform[kind] = transform
 
 
-proc applyTransform*(pm: PassManager2, node: var XLangNode,
+proc applyTransform*(pm: FixedPointTransformer, node: var XLangNode,
                      counter: var int, applicableKinds: HashSet[XLangNodeKind],
                      reintroducedKinds: var HashSet[XLangNodeKind]) =
   let kind = node.kind
@@ -76,7 +79,7 @@ proc applyTransform*(pm: PassManager2, node: var XLangNode,
       if node.kind in pm.activeKinds:
         reintroducedKinds.incl(node.kind)
 
-proc run*(pm: PassManager2, root: var XLangNode, verbose: bool = false,
+proc run*(pm: FixedPointTransformer, root: var XLangNode, verbose: bool = false,
           semanticInfo: var SemanticInfo): XLangNode =
   ## Run the pass manager on the given AST until fixed point is reached.
   ## If semanticInfo is provided, transforms can access it via pm.semanticInfo.
@@ -91,7 +94,7 @@ proc run*(pm: PassManager2, root: var XLangNode, verbose: bool = false,
   var cycleWarningShown = false
 
   # Reset result
-  pm.result = PassManagerResult(success: true, iterations: 0, loopWarning: false, loopKinds: @[], maxIterationsReached: false)
+  pm.result = FixedPointResult(success: true, iterations: 0, loopWarning: false, loopKinds: @[], maxIterationsReached: false)
 
   while counter > 0 and iterations < pm.maxIterations:
     counter = 0
@@ -138,7 +141,7 @@ proc run*(pm: PassManager2, root: var XLangNode, verbose: bool = false,
       else:
         ""
       pm.errorCollector.addError(tekTransformLimitReachedError,
-        "PassManager2: Max iterations reached" & cycleInfo)
+        "FixedPointTransformer: Max iterations reached" & cycleInfo)
       break
 
     if counter == 0:

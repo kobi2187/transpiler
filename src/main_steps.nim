@@ -8,7 +8,7 @@ import backends/nim/my_nim_node
 import backends/nim/astprinter
 import backends/nim/naming_conventions
 import backends/nim/nim_constants
-import transforms/pass_manager2
+import transforms/fixed_point_transformer
 import transforms/passes/enum_transformations
 import error_collector
 import passes/nim_identifier_sanitization
@@ -47,7 +47,7 @@ proc stepEnumNormalization*(xlangAst: var XLangNode, verbose: bool, semanticInfo
   if verbose:
     echo "✓ Enum normalization complete"
 
-proc stepTransformPasses*(xlangAst: var XLangNode, semanticInfo: var SemanticInfo, passManager: PassManager2,
+proc stepTransformPasses*(xlangAst: var XLangNode, semanticInfo: var SemanticInfo, passManager: FixedPointTransformer,
                         inputFile: string, infiniteLoopFiles: var seq[tuple[file: string, iterations: int, kinds: seq[XLangNodeKind]]],
                         verbose: bool) =
   ## Step 2: Apply transformation passes
