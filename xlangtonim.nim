@@ -422,15 +422,15 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode
 proc conv_xnkFile(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result = newStmtList()
 
-  # Process imports from source file
-  if ctx.inputLang == "csharp" and node.fileImports.len > 0:
+  # Process imports from moduleDecls (xnkImport nodes)
+  if ctx.inputLang == "csharp":
     # Separate stdlib and user imports
     var stdlibImports: seq[string] = @[]
     var userImports: seq[string] = @[]
 
-    for importNode in node.fileImports:
-      if importNode.kind == xnkImport:
-        let importPath = importNode.importPath
+    for decl in node.moduleDecls:
+      if decl.kind == xnkImport:
+        let importPath = decl.importPath
         # C# stdlib namespaces typically start with System, Microsoft.*, etc.
         if importPath.startsWith("System") or importPath.startsWith("Microsoft"):
           # Convert namespace to module path: System.Collections.Generic -> system/collections/generic
@@ -453,7 +453,6 @@ proc conv_xnkFile(node: XLangNode, ctx: ConversionContext): MyNimNode =
       result.add(fromImport)
 
     # Generate regular imports for user imports (if any)
-    # TODO: Convert user namespace paths to module paths
     for userImport in userImports:
       let importStmt = newNimNode(nnkImportStmt)
       # Convert namespace to module path: NAudio.Wave.Compression -> naudio/wave/compression
@@ -469,8 +468,10 @@ proc conv_xnkFile(node: XLangNode, ctx: ConversionContext): MyNimNode =
     compatImport.add(newStrLitNode(compatPath))
     result.add(compatImport)
 
+  # Process all other declarations (skip xnkImport nodes as they're already processed above)
   for decl in node.moduleDecls:
-    result.add(convertToNimAST(decl, ctx))
+    if decl.kind != xnkImport:
+      result.add(convertToNimAST(decl, ctx))
 
 proc conv_xnkModule(node: XLangNode, ctx: ConversionContext): MyNimNode =
   # Nim doesn't have a direct equivalent to Java's module system
@@ -1452,7 +1453,48 @@ proc conv_xnkConstructorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode
 ## C#: `~MyClass()` → Destructor (Nim has no destructors)
 ## Nim: (discarded or use destructor hooks)
 proc conv_xnkDestructorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
-  newNimNode(nnkDiscardStmt)
+  ## Convert C# destructor/finalizer to Nim =destroy hook
+  ## C#: ~ClassName() { body }
+  ## Nim: proc `=destroy`(self: var ClassName) = body
+  result = newNimNode(nnkProcDef)
+
+  # 0: name - use `=destroy` for Nim destructor hook
+  result.add(newIdentNode("=destroy"))
+
+  # 1: empty (unused)
+  result.add(newEmptyNode())
+
+  # 2: empty (generic params)
+  result.add(newEmptyNode())
+
+  # 3: params - (returnType, param1, param2, ...)
+  let params = newNimNode(nnkFormalParams)
+  params.add(newEmptyNode()) # no return type (void)
+
+  # Add self parameter as var (destructors modify the object)
+  if ctx.currentClass.isSome():
+    let selfParam = newNimNode(nnkIdentDefs)
+    selfParam.add(newIdentNode("self"))
+    let varType = newNimNode(nnkVarTy)
+    varType.add(newIdentNode(ctx.currentClass.get().typeNameDecl))
+    selfParam.add(varType)
+    selfParam.add(newEmptyNode())
+    params.add(selfParam)
+
+  result.add(params)
+
+  # 4: empty (pragmas)
+  result.add(newEmptyNode())
+
+  # 5: empty (reserved)
+  result.add(newEmptyNode())
+
+  # 6: body
+  let body = if node.destructorBody.isSome():
+    convertToNimAST(node.destructorBody.get(), ctx)
+  else:
+    newStmtList()
+  result.add(body)
 
 ## C#: `delegate void D(int x);`
 ## Nim: `type D = proc(x: int)`
