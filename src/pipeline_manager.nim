@@ -1,20 +1,23 @@
 ## Pipeline Manager
 ##
-## Orchestrates the entire transpilation pipeline from XLang JSON to Nim code.
+## Orchestrates the entire transpilation pipeline from XLang JSON to output code.
 ## This is a higher-level manager than FixedPointTransformer - it coordinates
 ## all the steps: parsing, semantic analysis, transformations, and code generation.
+##
+## The pipeline is now backend-agnostic - it works with any backend that
+## implements the BackendOps concept.
 
 import os
 import sequtils, strutils
+import std/tables
 import core/xlangtypes
-import backends/nim/my_nim_node
-import backends/nim/naming_conventions
-import backends/nim/nim_constants
 import transforms/fixed_point_transformer
-import transforms/nim_passes
+import transforms/transform_registry
+import transforms/types
 import error_collector
 import semantic/semantic_analysis
 import main_steps
+import backends/backend_types
 
 type
   PipelineConfig* = object
@@ -27,37 +30,52 @@ type
     outputJson*: bool
     useStdout*: bool
     sameDir*: bool
+    targetLang*: OutputLanguage  # Enum for type safety
 
   PipelineResult* = object
     ## Result of running the pipeline
     success*: bool
-    nimCode*: string
-    nimAst*: MyNimNode
+    generatedCode*: string
     xlangAst*: XLangNode
     errors*: seq[string]
 
-  TranspilationPipeline* = ref object
-    ## Main pipeline orchestrator
+  TranspilationPipeline*[B: BackendOps] = ref object
+    ## Main pipeline orchestrator - generic over backend type
     config*: PipelineConfig
     errorCollector*: ErrorCollector
     transformManager*: FixedPointTransformer
+    backend*: B  # Generic backend implementing BackendOps concept
     infiniteLoopFiles*: seq[tuple[file: string, iterations: int, kinds: seq[XLangNodeKind]]]
 
-proc newTranspilationPipeline*(config: PipelineConfig): TranspilationPipeline =
-  ## Create a new transpilation pipeline
-  result = TranspilationPipeline(
+proc newTranspilationPipeline*[B: BackendOps](config: PipelineConfig, backend: B): TranspilationPipeline[B] =
+  ## Create a new transpilation pipeline with the given backend
+  result = TranspilationPipeline[B](
     config: config,
     errorCollector: newErrorCollector(),
+    backend: backend,
     infiniteLoopFiles: @[]
   )
 
   # Create and register transform passes if not skipping
   if not config.skipTransforms:
     result.transformManager = newFixedPointTransformer()
-    registerNimPasses(result.transformManager, config.verbose)
     result.transformManager.errorCollector = result.errorCollector
 
-proc run*(pipeline: TranspilationPipeline): PipelineResult =
+    # Get transform IDs from backend
+    let transformIDs = backend.selectTransformIDs()
+
+    # Load transforms from global registry
+    var transforms: seq[TransformPass] = @[]
+    for id in transformIDs:
+      if globalTransformRegistry.hasKey(id):
+        transforms.add(globalTransformRegistry[id])
+
+    result.transformManager.addTransforms(transforms)
+
+    if config.verbose:
+      echo "DEBUG: Registered ", transforms.len, " transform passes for ", config.targetLang
+
+proc run*[B: BackendOps](pipeline: TranspilationPipeline[B]): PipelineResult =
   ## Run the complete transpilation pipeline for a single file
   result = PipelineResult(success: false, errors: @[])
   let inputFile = pipeline.config.inputFile
@@ -74,10 +92,20 @@ proc run*(pipeline: TranspilationPipeline): PipelineResult =
     result.errors.add("Failed to parse input file: " & e.msg)
     return
 
-  # Step 1.5: Run semantic analysis
+  # Step 1.5: Run semantic analysis using backend-specific keywords
   var semanticInfo: SemanticInfo
   try:
-    semanticInfo = stepSemanticAnalysis(xlangAst, verbose)
+    let keywords = pipeline.backend.getKeywords()
+    if verbose:
+      echo "DEBUG: Running semantic analysis with ", keywords.len, " backend keywords..."
+    semanticInfo = analyzeProgram(xlangAst, keywords)
+    if verbose:
+      echo "✓ Semantic analysis complete"
+      echo "  - Symbols: ", semanticInfo.allSymbols.len
+      echo "  - Scopes: ", semanticInfo.allScopes.len
+      echo "  - Renames: ", semanticInfo.renames.len
+      if semanticInfo.warnings.len > 0:
+        echo "  - Warnings: ", semanticInfo.warnings.len
   except Exception as e:
     result.errors.add("Semantic analysis failed: " & e.msg)
     return
@@ -98,9 +126,13 @@ proc run*(pipeline: TranspilationPipeline): PipelineResult =
       result.errors.add("Transformation pipeline failed: " & e.msg)
       return
 
-  # Step 2.5: Apply identifier sanitization
+  # Step 2.5: Apply backend-specific identifier sanitization
   try:
-    stepSanitizeIdentifiers(xlangAst, verbose)
+    if verbose:
+      echo "DEBUG: Applying backend-specific identifier sanitization..."
+    xlangAst = pipeline.backend.sanitizeIdentifiers(xlangAst)
+    if verbose:
+      echo "✓ Identifier sanitization applied"
   except Exception as e:
     result.errors.add("Identifier sanitization failed: " & e.msg)
     return
@@ -119,39 +151,33 @@ proc run*(pipeline: TranspilationPipeline): PipelineResult =
     result.errors.add("Primitive type mapping failed: " & e.msg)
     return
 
-  # Step 3: Convert XLang AST to Nim AST
-  var nimAst: MyNimNode
+  # Step 3: Convert XLang AST to backend-specific AST and generate code
+  var code: string
   try:
-    nimAst = stepConvertToNim(xlangAst, semanticInfo, inputFile, verbose)
-  except Exception as e:
-    result.errors.add("Failed to convert XLang to Nim AST: " & e.msg)
-    return
+    let backendAST = pipeline.backend.convertFromXLang(xlangAst, semanticInfo, inputFile, verbose)
+    code = pipeline.backend.generateCode(backendAST, verbose)
 
-  # Step 4: Generate Nim code from AST
-  var nimCode: string
-  try:
-    nimCode = stepGenerateCode(nimAst, verbose)
+    # Step 5: Write outputs
+    let outputCtx = BackendContext(
+      inputFile: inputFile,
+      outputDir: pipeline.config.outputDir,
+      inputRoot: pipeline.config.inputRoot,
+      useStdout: pipeline.config.useStdout,
+      outputJson: pipeline.config.outputJson,
+      sameDir: pipeline.config.sameDir,
+      verbose: verbose
+    )
+    pipeline.backend.writeOutput(code, backendAST, xlangAst, outputCtx)
   except Exception as e:
-    result.errors.add("Failed to generate Nim code: " & e.msg)
-    return
-
-  # Step 5: Write outputs
-  try:
-    stepWriteOutputs(nimCode, nimAst, xlangAst, inputFile,
-                    pipeline.config.outputDir, pipeline.config.inputRoot,
-                    pipeline.config.useStdout, pipeline.config.outputJson,
-                    pipeline.config.sameDir, verbose)
-  except Exception as e:
-    result.errors.add("Failed to write output: " & e.msg)
+    result.errors.add("Code generation failed: " & e.msg)
     return
 
   # Success!
   result.success = true
-  result.nimCode = nimCode
-  result.nimAst = nimAst
+  result.generatedCode = code
   result.xlangAst = xlangAst
 
-proc reportResults*(pipeline: TranspilationPipeline) =
+proc reportResults*[B: BackendOps](pipeline: TranspilationPipeline[B]) =
   ## Report pipeline results (warnings, errors, infinite loops)
 
   # Report infinite loop files

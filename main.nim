@@ -1,6 +1,8 @@
 import os, parseopt, strutils, sequtils
 import core/xlangtypes
 import pipeline_manager
+import backends/backend_types
+import backends/nim/nim_backend
 
 proc collectXljsFiles(path: string): seq[string] =
   ## Recursively collect all .xljs files from a path (file or directory)
@@ -68,15 +70,24 @@ proc main() =
   var outputDirIgnored: string  # For backward compatibility with parseArgs, but ignored
   var verbose = false
   var skipTransforms = false
-  var targetLang = "nim"
+  var targetLangStr = "nim"
   var outputJson = false
   var useStdout = false
   var sameDir = false
 
-  parseArgs(inputPath, outputDirIgnored, verbose, skipTransforms, outputJson, useStdout, sameDir, targetLang)
+  parseArgs(inputPath, outputDirIgnored, verbose, skipTransforms, outputJson, useStdout, sameDir, targetLangStr)
 
   if inputPath == "":
     quit("No input path specified (file or directory)")
+
+  # Convert target language string to enum
+  let targetLang = case targetLangStr.toLowerAscii()
+    of "nim": olNim
+    of "go": olGo
+    of "rust": olRust
+    of "cpp": olCpp
+    else:
+      quit("Unknown target language: " & targetLangStr & "\nSupported: nim, go, rust, cpp")
 
   let outputDir = setupOutputDir(inputPath, useStdout, verbose)
 
@@ -109,7 +120,7 @@ proc main() =
     else:
       echo "Transformations: ENABLED"
     if outputJson:
-      echo "JSON output: ENABLED (.nimjs files will be generated)"
+      echo "JSON output: ENABLED (backend-specific AST JSON will be generated)"
 
   # Create pipeline configuration
   let baseConfig = PipelineConfig(
@@ -119,27 +130,38 @@ proc main() =
     skipTransforms: skipTransforms,
     outputJson: outputJson,
     useStdout: useStdout,
-    sameDir: sameDir
+    sameDir: sameDir,
+    targetLang: targetLang
   )
 
-  # Create pipeline (transforms are registered once for all files)
-  var pipeline = newTranspilationPipeline(baseConfig)
+  # Create backend based on target language
+  case targetLang
+  of olNim:
+    let backend = newNimBackend()
+    var pipeline = newTranspilationPipeline(baseConfig, backend)
 
-  # Process each xljs file
-  for inputFile in xlsjFiles:
-    # Update config with current input file
-    pipeline.config.inputFile = inputFile
+    # Process each xljs file
+    for inputFile in xlsjFiles:
+      # Update config with current input file
+      pipeline.config.inputFile = inputFile
 
-    # Run the pipeline
-    let result = pipeline.run()
+      # Run the pipeline
+      let result = pipeline.run()
 
-    # Handle errors
-    if not result.success:
-      for error in result.errors:
-        echo "ERROR [", inputFile, "]: ", error
+      # Handle errors
+      if not result.success:
+        for error in result.errors:
+          echo "ERROR [", inputFile, "]: ", error
 
-  # Report results
-  pipeline.reportResults()
+    # Report results
+    pipeline.reportResults()
+
+  of olGo:
+    quit("Go backend not yet implemented")
+  of olRust:
+    quit("Rust backend not yet implemented")
+  of olCpp:
+    quit("C++ backend not yet implemented")
 
 when isMainModule:
   main()
