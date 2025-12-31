@@ -172,13 +172,19 @@ proc stepGenerateCode(nimAst: MyNimNode, verbose: bool): string =
     echo "✓ Nim code generated successfully"
 
 proc stepWriteOutputs(nimCode: string, nimAst: MyNimNode, xlangAst: XLangNode, inputFile, outputDir, inputRoot: string,
-                     useStdout, outputJson, verbose: bool) =
+                     useStdout, outputJson, sameDir, verbose: bool) =
   ## Step 5: Write outputs
   if useStdout:
     stdout.write(nimCode)
   else:
-    let relativeOutputPath = getOutputFileName(xlangAst, inputFile, ".nim", inputRoot)
-    let nimOutputFile = outputDir / relativeOutputPath
+    let nimOutputFile = if sameDir:
+      # Write to same directory as input file
+      inputFile.changeFileExt(".nim")
+    else:
+      # Write to transpiler_output with proper structure
+      let relativeOutputPath = getOutputFileName(xlangAst, inputFile, ".nim", inputRoot)
+      outputDir / relativeOutputPath
+
     let parentDir = nimOutputFile.parentDir()
     if parentDir != "" and not dirExists(parentDir):
       createDir(parentDir)
@@ -206,7 +212,7 @@ proc stepWriteOutputs(nimCode: string, nimAst: MyNimNode, xlangAst: XLangNode, i
       echo "✓ Nim AST JSON written to: ", nimJsonFile
       echo "DEBUG: First 200 chars of nimjs: ", jsonContent[0..<min(200, jsonContent.len)]
 
-proc parseArgs(inputPath, outputDir: var string, verbose, skipTransforms, outputJson, useStdout: var bool, targetLang: var string) =
+proc parseArgs(inputPath, outputDir: var string, verbose, skipTransforms, outputJson, useStdout, sameDir: var bool, targetLang: var string) =
   for kind, key, val in getopt():
     case kind
     of cmdArgument:
@@ -219,6 +225,7 @@ proc parseArgs(inputPath, outputDir: var string, verbose, skipTransforms, output
       of "target-lang", "t": targetLang = val
       of "output-json", "j": outputJson = true
       of "stdout", "s": useStdout = true
+      of "same-dir", "d": sameDir = true
     of cmdEnd: assert(false)
 
 proc setupOutputDir(inputPath: string, useStdout, verbose: bool): string =
@@ -253,8 +260,9 @@ proc main() =
   var targetLang = "nim"
   var outputJson = false
   var useStdout = false
+  var sameDir = false
 
-  parseArgs(inputPath, outputDirIgnored, verbose, skipTransforms, outputJson, useStdout, targetLang)
+  parseArgs(inputPath, outputDirIgnored, verbose, skipTransforms, outputJson, useStdout, sameDir, targetLang)
 
   if inputPath == "":
     quit("No input path specified (file or directory)")
@@ -278,9 +286,12 @@ proc main() =
 
   if verbose:
     echo "Found ", xlsjFiles.len, " .xljs file(s)"
-    echo "Output directory: ", outputDir
-    if inputRoot != "":
-      echo "Input root: ", inputRoot
+    if sameDir:
+      echo "Output mode: SAME DIRECTORY (next to source files)"
+    else:
+      echo "Output directory: ", outputDir
+      if inputRoot != "":
+        echo "Input root: ", inputRoot
     echo "Target language: ", targetLang
     if skipTransforms:
       echo "Transformations: DISABLED"
@@ -395,7 +406,7 @@ proc main() =
 
     # Step 5: Write outputs
     try:
-      stepWriteOutputs(nimCode, nimAst, xlangAst, inputFile, outputDir, inputRoot, useStdout, outputJson, verbose)
+      stepWriteOutputs(nimCode, nimAst, xlangAst, inputFile, outputDir, inputRoot, useStdout, outputJson, sameDir, verbose)
     except Exception as e:
       echo "ERROR: Failed to write output: ", e.msg
       echo "Stack trace: ", e.getStackTrace()

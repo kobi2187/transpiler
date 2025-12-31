@@ -647,10 +647,9 @@ proc conv_xnkMemberAccess(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result = newNimNode(nnkDotExpr)
 
   # Convert the left side (memberExpr)
-  # If it's an identifier referring to a type (used for static member access),
-  # convert PascalCase to snake_case following Nim module conventions
   var leftSide = convertToNimAST(node.memberExpr, ctx)
 
+  # Handle static member access on types
   if node.memberExpr.kind == xnkIdentifier:
     # Check if this identifier might be a type name being used for static member access
     # Type names in C# are PascalCase, Nim modules are snake_case
@@ -659,6 +658,19 @@ proc conv_xnkMemberAccess(node: XLangNode, ctx: ConversionContext): MyNimNode =
       # This looks like a type name - convert to snake_case for module access
       let snakeName = pascalToSnake(originalName)
       leftSide = newIdentNode(snakeName)
+  elif node.memberExpr.kind == xnkNamedType:
+    # Static member access on a type (e.g., string.Join, Path.Combine)
+    # For primitive types, capitalize to match csharp_compat (string -> String)
+    # For other types, use PascalCase as-is
+    let typeName = node.memberExpr.typeName
+    case typeName
+    of "string", "int", "long", "double", "float", "bool", "byte", "short", "char":
+      # Capitalize primitive types for static method calls
+      let capitalizedName = typeName[0].toUpperAscii() & typeName[1..^1]
+      leftSide = newIdentNode(capitalizedName)
+    else:
+      # Keep other types as-is (already handled by convertToNimAST)
+      discard
 
   result.add(leftSide)
   result.add(newIdentNode(node.memberName))

@@ -969,16 +969,43 @@ partial class Program
         // Multiple field declarations like "int x, y;" are rare in modern C#
         var firstVar = field.Declaration.Variables[0];
 
-        // Check if this is a const declaration
+        // Check modifiers
         bool isConst = field.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.ConstKeyword));
         bool isStatic = field.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.StaticKeyword));
+        bool isReadonly = field.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.ReadOnlyKeyword));
 
-        if (isConst || isStatic)
+        if (isConst)
         {
-            // Emit as xnkConstDecl for const/static fields (both are module-level in Nim)
+            // Emit as xnkConstDecl for const fields (compile-time constants in Nim)
             return new JObject
             {
                 ["kind"] = "xnkConstDecl",
+                ["declName"] = firstVar.Identifier.Text,
+                ["declType"] = ConvertType(field.Declaration.Type),
+                ["initializer"] = firstVar.Initializer != null
+                    ? ConvertExpression(firstVar.Initializer.Value)
+                    : JValue.CreateNull()
+            };
+        }
+        else if (isStatic && isReadonly)
+        {
+            // Emit as xnkLetDecl for static readonly fields (runtime constants in Nim)
+            return new JObject
+            {
+                ["kind"] = "xnkLetDecl",
+                ["declName"] = firstVar.Identifier.Text,
+                ["declType"] = ConvertType(field.Declaration.Type),
+                ["initializer"] = firstVar.Initializer != null
+                    ? ConvertExpression(firstVar.Initializer.Value)
+                    : JValue.CreateNull()
+            };
+        }
+        else if (isStatic)
+        {
+            // Emit as xnkVarDecl for static mutable fields
+            return new JObject
+            {
+                ["kind"] = "xnkVarDecl",
                 ["declName"] = firstVar.Identifier.Text,
                 ["declType"] = ConvertType(field.Declaration.Type),
                 ["initializer"] = firstVar.Initializer != null

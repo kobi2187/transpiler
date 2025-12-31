@@ -17,6 +17,30 @@ proc ind(): string = "  ".repeat(gIndent)
 proc renderNode(n: MyNimNode): string
 
 # Literal rendering
+proc escapeStringLiteral(s: string): string =
+  ## Escape special characters in a string literal for Nim
+  result = ""
+  for c in s:
+    case c
+    of '\n': result.add("\\n")
+    of '\r': result.add("\\r")
+    of '\t': result.add("\\t")
+    of '\\': result.add("\\\\")
+    of '\"': result.add("\\\"")
+    of '\0': result.add("\\0")
+    else: result.add(c)
+
+proc escapeCharLiteral(c: char): string =
+  ## Escape special characters in a char literal for Nim
+  case c
+  of '\n': result = "\\n"
+  of '\r': result = "\\r"
+  of '\t': result = "\\t"
+  of '\\': result = "\\\\"
+  of '\'': result = "\\'"
+  of '\0': result = "\\0"
+  else: result = $c
+
 proc renderIntLit(n: MyNimNode): string =
   # Use literalText if available (preserves hex format), otherwise use intVal
   if n.literalText.len > 0:
@@ -25,10 +49,10 @@ proc renderIntLit(n: MyNimNode): string =
     $n.intVal
 
 proc renderFloatLit(n: MyNimNode): string = $n.floatVal
-proc renderCharLit(n: MyNimNode): string = "'" & chr(int(n.intVal)) & "'"
-proc renderStrLit(n: MyNimNode): string = "\"" & n.strVal & "\""
-proc renderRStrLit(n: MyNimNode): string = "r\"" & n.strVal & "\""
-proc renderTripleStrLit(n: MyNimNode): string = "\"\"\"" & n.strVal & "\"\"\""
+proc renderCharLit(n: MyNimNode): string = "'" & escapeCharLiteral(chr(int(n.intVal))) & "'"
+proc renderStrLit(n: MyNimNode): string = "\"" & escapeStringLiteral(n.strVal) & "\""
+proc renderRStrLit(n: MyNimNode): string = "r\"" & n.strVal & "\""  # Raw strings don't need escaping
+proc renderTripleStrLit(n: MyNimNode): string = "\"\"\"" & n.strVal & "\"\"\""  # Triple-quoted strings preserve content as-is
 
 # Identifier and symbol rendering
 proc renderIdent(n: MyNimNode): string = n.identStr
@@ -407,6 +431,7 @@ proc renderProcDef(n: MyNimNode): string =
     result &= renderNode(n[6])
   else:
     result &= ind() & "discard"
+  result &= "\n"
   decIndent()
 
 proc renderFuncDef(n: MyNimNode): string =
