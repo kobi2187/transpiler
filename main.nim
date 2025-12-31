@@ -321,7 +321,7 @@ proc main() =
   var passManager: PassManager2 = nil
   if not skipTransforms:
     passManager = newPassManager2()
-    registerNimPasses(passManager)
+    registerNimPasses(passManager, verbose)
     passManager.errorCollector = errorCollector
 
   # Process each xljs file

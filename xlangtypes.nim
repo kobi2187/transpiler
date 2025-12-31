@@ -304,11 +304,6 @@ type
     #   delegateName*: string
     #   delegateParams*: seq[XLangNode]
     #   delegateReturnType*: Option[XLangNode]
-    # of xnkEventDecl:
-      # eventName*: string
-      # eventType*: XLangNode
-      # addAccessor*: Option[XLangNode]
-      # removeAccessor*: Option[XLangNode]
     of xnkAsgn:
       asgnLeft*: XLangNode
       asgnRight*: XLangNode
@@ -774,7 +769,7 @@ type
       extIndexerGetter*: Option[XLangNode]
       extIndexerSetter*: Option[XLangNode]
 
-    # C# Event → shares fields with xnkEventDecl
+    # C# Event declaration
     of xnkExternal_Event:
       extEventName*: string
       extEventType*: XLangNode

@@ -138,11 +138,11 @@ proc buildNimPassRegistry*(): Table[TransformPassID, TransformPass] =
 
 let nimDefaultPassIDs = @[tpNormalizeOperators, tpForToWhile, tpDoWhileToWhile, tpTernaryToIf, tpNimInterfaceToConcept, tpPropertyToProcs, tpSwitchFallthrough,
                          tpNullCoalesce, tpMultipleCatch, tpDestructuring, tpListComprehension, tpNormalizeSimple,
-                         tpWithToDefer, tpAsyncNormalization, tpUnionToVariant, tpLinqToSequtils, tpOperatorOverload, tpPatternMatching,
+                         tpWithToDefer, tpAsyncNormalization, tpUnionToVariant, tpOperatorOverload, tpPatternMatching,
                          tpDecoratorAttribute, tpExtensionMethods, tpLambdaNormalization, tpSafeNavigation,
                          tpResourceToDefer, tpThrowExpression, tpGeneratorExpressions, tpStringInterpolation, tpIndexerToProcs,
                          tpSwitchExprToCase, tpLockToWithLock, tpStackAllocToSeq, tpCheckedToBlock, tpFixedToBlock,
-                         tpLocalFunctionToProc, tpUnsafeToNimBlock, tpDelegateToProcType, tpNullableToOption] # , tpConversionOpToProc - using direct impl in xlangtonim instead # , tpAddSelfParameter - DISABLED temporarily
+                         tpLocalFunctionToProc, tpUnsafeToNimBlock, tpDelegateToProcType, tpNullableToOption, tpCSharpEvents] # , tpConversionOpToProc - using direct impl in xlangtonim instead # , tpAddSelfParameter - DISABLED temporarily
 
 let goDefaultPassIDs = @[tpGoErrorHandling, tpGoDefer, tpGoConcurrency, tpGoTypeAssertions, tpGoImplicitInterfaces, tpGoPanicRecover]
 
@@ -164,13 +164,23 @@ proc selectPassIDsForLang*(name:string): seq[TransformPassID] =
   result.add(tpOperatorOverload)
   return result
 
-proc registerNimPasses*(pm: PassManager2) =
+proc registerNimPasses*(pm: PassManager2, verbose: bool = false) =
   ## Register all transformation passes for Nim target language using the pass registry + selection logic
   let registry = buildNimPassRegistry() # other langs may choose lowering passes that better suits their own constructs.
   let ids = selectPassIDsForLang("nim")
+
+  if verbose:
+    echo "DEBUG: Registering ", ids.len, " transform passes:"
 
   var ts : seq[TransformPass] = @[]
   for id in ids:
     if registry.hasKey(id):
       ts.add registry[id]
+      if verbose:
+        echo "  - ", id
+    elif verbose:
+      echo "  - ", id, " (NOT FOUND in registry)"
   pm.addTransforms(ts)
+
+  if verbose:
+    echo "DEBUG: Successfully registered ", ts.len, " passes"

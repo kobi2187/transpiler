@@ -296,7 +296,7 @@ proc clearWarnings*() =
 #
 # Language-Specific Constructs:
 #   xnkPropertyDecl         → property_to_procs.nim (C# properties to getter/setter procs)
-#   xnkEventDecl            → csharp_events.nim (C# events to callback patterns)
+#   xnkExternal_Event       → csharp_events.nim (C# events to callback patterns)
 #   xnkIndexerDecl          → property_to_procs.nim (C# indexers to [] operators)
 #   xnkUsingStmt            → csharp_using.nim (C# using to defer pattern)
 #   xnkLockStmt             → lock_to_withlock.nim (C# lock to Nim locks module)
@@ -1176,7 +1176,7 @@ template notYetImpl(kind: string): MyNimNode =
 
 # These constructs should have been lowered by transform passes:
 # - xnkPropertyDecl → property_to_procs.nim
-# - xnkEventDecl → csharp_events.nim
+# - xnkExternal_Event → csharp_events.nim
 # - xnkDoWhileStmt → dowhile_to_while.nim
 # - xnkTernaryExpr → ternary_to_if.nim
 # - xnkWithStmt, xnkWithItem → with_to_defer.nim
@@ -1189,7 +1189,7 @@ template notYetImpl(kind: string): MyNimNode =
 # - (xnkConditionalAccessExpr removed - duplicate of xnkSafeNavigationExpr)
 # - xnkUnionType → union_to_variant.nim
 proc conv_xnkPropertyDecl(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkPropertyDecl")
-proc conv_xnkEventDecl(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkEventDecl")
+proc conv_xnkExternal_Event(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkExternal_Event")
 proc conv_xnkDoWhileStmt(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkDoWhileStmt")
 proc conv_xnkTernaryExpr(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkTernaryExpr")
 ## Python 'with' / C# 'using' → should be lowered to xnkResourceStmt
@@ -2404,7 +2404,7 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
     of xnkExternal_Delegate:
       result = conv_xnkDelegateDecl(node, ctx)
     of xnkExternal_Event:
-      result = conv_xnkEventDecl(node, ctx)
+      result = conv_xnkExternal_Event(node, ctx)
     of xnkModuleDecl:
       result = conv_xnkModuleDecl(node, ctx)
     of xnkTypeAlias:
