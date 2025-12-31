@@ -619,6 +619,11 @@ proc conv_xnkClassDecl_structDecl(node: XLangNode, ctx: ConversionContext): MyNi
   # Add methods and constructors as separate procs
   for member in node.members:
     if member.kind != xnkFieldDecl and member.kind != xnkConstDecl:
+      # Handle blocks (e.g., from property transforms that return multiple methods)
+      if member.kind == xnkBlockStmt:
+        for item in member.blockBody:
+          result.add(convertToNimAST(item, ctx))
+      else:
       result.add(convertToNimAST(member, ctx))
 
 proc conv_xnkInterfaceDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
