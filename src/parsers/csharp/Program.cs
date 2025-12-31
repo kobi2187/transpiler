@@ -232,6 +232,25 @@ partial class Program
     {
         var moduleDecls = new JArray();
 
+        // Capture using directives
+        var imports = new JArray();
+        foreach (var usingDirective in cu.Usings)
+        {
+            var importObj = new JObject
+            {
+                ["kind"] = "xnkImport",
+                ["importPath"] = usingDirective.Name.ToString()
+            };
+
+            // Handle using alias (e.g., using MyAlias = System.Collections.Generic)
+            if (usingDirective.Alias != null)
+            {
+                importObj["importAlias"] = usingDirective.Alias.Name.ToString();
+            }
+
+            imports.Add(importObj);
+        }
+
         // For each member, first add any doc comments, then the member itself
         foreach (var member in cu.Members)
         {
@@ -248,6 +267,7 @@ partial class Program
             ["kind"] = "xnkFile",
             ["fileName"] = Path.GetFileName(fileName),
             ["sourceLang"] = "csharp",
+            ["fileImports"] = imports,
             ["moduleDecls"] = moduleDecls
         };
         return result;

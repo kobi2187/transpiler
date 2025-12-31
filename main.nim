@@ -189,8 +189,11 @@ proc stepWriteOutputs(nimCode: string, nimAst: MyNimNode, xlangAst: XLangNode, i
     stdout.write(nimCode)
   else:
     let nimOutputFile = if sameDir:
-      # Write to same directory as input file
-      inputFile.changeFileExt(".nim")
+      # Write to same directory as input file, converting filename to snake_case
+      let inputDir = inputFile.parentDir()
+      let inputBaseName = inputFile.splitFile().name
+      let snakeBaseName = pascalToSnake(inputBaseName)
+      inputDir / (snakeBaseName & ".nim")
     else:
       # Write to transpiler_output with proper structure
       let relativeOutputPath = getOutputFileName(xlangAst, inputFile, ".nim", inputRoot)

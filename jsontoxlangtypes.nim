@@ -32,16 +32,22 @@ proc parseXLangJson*(filePath: string): XLangNode =
   var jsonString = readFile(filePath).stripBOM()
   var jsonNode = jsonString.parseJson()
 
-  # Add default enum fields to all memberAccessExpr nodes
+  # Add default enum fields to all memberAccessExpr nodes and fileImports to xnkFile nodes
   proc addDefaultsToJson(j: var JsonNode) =
     if j.kind == JObject:
-      if j.hasKey("kind") and j["kind"].kind == JString and j["kind"].getStr() == "xnkMemberAccessExpr":
-        if not j.hasKey("isEnumAccess"):
-          j["isEnumAccess"] = %false
-        if not j.hasKey("enumTypeName"):
-          j["enumTypeName"] = %""
-        if not j.hasKey("enumFullName"):
-          j["enumFullName"] = %""
+      if j.hasKey("kind") and j["kind"].kind == JString:
+        let kindStr = j["kind"].getStr()
+        if kindStr == "xnkMemberAccessExpr":
+          if not j.hasKey("isEnumAccess"):
+            j["isEnumAccess"] = %false
+          if not j.hasKey("enumTypeName"):
+            j["enumTypeName"] = %""
+          if not j.hasKey("enumFullName"):
+            j["enumFullName"] = %""
+        elif kindStr == "xnkFile":
+          # Add empty fileImports array if not present (for backwards compatibility with old xljs files)
+          if not j.hasKey("fileImports"):
+            j["fileImports"] = newJArray()
       for key, val in j.mpairs:
         addDefaultsToJson(val)
     elif j.kind == JArray:

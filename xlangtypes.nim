@@ -243,6 +243,7 @@ type
     of xnkFile:
       fileName*: string
       sourceLang*: string  ## Source language: "csharp", "java", "python", etc.
+      fileImports*: seq[XLangNode]  ## Import/using directives from source file
       moduleDecls*: seq[XLangNode]
     of xnkModule:
       moduleName*: string

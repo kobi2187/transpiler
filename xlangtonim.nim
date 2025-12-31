@@ -422,9 +422,47 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode
 proc conv_xnkFile(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result = newStmtList()
 
-  # Add language-specific compatibility import based on input language
-  # Import from fixed location: ~/.transpiler/compat/
-  if ctx.inputLang != "" and ctx.inputLang != "unknown" and ctx.inputLang != "nim":
+  # Process imports from source file
+  if ctx.inputLang == "csharp" and node.fileImports.len > 0:
+    # Separate stdlib and user imports
+    var stdlibImports: seq[string] = @[]
+    var userImports: seq[string] = @[]
+
+    for importNode in node.fileImports:
+      if importNode.kind == xnkImport:
+        let importPath = importNode.importPath
+        # C# stdlib namespaces typically start with System, Microsoft.*, etc.
+        if importPath.startsWith("System") or importPath.startsWith("Microsoft"):
+          # Convert namespace to module path: System.Collections.Generic -> system/collections/generic
+          let modulePath = importPath.replace(".", "/").toLowerAscii()
+          stdlibImports.add(modulePath)
+        else:
+          # User imports - these would be other project namespaces
+          userImports.add(importPath)
+
+    # Generate from-import for stdlib imports
+    if stdlibImports.len > 0:
+      let fromImport = newNimNode(nnkFromStmt)
+      let homeDir = getEnv("HOME")
+      let compatPath = homeDir & "/.transpiler/compat/csharp_compat"
+      fromImport.add(newStrLitNode(compatPath))
+
+      # Add each import as a direct child (not wrapped in nnkImportStmt)
+      for modPath in stdlibImports:
+        fromImport.add(newIdentNode(modPath))
+      result.add(fromImport)
+
+    # Generate regular imports for user imports (if any)
+    # TODO: Convert user namespace paths to module paths
+    for userImport in userImports:
+      let importStmt = newNimNode(nnkImportStmt)
+      # Convert namespace to module path: NAudio.Wave.Compression -> naudio/wave/compression
+      let modulePath = userImport.replace(".", "/").toLowerAscii()
+      importStmt.add(newIdentNode(modulePath))
+      result.add(importStmt)
+
+  elif ctx.inputLang != "" and ctx.inputLang != "unknown" and ctx.inputLang != "nim":
+    # Fallback for non-C# languages: add blanket compat import
     let compatImport = newNimNode(nnkImportStmt)
     let homeDir = getEnv("HOME")
     let compatPath = homeDir & "/.transpiler/compat/" & ctx.inputLang & "_compat"
