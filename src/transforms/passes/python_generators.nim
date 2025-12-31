@@ -20,6 +20,7 @@
 ##       a = temp
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 import strutils
 
@@ -56,7 +57,7 @@ proc isGeneratorFunction(node: XLangNode): bool =
 
   return hasYield(node.body)
 
-proc transformPythonGenerator*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformPythonGenerator*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform Python generator functions to Nim iterators
   ##
   ## Key differences:
@@ -94,7 +95,7 @@ proc transformPythonGenerator*(node: XLangNode): XLangNode {.noSideEffect, gcsaf
 # Python: (x**2 for x in range(10))
 # These are similar to list comprehensions but lazy
 
-proc transformGeneratorExpression*(node: XLangNode): XLangNode =
+proc transformGeneratorExpression*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform Python generator expressions to Nim iterators
   ##
   ## Python: squares = (x**2 for x in range(10))
@@ -120,7 +121,7 @@ proc transformGeneratorExpression*(node: XLangNode): XLangNode =
 # In Nim, you can't have async iterators directly
 # Would need to return AsyncIterator or use channels
 
-proc transformAsyncGenerator*(node: XLangNode): XLangNode =
+proc transformAsyncGenerator*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform Python async generators
   ##
   ## Python async generators are complex to map to Nim
@@ -142,7 +143,7 @@ proc transformAsyncGenerator*(node: XLangNode): XLangNode =
 # yield from iterable → delegates to sub-iterator
 # In Nim: for item in iterable: yield item
 
-proc transformYieldFrom*(node: XLangNode): XLangNode =
+proc transformYieldFrom*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform Python's yield from to explicit iteration
   ##
   ## Python: yield from other_generator()

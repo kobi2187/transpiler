@@ -20,8 +20,9 @@
 ## preserve the semantic intent that this code deals with low-level pointer operations.
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 
-proc transformUnsafeToNimBlock*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformUnsafeToNimBlock*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform C# unsafe blocks by unwrapping them with a documentation marker
   if node.kind != xnkExternal_Unsafe:
     return node

@@ -23,6 +23,7 @@
 ##   of string: ...
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 import strutils
 
@@ -32,7 +33,7 @@ proc isTypeAssertion(node: XLangNode): bool =
     return false
   return true
 
-proc transformTypeAssertion*(node: XLangNode): XLangNode =
+proc transformTypeAssertion*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform Go type assertion to Nim type check and cast
   ##
   ## Go: value, ok := x.(ConcreteType)
@@ -83,7 +84,7 @@ proc transformTypeAssertion*(node: XLangNode): XLangNode =
     ))
   )
 
-proc transformTypeSwitch*(node: XLangNode): XLangNode =
+proc transformTypeSwitch*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform Go type switch to Nim case with type checking
   ##
   ## Go:
@@ -182,7 +183,7 @@ proc transformTypeSwitch*(node: XLangNode): XLangNode =
 # Go's empty interface (interface{}) can hold any value
 # Type assertions are the only way to get the value back
 
-proc transformEmptyInterface*(node: XLangNode): XLangNode =
+proc transformEmptyInterface*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform Go empty interface type
   ##
   ## Go: interface{} or any (Go 1.18+)
@@ -218,18 +219,18 @@ proc transformCommaOkTypeAssertion*(assignNode: XLangNode): XLangNode =
   result = assignNode  # Placeholder
 
 # Main transformation
-proc transformGoTypeAssertions*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformGoTypeAssertions*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Main type assertion transformation
 
   case node.kind
   of xnkTypeAssertion:
-    return transformTypeAssertion(node)
+    return transformTypeAssertion(node, semanticInfo)
 
   of xnkTypeSwitchStmt:
-    return transformTypeSwitch(node)
+    return transformTypeSwitch(node, semanticInfo)
 
   of xnkNamedType:
-    return transformEmptyInterface(node)
+    return transformEmptyInterface(node, semanticInfo)
 
   else:
     return node

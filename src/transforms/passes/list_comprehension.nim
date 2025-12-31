@@ -14,6 +14,7 @@
 ##   result
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 import strutils
 
@@ -24,7 +25,7 @@ proc genUniqueName(prefix: string): string =
   comprehensionCounter += 1
   result = prefix & $comprehensionCounter
 
-proc transformListComprehension*(node: XLangNode): XLangNode {.gcsafe.} =
+proc transformListComprehension*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode {.gcsafe.} =
   ## Transform list comprehensions into for loops with collection
   if node.kind != xnkExternal_Comprehension:
     return node

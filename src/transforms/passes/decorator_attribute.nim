@@ -16,6 +16,7 @@
 ##   proc getUsers() {.httpGet: "/users".}
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 import strutils
 import tables
@@ -96,7 +97,7 @@ proc decoratorToPragma(decorator: XLangNode): Option[XLangNode] =
       pragmas: @[pragmaWithArgs]
     ))
 
-proc transformDecoratorAttribute*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformDecoratorAttribute*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform decorators and attributes to Nim pragmas
   ## Note: XLangNode would need pragma field for functions
   ## For now, we'll add pragmas to a special location

@@ -10,9 +10,10 @@
 ##   → if obj != nil: obj.Method() else: nil
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options, sequtils
 
-proc transformSafeNavigation*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.}
+proc transformSafeNavigation*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode
 
 proc transformSafeNavigationHelper(node: XLangNode): XLangNode =
   ## Recursively transform safe navigation expressions
@@ -70,6 +71,6 @@ proc transformSafeNavigationHelper(node: XLangNode): XLangNode =
     # For all other nodes, recursively transform children
     result = node
 
-proc transformSafeNavigation*(node: XLangNode): XLangNode =
+proc transformSafeNavigation*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform safe navigation operators into explicit null checks
   result = transformSafeNavigationHelper(node)

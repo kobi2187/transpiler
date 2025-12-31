@@ -14,9 +14,10 @@
 ##   # use file
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 
-proc transformCSharpUsing*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformCSharpUsing*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform C# using statements to Nim defer pattern
   ##
   ## C# using ensures Dispose() is called on IDisposable objects
@@ -109,7 +110,7 @@ proc transformCSharpUsing*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} 
 #
 # This is even closer to Nim's defer pattern
 
-proc transformCSharpUsingDeclaration*(node: XLangNode): XLangNode =
+proc transformCSharpUsingDeclaration*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform C# 8.0+ using declarations
   ## These are variable declarations with automatic disposal
 

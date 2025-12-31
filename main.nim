@@ -92,15 +92,15 @@ proc stepSemanticAnalysis(xlangAst: XLangNode, verbose: bool): SemanticInfo =
     if result.warnings.len > 0:
       echo "  - Warnings: ", result.warnings.len
 
-proc stepEnumNormalization(xlangAst: var XLangNode, verbose: bool) =
+proc stepEnumNormalization(xlangAst: var XLangNode, verbose: bool, semanticInfo: var SemanticInfo) =
   ## Step 1.7: Normalize enum member access
   if verbose:
     echo "DEBUG: Running enum normalization..."
-  xlangAst = transformEnumNormalization(xlangAst)
+  xlangAst = transformEnumNormalization(xlangAst, semanticInfo)
   if verbose:
     echo "✓ Enum normalization complete"
 
-proc stepTransformPasses(xlangAst: var XLangNode, semanticInfo: SemanticInfo, passManager: PassManager2,
+proc stepTransformPasses(xlangAst: var XLangNode, semanticInfo: var SemanticInfo, passManager: PassManager2,
                         inputFile: string, infiniteLoopFiles: var seq[tuple[file: string, iterations: int, kinds: seq[XLangNodeKind]]],
                         verbose: bool) =
   ## Step 2: Apply transformation passes
@@ -354,7 +354,7 @@ proc main() =
 
     # Step 1.7: Normalize enum member access
     try:
-      stepEnumNormalization(xlangAst, verbose)
+      stepEnumNormalization(xlangAst, verbose, semanticInfo)
     except Exception as e:
       echo "ERROR: Enum normalization failed: ", e.msg
       echo "Stack trace: ", e.getStackTrace()

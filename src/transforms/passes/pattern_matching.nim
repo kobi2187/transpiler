@@ -22,6 +22,7 @@
 ##     case _: "somewhere else"
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 import strutils
 
@@ -142,7 +143,7 @@ proc transformPattern(pattern: XLangNode, matchExpr: XLangNode): tuple[condition
     result.condition = XLangNode(kind: xnkBoolLit, boolValue: true)
     result.bindings = @[]
 
-proc transformPatternMatching*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformPatternMatching*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform pattern matching to case statements or if-elif chains
   if node.kind != xnkSwitchStmt:
     return node

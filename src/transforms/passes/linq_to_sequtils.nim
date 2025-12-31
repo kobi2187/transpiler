@@ -9,6 +9,7 @@
 ## - people.GroupBy(p => p.City) → for loop with Table grouping
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 import strutils
 import tables
@@ -67,7 +68,7 @@ proc isLinqMethodCall(node: XLangNode): bool =
   let methodName = node.callee.memberName
   return identifyLinqMethod(methodName) != lmUnknown
 
-proc transformLinqToSequtils*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformLinqToSequtils*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform LINQ method chains to Nim sequtils/algorithm operations
   if not isLinqMethodCall(node):
     return node

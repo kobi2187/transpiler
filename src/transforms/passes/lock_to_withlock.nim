@@ -17,9 +17,10 @@
 ## C# objects need to be wrapped in a Lock
 
 import ../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 
-proc transformLockStatement*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformLockStatement*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform C# lock statements to Nim's withLock template
   ##
   ## C#'s lock ensures mutual exclusion on an object
@@ -65,7 +66,7 @@ proc transformLockStatement*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.
   #
   # We could make this configurable
 
-proc transformLockToAcquireRelease*(node: XLangNode): XLangNode =
+proc transformLockToAcquireRelease*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Alternative transformation using explicit acquire/release with defer
   ## This is more explicit and doesn't require the withLock template
 

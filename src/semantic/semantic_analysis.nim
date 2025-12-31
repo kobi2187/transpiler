@@ -72,6 +72,7 @@ type
     skFunction      # function/method declarations
     skType          # class, struct, interface, enum declarations
     skField         # class/struct fields
+    skProperty      # property declarations (before transformation to getX/setX)
     skEnumMember    # enum values
     skNamespace     # namespace declarations
     skModule        # module declarations
@@ -311,6 +312,10 @@ proc collectDeclarations(a: Analyzer, node: XLangNode) =
 
   of xnkFieldDecl:
     discard a.currentScope.addSymbol(node.fieldName, skField, node, a.info)
+
+  of xnkExternal_Property:
+    # Register property as a symbol - will be transformed to getX/setX later
+    discard a.currentScope.addSymbol(node.extPropName, skProperty, node, a.info)
 
   of xnkEnumDecl:
     discard a.currentScope.addSymbol(node.enumName, skType, node, a.info)
@@ -1094,6 +1099,16 @@ proc isCaptured*(info: SemanticInfo, node: XLangNode): bool =
   if sym.isSome:
     return sym.get.isCaptured
   return false
+
+proc getPropertyRename*(info: SemanticInfo, propertyName: string): Option[string] =
+  ## Check if a member name corresponds to a renamed property.
+  ## Returns the getter name if the property was renamed (e.g., "WaveFormat" → "getWaveFormat")
+  ## Performs case-insensitive matching since member names may be converted to camelCase
+  for sym in info.allSymbols:
+    if sym.kind == skProperty and sym.name.toLowerAscii() == propertyName.toLowerAscii():
+      if sym in info.renames:
+        return some(info.renames[sym])
+  return none(string)
 
 # =============================================================================
 # Nim Naming Conventions

@@ -4,9 +4,10 @@
 ## Into:       init; while condition: body; update
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 
-proc transformForToWhile*(node: XLangNode): XLangNode =
+proc transformForToWhile*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform C-style for loops into while loops
   ## This is needed because Nim doesn't have C-style for loops
   if node.kind != xnkExternal_ForStmt:

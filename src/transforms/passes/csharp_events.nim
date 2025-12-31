@@ -15,10 +15,11 @@
 ##   clickHandlers.add(onButtonClick)
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 import strutils
 
-proc transformDelegate*(node: XLangNode): XLangNode =
+proc transformDelegate*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform C# delegate declaration to Nim proc type
   ##
   ## C#: public delegate RetType DelegateName(params);
@@ -46,7 +47,7 @@ proc transformDelegate*(node: XLangNode): XLangNode =
     )
   )
 
-proc transformEventDeclaration*(node: XLangNode): XLangNode =
+proc transformEventDeclaration*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform C# event declaration to Nim callback list
   ##
   ## C#: public event DelegateType EventName;
@@ -75,7 +76,7 @@ proc transformEventDeclaration*(node: XLangNode): XLangNode =
     ))
   )
 
-proc transformEventSubscription*(node: XLangNode): XLangNode =
+proc transformEventSubscription*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform event subscription (+=) to seq.add
   ##
   ## C#: event += handler
@@ -122,7 +123,7 @@ proc transformEventSubscription*(node: XLangNode): XLangNode =
     args: @[handlerExpr]
   )
 
-proc transformEventUnsubscription*(node: XLangNode): XLangNode =
+proc transformEventUnsubscription*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform event unsubscription (-=) to seq.delete
   ##
   ## C#: event -= handler
@@ -174,7 +175,7 @@ proc transformEventUnsubscription*(node: XLangNode): XLangNode =
     args: @[findCall]
   )
 
-proc transformEventInvocation*(node: XLangNode): XLangNode =
+proc transformEventInvocation*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform event invocation to foreach loop
   ##
   ## C#: Event?.Invoke(args) or Event(args)
@@ -245,7 +246,7 @@ proc transformEventInvocation*(node: XLangNode): XLangNode =
 # Action<T> → proc(x: T)
 # Func<T, R> → proc(x: T): R
 
-proc transformActionFunc*(node: XLangNode): XLangNode =
+proc transformActionFunc*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform C# Action and Func to Nim proc types
   ##
   ## C#: Action<int, string> → Nim: proc(a: int, b: string)
@@ -303,30 +304,30 @@ proc transformActionFunc*(node: XLangNode): XLangNode =
   return node
 
 # Main transformation
-proc transformCSharpEvents*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformCSharpEvents*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Main event/delegate transformation
 
   case node.kind
   of xnkExternal_Delegate:
-    return transformDelegate(node)
+    return transformDelegate(node, semanticInfo)
 
   of xnkExternal_Event:
-    return transformEventDeclaration(node)
+    return transformEventDeclaration(node, semanticInfo)
 
   of xnkBinaryExpr:
     # Event subscription/unsubscription
     if node.binaryOp == opAddAssign:
-      return transformEventSubscription(node)
+      return transformEventSubscription(node, semanticInfo)
     elif node.binaryOp == opSubAssign:
-      return transformEventUnsubscription(node)
+      return transformEventUnsubscription(node, semanticInfo)
 
   of xnkCallExpr:
     # Event invocation
-    return transformEventInvocation(node)
+    return transformEventInvocation(node, semanticInfo)
 
   of xnkGenericType:
     # Action/Func transformation
-    return transformActionFunc(node)
+    return transformActionFunc(node, semanticInfo)
 
   else:
     discard

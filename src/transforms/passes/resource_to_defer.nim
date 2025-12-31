@@ -13,9 +13,10 @@
 ##   # body
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 
-proc transformResourceToDefer*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformResourceToDefer*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform unified resource statements to defer pattern
 
   if node.kind != xnkExternal_Resource:
@@ -93,7 +94,7 @@ proc transformResourceToDefer*(node: XLangNode): XLangNode {.noSideEffect, gcsaf
 
 
 ## Legacy support: Transform old xnkWithStmt to xnkResourceStmt
-proc migrateWithStmt*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc migrateWithStmt*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Migrate Python with statements to unified resource management
 
   if node.kind != xnkExternal_With:
@@ -117,7 +118,7 @@ proc migrateWithStmt*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
 
 
 ## Legacy support: Transform old xnkUsingStmt to xnkResourceStmt
-proc migrateUsingStmt*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc migrateUsingStmt*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Migrate C# using statements to unified resource management
 
   if node.kind != xnkUsingStmt:

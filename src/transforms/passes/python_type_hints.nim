@@ -11,6 +11,7 @@
 ##     return "Hello " & name & ", you are " & $age
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 import strutils
 import tables
@@ -177,7 +178,7 @@ proc transformPythonType(typeNode: XLangNode): XLangNode =
   else:
     return typeNode
 
-proc transformPythonTypeHints*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformPythonTypeHints*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform Python type hints in function signatures and variables
 
   case node.kind
@@ -241,7 +242,7 @@ proc transformPythonTypeHints*(node: XLangNode): XLangNode {.noSideEffect, gcsaf
     # Transform class member type annotations
     var newMembers: seq[XLangNode] = @[]
     for member in node.members:
-      newMembers.add(transformPythonTypeHints(member))
+      newMembers.add(transformPythonTypeHints(member, semanticInfo))
 
     result = XLangNode(
       kind: xnkClassDecl,
@@ -257,7 +258,7 @@ proc transformPythonTypeHints*(node: XLangNode): XLangNode {.noSideEffect, gcsaf
 # def func(x: int | str) → def func(x: Union[int, str])
 # This gets normalized to Union before type transformation
 
-proc transformPythonUnionSyntax*(node: XLangNode): XLangNode =
+proc transformPythonUnionSyntax*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform Python 3.10+ union operator (int | str)
   ## This should happen before general type hint transformation
 
@@ -277,7 +278,7 @@ proc transformPythonUnionSyntax*(node: XLangNode): XLangNode =
 # Python: T = TypeVar('T')
 # Nim: generic types are declared differently
 
-proc transformTypeVar*(node: XLangNode): XLangNode =
+proc transformTypeVar*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform Python TypeVar declarations
   ##
   ## Python:

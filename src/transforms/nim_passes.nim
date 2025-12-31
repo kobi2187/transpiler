@@ -5,6 +5,7 @@
 
 import ../../xlangtypes
 import pass_manager2
+import ../semantic/semantic_analysis
 import ../xlang/lang_capabilities
 import collections/tables
 import strutils
@@ -61,9 +62,9 @@ import passes/add_self_parameter
 import passes/normalize_operators
 import types
 
-template toClosure(p: untyped): proc(node: XLangNode): XLangNode {.closure.} =
-  proc(node: XLangNode): XLangNode {.closure.} =
-    p(node)
+template toClosure(p: untyped): proc(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode {.closure.} =
+  proc(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode {.closure.} =
+    p(node, semanticInfo)
 
 
 

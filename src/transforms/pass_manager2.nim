@@ -66,7 +66,7 @@ proc applyTransform*(pm: PassManager2, node: var XLangNode,
 
   let transform = pm.kindToTransform.getOrDefault(kind, nil)
   if transform != nil:
-    let newNode = transform.transform(node)
+    let newNode = transform.transform(node, pm.semanticInfo)
     # Only count as transformation if the node actually changed
     if newNode != node:
       node = newNode
@@ -77,7 +77,7 @@ proc applyTransform*(pm: PassManager2, node: var XLangNode,
         reintroducedKinds.incl(node.kind)
 
 proc run*(pm: PassManager2, root: var XLangNode, verbose: bool = false,
-          semanticInfo: SemanticInfo = nil): XLangNode =
+          semanticInfo: var SemanticInfo): XLangNode =
   ## Run the pass manager on the given AST until fixed point is reached.
   ## If semanticInfo is provided, transforms can access it via pm.semanticInfo.
   pm.semanticInfo = semanticInfo

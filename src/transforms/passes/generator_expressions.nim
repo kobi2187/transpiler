@@ -15,9 +15,10 @@
 ##                 yield x
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 
-proc transformGeneratorExpressions*(node: XLangNode): XLangNode {.gcsafe.}
+proc transformGeneratorExpressions*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode {.gcsafe.}
 
 var generatorCounter = 0
 
@@ -157,7 +158,7 @@ proc transformGeneratorExpressionsHelper(node: XLangNode, hoistedIterators: var 
   else:
     result = node
 
-proc transformGeneratorExpressions*(node: XLangNode): XLangNode =
+proc transformGeneratorExpressions*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform generator expressions to iterators
   var hoistedIterators: seq[XLangNode] = @[]
   result = transformGeneratorExpressionsHelper(node, hoistedIterators)

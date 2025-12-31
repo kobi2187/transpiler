@@ -232,6 +232,13 @@ proc isClassField*(ctx: ConversionContext, name: string): bool =
         return true
   return false
 
+proc classHasBaseTypes*(ctx: ConversionContext): bool =
+  ## Check if the current class has any base types (inheritance)
+  if ctx.currentClass.isSome():
+    let classNode = ctx.currentClass.get()
+    return classNode.baseTypes.len > 0
+  return false
+
 # ===== Function Context Helpers =====
 proc isInFunctionScope*(ctx: ConversionContext): bool =
   ## Check if we're currently inside a function
@@ -529,8 +536,13 @@ proc conv_xnkFuncDecl_standalone(node: XLangNode, ctx: ConversionContext): MyNim
 proc conv_xnkFuncDecl_instanceMethod(node: XLangNode, ctx: ConversionContext): MyNimNode =
   ## Convert instance method (class member, non-static)
   ## Adds 'self' parameter as first parameter
-  result = newNimNode(nnkProcDef)
-  # 0: name - add asterisk for public procs
+  ## Uses 'method' (nnkMethodDef) if class has inheritance, otherwise 'proc' (nnkProcDef)
+
+  # Use method for classes with inheritance (enables dynamic dispatch)
+  let useMethod = ctx.classHasBaseTypes()
+  result = if useMethod: newNimNode(nnkMethodDef) else: newNimNode(nnkProcDef)
+
+  # 0: name - add asterisk for public procs/methods
   # Convert C# PascalCase to Nim camelCase (e.g., ToString -> toString)
   let baseName = memberNameToNim(node.funcName)
   let procName = if node.funcVisibility == "public": baseName & "*" else: baseName
@@ -731,7 +743,24 @@ proc conv_xnkMemberAccess(node: XLangNode, ctx: ConversionContext): MyNimNode =
       discard
 
   result.add(leftSide)
-  result.add(newIdentNode(node.memberName))
+
+  # Check if this member access is for a property that was renamed
+  # Properties are transformed to getPropertyName/setPropertyName by property_to_procs
+  var memberName = node.memberName
+  if ctx.semanticInfo != nil:
+    let propertyRename = ctx.semanticInfo.getPropertyRename(node.memberName)
+    if propertyRename.isSome():
+      # This is a property access - use the getter name and make it a call
+      memberName = propertyRename.get()
+      # Convert from property access to method call: obj.property → obj.getProperty()
+      result = newNimNode(nnkCall)
+      let dotExpr = newNimNode(nnkDotExpr)
+      dotExpr.add(leftSide)
+      dotExpr.add(newIdentNode(memberName))
+      result.add(dotExpr)
+      return
+
+  result.add(newIdentNode(memberName))
 
 proc conv_xnkIndexExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result = newNimNode(nnkBracketExpr)

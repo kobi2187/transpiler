@@ -11,10 +11,11 @@
 ## Nim: proc(x, y: int): int = x + y
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 import strutils
 
-proc transformLambda*(node: XLangNode): XLangNode =
+proc transformLambda*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform lambda expressions to Nim anonymous procs
 
   if node.kind != xnkLambdaExpr:
@@ -57,7 +58,7 @@ proc transformLambda*(node: XLangNode): XLangNode =
 # Arrow functions with implicit return (JavaScript, C#)
 # x => x * 2  vs  x => { return x * 2; }
 
-proc transformArrowFunction*(node: XLangNode): XLangNode =
+proc transformArrowFunction*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform arrow functions with special handling for implicit return
   ##
   ## JS: x => x * 2  (expression body, implicit return)
@@ -121,7 +122,7 @@ proc markAsClosure*(node: XLangNode): XLangNode =
 # Java method references
 # Class::method → Nim proc reference
 
-proc transformMethodReference*(node: XLangNode): XLangNode =
+proc transformMethodReference*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform Java method references to Nim proc references
   ##
   ## Java: list.forEach(System.out::println)
@@ -148,7 +149,7 @@ proc transformMethodReference*(node: XLangNode): XLangNode =
 
 # Python functools.partial → Nim partial application
 
-proc transformPartialApplication*(node: XLangNode): XLangNode =
+proc transformPartialApplication*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform partial function application
   ##
   ## Python: partial(func, arg1, arg2)
@@ -178,7 +179,7 @@ proc transformPartialApplication*(node: XLangNode): XLangNode =
 # Default parameters in lambdas (Python, JavaScript ES6)
 # lambda x, y=10: x + y
 
-proc transformLambdaDefaults*(node: XLangNode): XLangNode =
+proc transformLambdaDefaults*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform lambda with default parameters
   ##
   ## Python: lambda x, y=10: x + y
@@ -191,12 +192,12 @@ proc transformLambdaDefaults*(node: XLangNode): XLangNode =
   # Already handled by parameter transformation
   # Just ensure they're preserved
 
-  result = transformLambda(node)
+  result = transformLambda(node, semanticInfo)
 
 # Rest parameters in lambdas (JavaScript, Python)
 # (...args) => args.length  or  lambda *args: len(args)
 
-proc transformRestParameters*(node: XLangNode): XLangNode =
+proc transformRestParameters*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform rest/varargs parameters in lambdas
   ##
   ## JS: (...args) => args.length
@@ -216,7 +217,7 @@ proc transformRestParameters*(node: XLangNode): XLangNode =
 # JavaScript: (function() { ... })()
 # Transform to Nim block
 
-proc transformIIFE*(node: XLangNode): XLangNode =
+proc transformIIFE*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform IIFE to Nim block
   ##
   ## JS: (function() { var x = 1; return x * 2; })()
@@ -253,25 +254,25 @@ proc transformIIFE*(node: XLangNode): XLangNode =
     result = node
 
 # Main transformation
-proc transformLambdaNormalization*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformLambdaNormalization*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Main lambda normalization transformation
 
   case node.kind
   of xnkLambdaExpr:
-    return transformLambda(node)
+    return transformLambda(node, semanticInfo)
 
   of xnkArrowFunc:
-    return transformArrowFunction(node)
+    return transformArrowFunction(node, semanticInfo)
 
   of xnkMethodReference:
-    return transformMethodReference(node)
+    return transformMethodReference(node, semanticInfo)
 
   of xnkCallExpr:
     # Check for IIFE or partial application
-    let iife = transformIIFE(node)
+    let iife = transformIIFE(node, semanticInfo)
     if iife.kind != xnkCallExpr:
       return iife
-    return transformPartialApplication(node)
+    return transformPartialApplication(node, semanticInfo)
 
   else:
     return node

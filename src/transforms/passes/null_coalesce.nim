@@ -7,9 +7,10 @@
 ## Because Nim doesn't have these C# operators
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 
-proc transformNullCoalesce*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformNullCoalesce*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform null coalescing operator
   case node.kind
   of xnkExternal_NullCoalesce:

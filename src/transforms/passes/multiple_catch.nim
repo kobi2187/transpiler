@@ -21,6 +21,7 @@
 ##     handleSQL(e)
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 
 proc buildIfElifChain(clauses: seq[XLangNode]): XLangNode =
@@ -40,7 +41,7 @@ proc buildIfElifChain(clauses: seq[XLangNode]): XLangNode =
     current.elseBody = some(clauses[i])
     current = clauses[i]
 
-proc transformMultipleCatch*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformMultipleCatch*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform try statements with multiple catch blocks into single catch with type checking
   if node.kind != xnkTryStmt:
     return node

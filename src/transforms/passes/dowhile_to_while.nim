@@ -4,6 +4,7 @@
 ## Into:       while true: body; if not condition: break
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 
 proc extractAssignmentsFromCondition(cond: XLangNode): tuple[assignments: seq[XLangNode], cleanCondition: XLangNode] =
@@ -30,7 +31,7 @@ proc extractAssignmentsFromCondition(cond: XLangNode): tuple[assignments: seq[XL
     # No assignment, use condition as-is
     result.cleanCondition = cond
 
-proc transformDoWhileToWhile*(node: XLangNode): XLangNode {.gcsafe.} =
+proc transformDoWhileToWhile*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode {.gcsafe.} =
   ## Transform do-while loops into while-true loops with break
   ## This is needed because Nim doesn't have do-while loops
   ## Also handles assignments in conditions like: while ((x = foo()).bar)

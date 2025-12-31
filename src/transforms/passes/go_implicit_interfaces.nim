@@ -14,10 +14,11 @@
 ##   # Types must explicitly match the concept
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 import strutils
 
-proc transformGoInterface*(node: XLangNode): XLangNode =
+proc transformGoInterface*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform Go interface to Nim concept
   ##
   ## Go interfaces are structural (duck typing)
@@ -65,7 +66,7 @@ proc transformGoInterface*(node: XLangNode): XLangNode =
 # Go: interface{} means "any type"
 # Nim: use generics or RootRef
 
-proc transformEmptyInterfaceDecl*(node: XLangNode): XLangNode =
+proc transformEmptyInterfaceDecl*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform Go's empty interface declaration
   ##
   ## Go: type Any interface{} or interface{}
@@ -105,7 +106,7 @@ proc transformEmptyInterfaceDecl*(node: XLangNode): XLangNode =
 # Go allows interface embedding (composition)
 # type ReadWriter interface { Reader; Writer }
 
-proc transformEmbeddedInterface*(node: XLangNode): XLangNode =
+proc transformEmbeddedInterface*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform Go embedded interfaces
   ##
   ## Go:
@@ -156,7 +157,7 @@ proc transformEmbeddedInterface*(node: XLangNode): XLangNode =
 # Go: var r io.Reader = &bytes.Buffer{}
 # Nim concepts work differently - no explicit "implements" needed
 
-proc transformInterfaceVariable*(node: XLangNode): XLangNode =
+proc transformInterfaceVariable*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform variables with interface types
   ##
   ## In Go, you can assign any type to interface if it satisfies
@@ -176,7 +177,7 @@ proc transformInterfaceVariable*(node: XLangNode): XLangNode =
 # Type T has methods on T
 # Type *T has methods on both T and *T
 
-proc transformMethodSet*(node: XLangNode): XLangNode =
+proc transformMethodSet*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Handle Go's method set rules
   ##
   ## If concept requires method on pointer receiver,
@@ -192,23 +193,23 @@ proc transformMethodSet*(node: XLangNode): XLangNode =
 # Nim concepts don't support this directly
 
 # Main transformation
-proc transformGoImplicitInterfaces*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformGoImplicitInterfaces*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Main interface-to-concept transformation
 
   case node.kind
   of xnkInterfaceDecl:
     # Check for empty interface first
-    let emptyResult = transformEmptyInterfaceDecl(node)
+    let emptyResult = transformEmptyInterfaceDecl(node, semanticInfo)
     if emptyResult.kind != xnkInterfaceDecl:
       return emptyResult
 
     # Check for embedded interfaces
-    let embeddedResult = transformEmbeddedInterface(node)
+    let embeddedResult = transformEmbeddedInterface(node, semanticInfo)
     if embeddedResult != node:
       return embeddedResult
 
     # Regular interface
-    return transformGoInterface(node)
+    return transformGoInterface(node, semanticInfo)
 
   else:
     return node

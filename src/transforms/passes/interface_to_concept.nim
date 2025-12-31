@@ -4,9 +4,10 @@
 ## Into:       type Drawable = concept x { x.draw() }
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 
-proc transformInterfaceToConcept*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformInterfaceToConcept*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform interface declarations into Nim concepts
   ## This is needed because Nim doesn't have interfaces
   if node.kind != xnkExternal_Interface:

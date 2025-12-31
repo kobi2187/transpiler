@@ -6,9 +6,10 @@
 ## Nim: Option[int]
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 
-proc transformNullableToOption*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformNullableToOption*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform Nullable<T> generic types to Option[T]
   case node.kind
   of xnkGenericType:

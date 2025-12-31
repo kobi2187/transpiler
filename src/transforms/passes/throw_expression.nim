@@ -13,9 +13,10 @@
 ##       return data
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 
-proc transformThrowExpression*(node: XLangNode): XLangNode {.gcsafe.}
+proc transformThrowExpression*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode {.gcsafe.}
 
 var tempVarCounter = 0
 
@@ -104,7 +105,7 @@ proc hoistThrowExpr(node: XLangNode, stmts: var seq[XLangNode]): XLangNode =
     # Default: return node as-is
     result = node
 
-proc transformThrowExpression*(node: XLangNode): XLangNode =
+proc transformThrowExpression*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform throw expressions to statements
   case node.kind
   of xnkExternal_ThrowExpr:

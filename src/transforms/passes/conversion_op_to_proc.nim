@@ -18,6 +18,7 @@
 ## while explicit conversions require calling the proc directly.
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 import strutils
 
@@ -36,7 +37,7 @@ proc getFuncNameFromType(typeNode: XLangNode): string =
     # Fallback for complex types
     result = "toConverted"
 
-proc transformConversionOpToProc*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformConversionOpToProc*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform C# conversion operators into Nim converter or proc
   if node.kind != xnkExternal_ConversionOp:
     return node

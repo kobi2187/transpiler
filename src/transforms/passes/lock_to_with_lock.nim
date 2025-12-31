@@ -18,9 +18,10 @@
 ## that the lock is wrapped in a proper Nim Lock type.
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 
-proc transformLockToWithLock*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformLockToWithLock*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform C# lock statements into Nim acquire/try/finally/release pattern
   if node.kind != xnkExternal_Lock:
     return node

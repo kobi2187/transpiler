@@ -25,9 +25,10 @@
 ## For defers inside nested blocks, we need to track scope.
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 
-proc transformGoDefer*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformGoDefer*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform Go defer statements to Nim defer
   ##
   ## Go and Nim defer are very similar, main differences:

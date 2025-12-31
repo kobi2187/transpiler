@@ -13,10 +13,11 @@
 ##   Nim: str.wordCount() or wordCount(str)
 
 import ../../../xlangtypes
+import ../../semantic/semantic_analysis
 import options
 import strutils
 
-proc transformExtensionMethods*(node: XLangNode): XLangNode {.noSideEffect, gcsafe.} =
+proc transformExtensionMethods*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform C# extension methods to regular Nim procedures
   case node.kind
   of xnkExternal_ExtensionMethod:

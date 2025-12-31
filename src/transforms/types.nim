@@ -2,6 +2,7 @@
 
 
 import ../../xlangtypes
+import ../semantic/semantic_analysis
 import sets, hashes
 
 
@@ -66,10 +67,10 @@ type TransformPass* = ref object
     ## A single transformation pass
     id*: TransformPassID         ## Unique identifier
     # kind*: TransformPassKind
-    operatesOnKinds*: HashSet[XLangNodeKind] 
-    transform*: proc(node: XLangNode): XLangNode
+    operatesOnKinds*: HashSet[XLangNodeKind]
+    transform*: proc(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode
 
-proc newTransformPass*(tp: TransformPassID, p: proc(node: XLangNode): XLangNode, kinds: seq[XLangNodeKind]) : TransformPass = 
+proc newTransformPass*(tp: TransformPassID, p: proc(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode, kinds: seq[XLangNodeKind]) : TransformPass =
     new result
     result.id = tp
     result.transform = p
