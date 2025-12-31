@@ -7,8 +7,8 @@
 ## - C++: Type operator+(const Type& other) → proc `+`(a, b: Type): Type
 ## - C#: public static Type operator+(Type a, Type b) → proc `+`(a, b: Type): Type
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 import strutils
 import tables

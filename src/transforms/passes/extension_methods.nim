@@ -12,8 +12,8 @@
 ##   C#: str.WordCount()
 ##   Nim: str.wordCount() or wordCount(str)
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 import strutils
 

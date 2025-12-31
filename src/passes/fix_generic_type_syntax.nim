@@ -8,9 +8,9 @@
 ## Becomes:
 ##   xnkGenericType(genericTypeName: "List", genericArgs: [xnkNamedType("int")])
 
-import ../../xlangtypes
-import ../transforms/helpers
-import options, strutils, sequtils
+import core/xlangtypes
+import core/helpers
+import options, strutils
 
 proc parseGenericType(typeName: string): tuple[baseName: string, args: seq[string], isGeneric: bool] =
   ## Parse a generic type string like "List<int>" or "Dictionary<string, int>"
@@ -99,7 +99,7 @@ proc fixGenericTypesInNode(node: var XLangNode) =
   case node.kind
   of xnkNamedType:
     # Check if this is an array type or generic type in disguise
-    let (arrayBaseType, isArray) = parseArrayType(node.typeName)
+    let (_, isArray) = parseArrayType(node.typeName)
 
     if isArray:
       # It's an array type - convert the entire thing
@@ -123,7 +123,7 @@ proc fixGenericTypesInNode(node: var XLangNode) =
 
   of xnkGenericType:
     # Also fix the base type name if it has generics
-    let (baseName, args, isGeneric) = parseGenericType(node.genericTypeName)
+    let (baseName, _, isGeneric) = parseGenericType(node.genericTypeName)
     if isGeneric:
       # This shouldn't happen, but handle it anyway
       node.genericTypeName = baseName

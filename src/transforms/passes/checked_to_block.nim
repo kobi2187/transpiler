@@ -19,8 +19,8 @@
 ## Overflow behavior is controlled by compilation flags (-d:nimIntOverflowCheck).
 ## We simply unwrap these blocks since we can't preserve the exact semantics.
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 
 proc transformCheckedToBlock*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform C# checked/unchecked blocks by unwrapping them

@@ -4,8 +4,8 @@
 ## Into:       proc getAge(): T = {...}
 ##             proc setAge(value: T) = {...}
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 import strutils
 import tables

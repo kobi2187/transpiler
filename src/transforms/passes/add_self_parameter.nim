@@ -8,8 +8,8 @@
 ## C# constructor: public MyType(int x) { this.value = x; }
 ## Nim: proc newMyType(x: int): MyType = result = MyType(); result.value = x
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 import strutils
 

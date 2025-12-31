@@ -13,8 +13,8 @@
 ##   defer: file.close()
 ##   # use file
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 
 proc transformCSharpUsing*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =

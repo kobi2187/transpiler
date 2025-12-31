@@ -16,8 +16,8 @@
 ## - String -> string
 ## - Boolean -> bool
 
-import ../../xlangtypes
-import ../transforms/helpers
+import core/xlangtypes
+import core/helpers
 import options, tables
 
 const primitiveTypeMap = {

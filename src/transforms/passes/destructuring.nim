@@ -6,8 +6,8 @@
 ##
 ## Because JS/Python style destructuring needs to be explicit in Nim
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 import sequtils
 import strutils

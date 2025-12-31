@@ -5,8 +5,8 @@
 ## - Normalize empty blocks
 ## - Clean up redundant constructs
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 
 proc transformNormalizeSimple*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =

@@ -3,8 +3,8 @@
 ## Transforms: do { body } while (condition)
 ## Into:       while true: body; if not condition: break
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 
 proc extractAssignmentsFromCondition(cond: XLangNode): tuple[assignments: seq[XLangNode], cleanCondition: XLangNode] =

@@ -19,8 +19,8 @@
 ## Note: C# local functions can capture variables from the enclosing scope,
 ## and Nim nested procs have the same capability through closure semantics.
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 
 proc transformLocalFunctionToProc*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =

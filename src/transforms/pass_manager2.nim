@@ -7,14 +7,14 @@
 ## 4. Count each application
 ## 5. Repeat entire tree traversal until counter = 0 (fixed point reached)
 
-import ../../xlangtypes
+import core/xlangtypes
 import types
-import ../xlang/error_handling
-import ../semantic/semantic_analysis
+import error_collector
+import semantic/semantic_analysis
 import tables
 import sets, strutils, sequtils
 
-import helpers
+import core/helpers
 
 
 type
@@ -108,9 +108,6 @@ proc run*(pm: PassManager2, root: var XLangNode, verbose: bool = false,
 
     # Calculate applicable transforms for this iteration (intersection)
     let applicableKinds = pm.activeKinds * treeKinds
-
-    # Calculate how many transform kinds are not needed this iteration
-    let unusedKinds = pm.activeKinds - treeKinds
 
     if applicableKinds.len == 0:
       break

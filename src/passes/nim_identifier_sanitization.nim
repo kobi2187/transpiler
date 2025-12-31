@@ -10,9 +10,9 @@
 ## Example: If we have both "test" and "test_", sanitizing "test_" would collide,
 ## so we rename it to "test2" (or "test3" if "test2" exists, etc.)
 
-import ../../xlangtypes
-import ../naming_conventions
-import ../transforms/helpers
+import core/xlangtypes
+import backends/nim/naming_conventions
+import core/helpers
 import options, sets, tables
 
 type

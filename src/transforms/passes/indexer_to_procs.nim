@@ -12,8 +12,8 @@
 ##   proc `[]`(self: MyClass, i: int): int = data[i]
 ##   proc `[]=`(self: var MyClass, i: int, value: int) = data[i] = value
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 
 proc transformIndexerToProcs*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode

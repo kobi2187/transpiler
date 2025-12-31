@@ -1,8 +1,8 @@
 # transforms/types.nim
 
 
-import ../../xlangtypes
-import ../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import sets, hashes
 
 

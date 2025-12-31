@@ -12,8 +12,8 @@
 ## Nim proc types serve the same purpose - they define a function signature that can be
 ## assigned to variables, passed as parameters, etc.
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 
 proc transformDelegateToTypeAlias*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =

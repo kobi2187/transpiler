@@ -14,8 +14,8 @@
 ##               if x > 5:
 ##                 yield x
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 
 proc transformGeneratorExpressions*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode {.gcsafe.}

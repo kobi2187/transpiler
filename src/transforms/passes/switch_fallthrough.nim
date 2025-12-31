@@ -3,8 +3,8 @@
 ## Transforms: switch with fallthrough → if-elif chain
 ## Because Nim's case statement doesn't support fallthrough
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 
 proc mergeBlocks(body1, body2: XLangNode): XLangNode =

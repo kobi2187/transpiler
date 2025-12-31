@@ -9,8 +9,8 @@
 ##   C#: obj?.Method()
 ##   → if obj != nil: obj.Method() else: nil
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options, sequtils
 
 proc transformSafeNavigation*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode

@@ -13,8 +13,8 @@
 ## - String concatenation: "Hello " & name & ", you are " & $age & " years old"
 ## - Non-string expressions automatically get $ for stringification
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options, sequtils
 
 proc transformStringInterpolation*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode

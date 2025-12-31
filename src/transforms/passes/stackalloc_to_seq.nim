@@ -13,8 +13,8 @@
 ## Note: C# stackalloc allocates on the stack for performance, but Nim's
 ## seq (heap-allocated) is safer and provides automatic memory management.
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 import strutils
 

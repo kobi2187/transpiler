@@ -17,8 +17,8 @@
 ## Note: Nim converters are automatically applied for implicit conversions,
 ## while explicit conversions require calling the proc directly.
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 import strutils
 

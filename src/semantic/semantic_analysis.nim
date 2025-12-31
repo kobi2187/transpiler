@@ -9,7 +9,7 @@
 # - SemanticInfo: The analysis result - maps AST nodes to their resolved symbols
 
 import std/[tables, sets, options, hashes, strutils]
-import ../../xlangtypes
+import core/xlangtypes
 
 # Nim builtin identifiers that don't need to be declared
 const NimBuiltins* = [

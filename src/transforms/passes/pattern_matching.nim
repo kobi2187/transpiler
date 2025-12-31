@@ -21,8 +21,8 @@
 ##     case (x, 0): f"on x-axis at {x}"
 ##     case _: "somewhere else"
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 import strutils
 

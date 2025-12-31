@@ -1,0 +1,531 @@
+{
+  "literalText": "",
+  "kind": "nnkStmtList",
+  "sons": [
+    {
+      "literalText": "",
+      "kind": "nnkStmtList",
+      "sons": [
+        {
+          "literalText": "",
+          "kind": "nnkTypeSection",
+          "sons": [
+            {
+              "literalText": "",
+              "kind": "nnkTypeDef",
+              "sons": [
+                {
+                  "literalText": "",
+                  "kind": "nnkIdent",
+                  "identStr": "Person"
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkEmpty",
+                  "sons": []
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkRefTy",
+                  "sons": [
+                    {
+                      "literalText": "",
+                      "kind": "nnkObjectTy",
+                      "sons": [
+                        {
+                          "literalText": "",
+                          "kind": "nnkEmpty",
+                          "sons": []
+                        },
+                        {
+                          "literalText": "",
+                          "kind": "nnkOfInherit",
+                          "sons": []
+                        },
+                        {
+                          "literalText": "",
+                          "kind": "nnkRecList",
+                          "sons": []
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "literalText": "",
+          "kind": "nnkStmtList",
+          "sons": [
+            {
+              "literalText": "",
+              "kind": "nnkIdentDefs",
+              "sons": [
+                {
+                  "literalText": "",
+                  "kind": "nnkIdent",
+                  "identStr": "_name"
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkIdent",
+                  "identStr": "string"
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkEmpty",
+                  "sons": []
+                }
+              ]
+            },
+            {
+              "literalText": "",
+              "kind": "nnkProcDef",
+              "sons": [
+                {
+                  "literalText": "",
+                  "kind": "nnkIdent",
+                  "identStr": "getName*"
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkEmpty",
+                  "sons": []
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkEmpty",
+                  "sons": []
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkFormalParams",
+                  "sons": [
+                    {
+                      "literalText": "",
+                      "kind": "nnkIdent",
+                      "identStr": "string"
+                    },
+                    {
+                      "literalText": "",
+                      "kind": "nnkIdentDefs",
+                      "sons": [
+                        {
+                          "literalText": "",
+                          "kind": "nnkIdent",
+                          "identStr": "self"
+                        },
+                        {
+                          "literalText": "",
+                          "kind": "nnkIdent",
+                          "identStr": "Person"
+                        },
+                        {
+                          "literalText": "",
+                          "kind": "nnkEmpty",
+                          "sons": []
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkEmpty",
+                  "sons": []
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkEmpty",
+                  "sons": []
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkStmtList",
+                  "sons": [
+                    {
+                      "literalText": "",
+                      "kind": "nnkReturnStmt",
+                      "sons": [
+                        {
+                          "literalText": "",
+                          "kind": "nnkDotExpr",
+                          "sons": [
+                            {
+                              "literalText": "",
+                              "kind": "nnkIdent",
+                              "identStr": "self"
+                            },
+                            {
+                              "literalText": "",
+                              "kind": "nnkIdent",
+                              "identStr": "_name"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "literalText": "",
+              "kind": "nnkProcDef",
+              "sons": [
+                {
+                  "literalText": "",
+                  "kind": "nnkIdent",
+                  "identStr": "setName*"
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkEmpty",
+                  "sons": []
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkEmpty",
+                  "sons": []
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkFormalParams",
+                  "sons": [
+                    {
+                      "literalText": "",
+                      "kind": "nnkEmpty",
+                      "sons": []
+                    },
+                    {
+                      "literalText": "",
+                      "kind": "nnkIdentDefs",
+                      "sons": [
+                        {
+                          "literalText": "",
+                          "kind": "nnkIdent",
+                          "identStr": "self"
+                        },
+                        {
+                          "literalText": "",
+                          "kind": "nnkIdent",
+                          "identStr": "Person"
+                        },
+                        {
+                          "literalText": "",
+                          "kind": "nnkEmpty",
+                          "sons": []
+                        }
+                      ]
+                    },
+                    {
+                      "literalText": "",
+                      "kind": "nnkIdentDefs",
+                      "sons": [
+                        {
+                          "literalText": "",
+                          "kind": "nnkIdent",
+                          "identStr": "value"
+                        },
+                        {
+                          "literalText": "",
+                          "kind": "nnkIdent",
+                          "identStr": "string"
+                        },
+                        {
+                          "literalText": "",
+                          "kind": "nnkEmpty",
+                          "sons": []
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkEmpty",
+                  "sons": []
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkEmpty",
+                  "sons": []
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkStmtList",
+                  "sons": [
+                    {
+                      "literalText": "",
+                      "kind": "nnkAsgn",
+                      "sons": [
+                        {
+                          "literalText": "",
+                          "kind": "nnkDotExpr",
+                          "sons": [
+                            {
+                              "literalText": "",
+                              "kind": "nnkIdent",
+                              "identStr": "self"
+                            },
+                            {
+                              "literalText": "",
+                              "kind": "nnkIdent",
+                              "identStr": "_name"
+                            }
+                          ]
+                        },
+                        {
+                          "literalText": "",
+                          "kind": "nnkIdent",
+                          "identStr": "value"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "literalText": "",
+          "kind": "nnkStmtList",
+          "sons": [
+            {
+              "literalText": "",
+              "kind": "nnkIdentDefs",
+              "sons": [
+                {
+                  "literalText": "",
+                  "kind": "nnkIdent",
+                  "identStr": "_age"
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkIdent",
+                  "identStr": "int32"
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkEmpty",
+                  "sons": []
+                }
+              ]
+            },
+            {
+              "literalText": "",
+              "kind": "nnkProcDef",
+              "sons": [
+                {
+                  "literalText": "",
+                  "kind": "nnkIdent",
+                  "identStr": "getAge*"
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkEmpty",
+                  "sons": []
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkEmpty",
+                  "sons": []
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkFormalParams",
+                  "sons": [
+                    {
+                      "literalText": "",
+                      "kind": "nnkIdent",
+                      "identStr": "int32"
+                    },
+                    {
+                      "literalText": "",
+                      "kind": "nnkIdentDefs",
+                      "sons": [
+                        {
+                          "literalText": "",
+                          "kind": "nnkIdent",
+                          "identStr": "self"
+                        },
+                        {
+                          "literalText": "",
+                          "kind": "nnkIdent",
+                          "identStr": "Person"
+                        },
+                        {
+                          "literalText": "",
+                          "kind": "nnkEmpty",
+                          "sons": []
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkEmpty",
+                  "sons": []
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkEmpty",
+                  "sons": []
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkStmtList",
+                  "sons": [
+                    {
+                      "literalText": "",
+                      "kind": "nnkReturnStmt",
+                      "sons": [
+                        {
+                          "literalText": "",
+                          "kind": "nnkDotExpr",
+                          "sons": [
+                            {
+                              "literalText": "",
+                              "kind": "nnkIdent",
+                              "identStr": "self"
+                            },
+                            {
+                              "literalText": "",
+                              "kind": "nnkIdent",
+                              "identStr": "_age"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "literalText": "",
+              "kind": "nnkProcDef",
+              "sons": [
+                {
+                  "literalText": "",
+                  "kind": "nnkIdent",
+                  "identStr": "setAge*"
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkEmpty",
+                  "sons": []
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkEmpty",
+                  "sons": []
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkFormalParams",
+                  "sons": [
+                    {
+                      "literalText": "",
+                      "kind": "nnkEmpty",
+                      "sons": []
+                    },
+                    {
+                      "literalText": "",
+                      "kind": "nnkIdentDefs",
+                      "sons": [
+                        {
+                          "literalText": "",
+                          "kind": "nnkIdent",
+                          "identStr": "self"
+                        },
+                        {
+                          "literalText": "",
+                          "kind": "nnkIdent",
+                          "identStr": "Person"
+                        },
+                        {
+                          "literalText": "",
+                          "kind": "nnkEmpty",
+                          "sons": []
+                        }
+                      ]
+                    },
+                    {
+                      "literalText": "",
+                      "kind": "nnkIdentDefs",
+                      "sons": [
+                        {
+                          "literalText": "",
+                          "kind": "nnkIdent",
+                          "identStr": "value"
+                        },
+                        {
+                          "literalText": "",
+                          "kind": "nnkIdent",
+                          "identStr": "int32"
+                        },
+                        {
+                          "literalText": "",
+                          "kind": "nnkEmpty",
+                          "sons": []
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkEmpty",
+                  "sons": []
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkEmpty",
+                  "sons": []
+                },
+                {
+                  "literalText": "",
+                  "kind": "nnkStmtList",
+                  "sons": [
+                    {
+                      "literalText": "",
+                      "kind": "nnkAsgn",
+                      "sons": [
+                        {
+                          "literalText": "",
+                          "kind": "nnkDotExpr",
+                          "sons": [
+                            {
+                              "literalText": "",
+                              "kind": "nnkIdent",
+                              "identStr": "self"
+                            },
+                            {
+                              "literalText": "",
+                              "kind": "nnkIdent",
+                              "identStr": "_age"
+                            }
+                          ]
+                        },
+                        {
+                          "literalText": "",
+                          "kind": "nnkIdent",
+                          "identStr": "value"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

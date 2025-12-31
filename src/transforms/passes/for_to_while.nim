@@ -3,8 +3,8 @@
 ## Transforms: for (init; condition; update) body
 ## Into:       init; while condition: body; update
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 
 proc transformForToWhile*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =

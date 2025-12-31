@@ -10,8 +10,8 @@
 ##
 ## Nim: proc(x, y: int): int = x + y
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 import strutils
 

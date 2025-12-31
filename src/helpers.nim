@@ -1,4 +1,4 @@
-import my_nim_node
+import backends/nim/my_nim_node
 
 
 # High-level builders for transpilers

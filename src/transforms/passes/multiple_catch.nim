@@ -20,8 +20,8 @@
 ##   elif e is SQLException:
 ##     handleSQL(e)
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 
 proc buildIfElifChain(clauses: seq[XLangNode]): XLangNode =

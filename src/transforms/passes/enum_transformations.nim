@@ -10,12 +10,12 @@
 ##   roCompiled    (RegexOptions → ro)
 ##   scOrdinal     (StringComparison → sc)
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 import strutils
 import collections/tables
-import ../helpers
+import core/helpers
 
 # Global registry for enum types and their prefixes
 var enumRegistry {.global.} = initTable[string, string]()

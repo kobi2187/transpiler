@@ -12,8 +12,8 @@
 ##   →   if data == nil: raise newException(InvalidOperationException, "")
 ##       return data
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 
 proc transformThrowExpression*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode {.gcsafe.}

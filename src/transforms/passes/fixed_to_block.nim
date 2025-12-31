@@ -17,8 +17,8 @@
 ## Nim doesn't require explicit pinning - the memory management system
 ## handles this automatically when using addr or ptr.
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 
 proc transformFixedToBlock*(node: XLangNode, semanticInfo: var SemanticInfo): XLangNode =
   ## Transform C# fixed statements by unwrapping them into regular blocks

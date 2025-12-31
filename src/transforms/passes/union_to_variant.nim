@@ -14,8 +14,8 @@
 ##     of sonkString: strVal: string
 ##     of sonkNumber: numVal: float
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 import strutils
 import strformat

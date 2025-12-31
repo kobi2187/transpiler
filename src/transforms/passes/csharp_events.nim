@@ -14,8 +14,8 @@
 ##   for handler in clickHandlers: handler(this, EventArgs())
 ##   clickHandlers.add(onButtonClick)
 
-import ../../../xlangtypes
-import ../../semantic/semantic_analysis
+import core/xlangtypes
+import semantic/semantic_analysis
 import options
 import strutils
 
