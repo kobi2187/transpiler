@@ -149,9 +149,20 @@ proc stepConvertToNim(xlangAst: XLangNode, semanticInfo: SemanticInfo, inputFile
   ## Step 3: Convert XLang AST to Nim AST
   if verbose:
     echo "DEBUG: About to convert XLang AST to Nim AST..."
+
+  # Count classes from semantic info to determine if we need prefixes
+  var classCount = 0
+  for sym in semanticInfo.allSymbols:
+    if sym.kind == skType and not sym.declNode.isNil and sym.declNode.kind == xnkClassDecl:
+      inc classCount
+
+  if verbose and classCount > 1:
+    echo "DEBUG: Found ", classCount, " classes - will use prefixes for static methods"
+
   let ctx = newContext()
   ctx.currentFile = inputFile
   ctx.semanticInfo = semanticInfo
+  ctx.classCount = classCount
   if xlangAst.kind == xnkFile and xlangAst.sourceLang != "":
     ctx.inputLang = xlangAst.sourceLang
     if verbose:

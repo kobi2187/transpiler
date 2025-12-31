@@ -83,6 +83,11 @@ type
     # ^ Symbol tables and resolution from semantic analysis pass
     # Use for: identifier resolution, rename lookups, closure detection
 
+    # ===== Multi-class File Handling =====
+    classCount*: int
+    # ^ Number of classes in the file (0 if not set)
+    # When > 1, static class methods get prefixed with class name
+
 # ===== Context Creation =====
 proc newContext*(): ConversionContext =
   result = ConversionContext(
@@ -444,9 +449,20 @@ proc conv_xnkNamespace(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 proc conv_xnkFuncDecl_standalone(node: XLangNode, ctx: ConversionContext): MyNimNode =
   ## Convert standalone function (not a class method)
+  ## For static class methods in multi-class files, adds class name prefix
   result = newNimNode(nnkProcDef)
+
   # 0: name - add asterisk for public procs
-  let procName = if node.funcVisibility == "public": node.funcName & "*" else: node.funcName
+  # If this is a static method in a file with multiple classes, add class name prefix
+  var baseName = node.funcName
+
+  if ctx.currentClass.isSome() and node.funcIsStatic and ctx.classCount > 1:
+    # Get the class name and create prefix (e.g., JarUtil -> jarUtil_)
+    let className = ctx.currentClass.get().typeNameDecl
+    let prefix = className[0].toLowerAscii() & className[1..^1] & "_"
+    baseName = prefix & node.funcName
+
+  let procName = if node.funcVisibility == "public": baseName & "*" else: baseName
   result.add(newIdentNode(procName))
   # 1: pattern/term rewriting placeholder
   result.add(newEmptyNode())
