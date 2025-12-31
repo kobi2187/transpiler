@@ -453,14 +453,15 @@ proc conv_xnkFuncDecl_standalone(node: XLangNode, ctx: ConversionContext): MyNim
   result = newNimNode(nnkProcDef)
 
   # 0: name - add asterisk for public procs
-  # If this is a static method in a file with multiple classes, add class name prefix
-  var baseName = node.funcName
+  # Convert C# PascalCase to Nim camelCase (e.g., ToString -> toString)
+  var baseName = memberNameToNim(node.funcName)
 
+  # If this is a static method in a file with multiple classes, add class name prefix
   if ctx.currentClass.isSome() and node.funcIsStatic and ctx.classCount > 1:
     # Get the class name and create prefix (e.g., JarUtil -> jarUtil_)
     let className = ctx.currentClass.get().typeNameDecl
     let prefix = className[0].toLowerAscii() & className[1..^1] & "_"
-    baseName = prefix & node.funcName
+    baseName = prefix & baseName
 
   let procName = if node.funcVisibility == "public": baseName & "*" else: baseName
   result.add(newIdentNode(procName))
@@ -491,7 +492,9 @@ proc conv_xnkFuncDecl_instanceMethod(node: XLangNode, ctx: ConversionContext): M
   ## Adds 'self' parameter as first parameter
   result = newNimNode(nnkProcDef)
   # 0: name - add asterisk for public procs
-  let procName = if node.funcVisibility == "public": node.funcName & "*" else: node.funcName
+  # Convert C# PascalCase to Nim camelCase (e.g., ToString -> toString)
+  let baseName = memberNameToNim(node.funcName)
+  let procName = if node.funcVisibility == "public": baseName & "*" else: baseName
   result.add(newIdentNode(procName))
   # 1: pattern/term rewriting placeholder
   result.add(newEmptyNode())
