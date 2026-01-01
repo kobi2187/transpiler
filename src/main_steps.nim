@@ -126,83 +126,89 @@ proc stepMapPrimitiveTypes*(xlangAst: var XLangNode, verbose: bool) =
   if verbose:
     echo "✓ Primitive type mapping applied"
 
-proc stepConvertToNim*(xlangAst: XLangNode, semanticInfo: SemanticInfo, inputFile: string, verbose: bool): MyNimNode =
-  ## Step 3: Convert XLang AST to Nim AST
-  if verbose:
-    echo "DEBUG: About to convert XLang AST to Nim AST..."
 
-  # Count classes from semantic info to determine if we need prefixes
-  var classCount = 0
-  for sym in semanticInfo.allSymbols:
-    if sym.kind == skType and not sym.declNode.isNil and sym.declNode.kind == xnkClassDecl:
-      inc classCount
+# # moved to nim_backend.nim
 
-  if verbose and classCount > 1:
-    echo "DEBUG: Found ", classCount, " classes - will use prefixes for static methods"
 
-  let ctx = newContext()
-  ctx.currentFile = inputFile
-  ctx.semanticInfo = semanticInfo
-  ctx.classCount = classCount
-  if xlangAst.kind == xnkFile and xlangAst.sourceLang != "":
-    ctx.inputLang = xlangAst.sourceLang
-    if verbose:
-      echo "DEBUG: Source language: ", ctx.inputLang
-  result = convertToNimAST(xlangAst, ctx)
-  if verbose:
-    echo "DEBUG: Nim AST root kind: ", result.kind
-    echo "DEBUG: Nim AST has ", result.sons.len, " sons"
-    echo "✓ Nim AST created successfully"
+# proc stepConvertToNim*(xlangAst: XLangNode, semanticInfo: SemanticInfo, inputFile: string, verbose: bool): MyNimNode =
+#   ## Step 3: Convert XLang AST to Nim AST
+#   if verbose:
+#     echo "DEBUG: About to convert XLang AST to Nim AST..."
 
-proc stepGenerateCode*(nimAst: MyNimNode, verbose: bool): string =
-  ## Step 4: Generate Nim code from AST
-  if verbose:
-    echo "DEBUG: About to generate Nim code from AST..."
-  result = nimAst.toNimCode()
-  if verbose:
-    echo "DEBUG: Generated Nim code length: ", result.len, " characters"
-    echo "✓ Nim code generated successfully"
+#   # Count classes from semantic info to determine if we need prefixes
+#   var classCount = 0
+#   for sym in semanticInfo.allSymbols:
+#     if sym.kind == skType and not sym.declNode.isNil and sym.declNode.kind == xnkClassDecl:
+#       inc classCount
 
-proc stepWriteOutputs*(nimCode: string, nimAst: MyNimNode, xlangAst: XLangNode, inputFile, outputDir, inputRoot: string,
-                     useStdout, outputJson, sameDir, verbose: bool) =
-  ## Step 5: Write outputs
-  if useStdout:
-    stdout.write(nimCode)
-  else:
-    let nimOutputFile = if sameDir:
-      # Write to same directory as input file, converting filename to snake_case
-      let inputDir = inputFile.parentDir()
-      let inputBaseName = inputFile.splitFile().name
-      let snakeBaseName = pascalToSnake(inputBaseName)
-      inputDir / (snakeBaseName & ".nim")
-    else:
-      # Write to transpiler_output with proper structure
-      let relativeOutputPath = getOutputFileName(xlangAst, inputFile, ".nim", inputRoot)
-      outputDir / relativeOutputPath
+#   if verbose and classCount > 1:
+#     echo "DEBUG: Found ", classCount, " classes - will use prefixes for static methods"
 
-    let parentDir = nimOutputFile.parentDir()
-    if parentDir != "" and not dirExists(parentDir):
-      createDir(parentDir)
-      if verbose:
-        echo "DEBUG: Created directory: ", parentDir
-    if verbose:
-      echo "DEBUG: About to write .nim file to: ", nimOutputFile
-    writeFile(nimOutputFile, nimCode)
-    if verbose:
-      echo "✓ Nim code written to: ", nimOutputFile
+#   let ctx = newContext()
+#   ctx.currentFile = inputFile
+#   ctx.semanticInfo = semanticInfo
+#   ctx.classCount = classCount
+#   if xlangAst.kind == xnkFile and xlangAst.sourceLang != "":
+#     ctx.inputLang = xlangAst.sourceLang
+#     if verbose:
+#       echo "DEBUG: Source language: ", ctx.inputLang
+#   result = xlangToNimAST(xlangAst, ctx)
+#   if verbose:
+#     echo "DEBUG: Nim AST root kind: ", result.kind
+#     echo "DEBUG: Nim AST has ", result.sons.len, " sons"
+#     echo "✓ Nim AST created successfully"
 
-  if outputJson:
-    let nimJsonFile = inputFile.changeFileExt(".nimjs")
-    if verbose:
-      echo "DEBUG: About to serialize Nim AST to JSON using %* operator..."
-    let jsonNode = %nimAst
-    if verbose:
-      echo "DEBUG: JSON node created, about to pretty-print..."
-    let jsonContent = pretty(jsonNode)
-    if verbose:
-      echo "DEBUG: JSON content length: ", jsonContent.len, " characters"
-      echo "DEBUG: About to write .nimjs file to: ", nimJsonFile
-    writeFile(nimJsonFile, jsonContent)
-    if verbose:
-      echo "✓ Nim AST JSON written to: ", nimJsonFile
-      echo "DEBUG: First 200 chars of nimjs: ", jsonContent[0..<min(200, jsonContent.len)]
+# proc stepGenerateCode*(nimAst: MyNimNode, verbose: bool): string =
+#   ## Step 4: Generate Nim code from AST
+#   if verbose:
+#     echo "DEBUG: About to generate Nim code from AST..."
+#   result = nimAst.toNimCode()
+#   if verbose:
+#     echo "DEBUG: Generated Nim code length: ", result.len, " characters"
+#     echo "✓ Nim code generated successfully"
+
+
+
+# proc stepWriteOutputs*(nimCode: string, nimAst: MyNimNode, xlangAst: XLangNode, inputFile, outputDir, inputRoot: string,
+#                      useStdout, outputJson, sameDir, verbose: bool) =
+#   ## Step 5: Write outputs
+#   if useStdout:
+#     stdout.write(nimCode)
+#   else:
+#     let nimOutputFile = if sameDir:
+#       # Write to same directory as input file, converting filename to snake_case
+#       let inputDir = inputFile.parentDir()
+#       let inputBaseName = inputFile.splitFile().name
+#       let snakeBaseName = pascalToSnake(inputBaseName)
+#       inputDir / (snakeBaseName & ".nim")
+#     else:
+#       # Write to transpiler_output with proper structure
+#       let relativeOutputPath = getOutputFileName(xlangAst, inputFile, ".nim", inputRoot)
+#       outputDir / relativeOutputPath
+
+#     let parentDir = nimOutputFile.parentDir()
+#     if parentDir != "" and not dirExists(parentDir):
+#       createDir(parentDir)
+#       if verbose:
+#         echo "DEBUG: Created directory: ", parentDir
+#     if verbose:
+#       echo "DEBUG: About to write .nim file to: ", nimOutputFile
+#     writeFile(nimOutputFile, nimCode)
+#     if verbose:
+#       echo "✓ Nim code written to: ", nimOutputFile
+
+#   if outputJson:
+#     let nimJsonFile = inputFile.changeFileExt(".nimjs")
+#     if verbose:
+#       echo "DEBUG: About to serialize Nim AST to JSON using %* operator..."
+#     let jsonNode = %nimAst
+#     if verbose:
+#       echo "DEBUG: JSON node created, about to pretty-print..."
+#     let jsonContent = pretty(jsonNode)
+#     if verbose:
+#       echo "DEBUG: JSON content length: ", jsonContent.len, " characters"
+#       echo "DEBUG: About to write .nimjs file to: ", nimJsonFile
+#     writeFile(nimJsonFile, jsonContent)
+#     if verbose:
+#       echo "✓ Nim AST JSON written to: ", nimJsonFile
+#       echo "DEBUG: First 200 chars of nimjs: ", jsonContent[0..<min(200, jsonContent.len)]

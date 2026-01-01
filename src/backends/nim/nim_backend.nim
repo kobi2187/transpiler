@@ -8,6 +8,8 @@ import std/json
 import core/xlangtypes
 import semantic/semantic_analysis
 import transforms/types
+import transforms/transform_context
+import error_collector
 import my_nim_node
 import xlangtonim
 import astprinter
@@ -56,16 +58,20 @@ proc convertFromXLang*(backend: NimBackend, ast: XLangNode,
   if verbose and classCount > 1:
     echo "DEBUG: Found ", classCount, " classes - will use prefixes for static methods"
 
-  let ctx = newContext()
-  ctx.currentFile = inputFile
-  ctx.semanticInfo = semanticInfo
+  let errors = newErrorCollector()
+  let ctx = newTransformContext(
+    semanticInfo = semanticInfo,
+    errorCollector = errors,
+    targetLang = "nim",
+    sourceLang = if ast.kind == xnkFile: ast.sourceLang else: "",
+    currentFile = inputFile,
+    verbose = verbose
+  )
   ctx.classCount = classCount
-  if ast.kind == xnkFile and ast.sourceLang != "":
-    ctx.inputLang = ast.sourceLang
-    if verbose:
-      echo "DEBUG: Source language: ", ctx.inputLang
+  if verbose and ctx.sourceLang != "":
+    echo "DEBUG: Source language: ", ctx.sourceLang
 
-  result = convertToNimAST(ast, ctx)
+  result = xlangToNimAST(ast, ctx)  ## it all happens here.
 
   if verbose:
     echo "DEBUG: Nim AST root kind: ", result.kind

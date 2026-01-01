@@ -2,9 +2,11 @@
 ## Uses global indent level that increments/decrements on block entry/exit
 
 import my_nim_node
+import nim_node_indices
 import std/strutils
 
 export my_nim_node  # Re-export for convenience
+export nim_node_indices  # Export named indices for convenience
 
 # Global indent level
 var gIndent = 0
@@ -87,7 +89,7 @@ proc needsParentheses(child: MyNimNode, parentOp: string): bool =
   var childOp: string
 
   if child.kind == nnkInfix:
-    childOp = getOpString(child[0])
+    childOp = getOpString(child[InfixOp])
   elif child.kind == nnkAsgn:
     # Assignment has very low precedence
     childOp = "="
@@ -101,39 +103,39 @@ proc needsParentheses(child: MyNimNode, parentOp: string): bool =
   return childPrec < parentPrec
 
 proc renderInfix(n: MyNimNode): string =
-  let op = renderNode(n[0])
-  let opStr = getOpString(n[0])
+  let op = renderNode(n[InfixOp])
+  let opStr = getOpString(n[InfixOp])
 
-  var lhs = renderNode(n[1])
-  var rhs = renderNode(n[2])
+  var lhs = renderNode(n[InfixLeft])
+  var rhs = renderNode(n[InfixRight])
 
   # Add parentheses if needed based on precedence
-  if needsParentheses(n[1], opStr):
+  if needsParentheses(n[InfixLeft], opStr):
     lhs = "(" & lhs & ")"
-  if needsParentheses(n[2], opStr):
+  if needsParentheses(n[InfixRight], opStr):
     rhs = "(" & rhs & ")"
 
   result = lhs & " " & op & " " & rhs
 
 proc renderPrefix(n: MyNimNode): string =
-  let op = renderNode(n[0])
-  var arg = renderNode(n[1])
+  let op = renderNode(n[PrefixOp])
+  var arg = renderNode(n[PrefixOperand])
 
   # Add parentheses if the argument is an infix expression
   # Prefix operators like 'not' typically need parens around complex expressions
-  if n[1].kind == nnkInfix:
+  if n[PrefixOperand].kind == nnkInfix:
     arg = "(" & arg & ")"
 
   result = op & " " & arg
 
 proc renderPostfix(n: MyNimNode): string =
-  let arg = renderNode(n[0])
-  let op = renderNode(n[1])
+  let arg = renderNode(n[PostfixBase])
+  let op = renderNode(n[PostfixOp])
   result = arg & op
 
 proc renderCall(n: MyNimNode): string =
   if n.len == 0: return "()"
-  result = renderNode(n[0])
+  result = renderNode(n[CallCallee])
   # Always add parentheses for calls, even with no arguments
   result &= "("
   if n.len > 1:
@@ -143,16 +145,16 @@ proc renderCall(n: MyNimNode): string =
   result &= ")"
 
 proc renderCommand(n: MyNimNode): string =
-  result = renderNode(n[0])
+  result = renderNode(n[CallCallee])
   for i in 1..<n.len:
     result &= " "
     result &= renderNode(n[i])
 
 proc renderDotExpr(n: MyNimNode): string =
-  result = renderNode(n[0]) & "." & renderNode(n[1])
+  result = renderNode(n[DotBase]) & "." & renderNode(n[DotField])
 
 proc renderBracketExpr(n: MyNimNode): string =
-  result = renderNode(n[0]) & "["
+  result = renderNode(n[BracketBase]) & "["
   for i in 1..<n.len:
     if i > 1: result &= ", "
     result &= renderNode(n[i])
@@ -188,34 +190,34 @@ proc renderTupleConstr(n: MyNimNode): string =
   result &= ")"
 
 proc renderCast(n: MyNimNode): string =
-  result = "cast[" & renderNode(n[0]) & "](" & renderNode(n[1]) & ")"
+  result = "cast[" & renderNode(n[CastType]) & "](" & renderNode(n[CastExpr]) & ")"
 
 proc renderObjConstr(n: MyNimNode): string =
   if n.len == 0: return "()"
-  result = renderNode(n[0]) & "("
+  result = renderNode(n[ObjConstrType]) & "("
   for i in 1..<n.len:
     if i > 1: result &= ", "
-    result &= renderNode(n[i])
+    result &= renderNode(n[i])  # Field assignments
   result &= ")"
 
 proc renderExprColonExpr(n: MyNimNode): string =
-  result = renderNode(n[0]) & ": " & renderNode(n[1])
+  result = renderNode(n[ColonExprName]) & ": " & renderNode(n[ColonExprValue])
 
 proc renderExprEqExpr(n: MyNimNode): string =
-  result = renderNode(n[0]) & " = " & renderNode(n[1])
+  result = renderNode(n[EqExprName]) & " = " & renderNode(n[EqExprValue])
 
 # Statement rendering helpers
 proc renderIdentDefs(n: MyNimNode): string =
-  result = renderNode(n[0])
-  if n.len > 1 and n[1].kind != nnkEmpty:
-    let typeStr = renderNode(n[1])
+  result = renderNode(n[IdentDefsName])
+  if n.len > 1 and n[IdentDefsType].kind != nnkEmpty:
+    let typeStr = renderNode(n[IdentDefsType])
     if typeStr != "var":
       result &= ": " & typeStr
-  if n.len > 2 and n[2].kind != nnkEmpty:
-    result &= " = " & renderNode(n[2])
+  if n.len > 2 and n[IdentDefsDefault].kind != nnkEmpty:
+    result &= " = " & renderNode(n[IdentDefsDefault])
 
 proc renderAsgn(n: MyNimNode): string =
-  result = renderNode(n[0]) & " = " & renderNode(n[1])
+  result = renderNode(n[AsgnLeft]) & " = " & renderNode(n[AsgnRight])
 
 proc renderVarSection(n: MyNimNode): string =
   for i, identDefs in n:
@@ -231,11 +233,11 @@ proc renderConstSection(n: MyNimNode): string =
   result = ind() & "const\n"
   incIndent()
   for constDef in n:
-    result &= ind() & renderNode(constDef[0])
-    if constDef.len > 1 and constDef[1].kind != nnkEmpty:
-      result &= ": " & renderNode(constDef[1])
+    result &= ind() & renderNode(constDef[ConstDefName])
+    if constDef.len > 1 and constDef[ConstDefType].kind != nnkEmpty:
+      result &= ": " & renderNode(constDef[ConstDefType])
     if constDef.len > 2:
-      result &= " = " & renderNode(constDef[2])
+      result &= " = " & renderNode(constDef[ConstDefValue])
     result &= "\n"
   decIndent()
 
@@ -253,12 +255,12 @@ proc renderStmtList(n: MyNimNode): string =
     result &= renderStmtOrExpr(stmt)
 
 proc renderBlockStmt(n: MyNimNode): string =
-  if n[0].kind != nnkEmpty:
-    result = ind() & "block " & renderNode(n[0]) & ":\n"
+  if n[BlockLabel].kind != nnkEmpty:
+    result = ind() & "block " & renderNode(n[BlockLabel]) & ":\n"
   else:
     result = ""
   incIndent()
-  result &= renderNode(n[1])
+  result &= renderNode(n[BlockBody])
   decIndent()
 
 proc renderIfStmt(n: MyNimNode): string =
@@ -266,66 +268,66 @@ proc renderIfStmt(n: MyNimNode): string =
     if i > 0: result &= "\n"
     if branch.kind == nnkElifBranch:
       let keyword = if i == 0: "if" else: "elif"
-      result &= ind() & keyword & " " & renderNode(branch[0]) & ":\n"
+      result &= ind() & keyword & " " & renderNode(branch[ElifCondition]) & ":\n"
       incIndent()
-      result &= renderStmtOrExpr(branch[1])
+      result &= renderStmtOrExpr(branch[ElifBody])
       decIndent()
     elif branch.kind == nnkElse:
       # Check if else body is a single nnkIfStmt - flatten to elif
-      if branch[0].kind == nnkIfStmt:
+      if branch[ElseBody].kind == nnkIfStmt:
         # Flatten: render the inner if as elif
-        let innerIf = branch[0]
+        let innerIf = branch[ElseBody]
         for j, innerBranch in innerIf:
           result &= "\n"
           if innerBranch.kind == nnkElifBranch:
-            result &= ind() & "elif " & renderNode(innerBranch[0]) & ":\n"
+            result &= ind() & "elif " & renderNode(innerBranch[ElifCondition]) & ":\n"
             incIndent()
-            result &= renderStmtOrExpr(innerBranch[1])
+            result &= renderStmtOrExpr(innerBranch[ElifBody])
             decIndent()
           elif innerBranch.kind == nnkElse:
             # Recursively handle nested else-if
-            if innerBranch[0].kind == nnkIfStmt:
+            if innerBranch[ElseBody].kind == nnkIfStmt:
               # Continue flattening
               result &= renderNode(MyNimNode(kind: nnkElse,  sons: innerBranch.sons))
             else:
               result &= ind() & "else:\n"
               incIndent()
-              result &= renderStmtOrExpr(innerBranch[0])
+              result &= renderStmtOrExpr(innerBranch[ElseBody])
               decIndent()
       else:
         result &= ind() & "else:\n"
         incIndent()
-        result &= renderStmtOrExpr(branch[0])
+        result &= renderStmtOrExpr(branch[ElseBody])
         decIndent()
 
 
 proc renderElifBranch(n: MyNimNode): string =
-  result = ind() & "elif " & renderNode(n[0]) & ":\n"
+  result = ind() & "elif " & renderNode(n[ElifCondition]) & ":\n"
   incIndent()
-  result &= renderStmtOrExpr(n[1])
+  result &= renderStmtOrExpr(n[ElifBody])
   decIndent()
 
 proc renderElse(n: MyNimNode): string =
   result = ind() & "else:\n"
   incIndent()
-  result &= renderStmtOrExpr(n[0])
+  result &= renderStmtOrExpr(n[ElseBody])
   decIndent()
 
 proc renderWhileStmt(n: MyNimNode): string =
-  result = ind() & "while " & renderNode(n[0]) & ":\n"
+  result = ind() & "while " & renderNode(n[WhileCondition]) & ":\n"
   incIndent()
-  result &= renderStmtOrExpr(n[1])
+  result &= renderStmtOrExpr(n[WhileBody])
   decIndent()
 
 proc renderForStmt(n: MyNimNode): string =
-  result = ind() & "for " & renderNode(n[0])
-  result &= " in " & renderNode(n[1]) & ":\n"
+  result = ind() & "for " & renderNode(n[ForVars])
+  result &= " in " & renderNode(n[ForIterable]) & ":\n"
   incIndent()
-  result &= renderStmtOrExpr(n[2])
+  result &= renderStmtOrExpr(n[ForBody])
   decIndent()
 
 proc renderCaseStmt(n: MyNimNode): string =
-  result = ind() & "case " & renderNode(n[0]) & "\n"
+  result = ind() & "case " & renderNode(n[CaseSelector]) & "\n"
   for i in 1..<n.len:
     result &= renderNode(n[i])
     if i < n.len - 1: result &= "\n"
@@ -342,37 +344,37 @@ proc renderOfBranch(n: MyNimNode): string =
 
 proc renderReturnStmt(n: MyNimNode): string =
   result = ind() & "return"
-  if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= " " & renderNode(n[0])
+  if n.len > 0 and n[ReturnExpr].kind != nnkEmpty:
+    result &= " " & renderNode(n[ReturnExpr])
 
 proc renderYieldStmt(n: MyNimNode): string =
   result = ind() & "yield"
-  if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= " " & renderNode(n[0])
+  if n.len > 0 and n[YieldExpr].kind != nnkEmpty:
+    result &= " " & renderNode(n[YieldExpr])
 
 proc renderDiscardStmt(n: MyNimNode): string =
   result = ind() & "discard"
-  if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= " " & renderNode(n[0])
+  if n.len > 0 and n[DiscardExpr].kind != nnkEmpty:
+    result &= " " & renderNode(n[DiscardExpr])
 
 proc renderBreakStmt(n: MyNimNode): string =
   result = ind() & "break"
-  if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= " " & renderNode(n[0])
+  if n.len > 0 and n[BreakLabel].kind != nnkEmpty:
+    result &= " " & renderNode(n[BreakLabel])
 
 proc renderContinueStmt(n: MyNimNode): string =
   result = ind() & "continue"
 
 proc renderRaiseStmt(n: MyNimNode): string =
   result = ind() & "raise"
-  if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= " " & renderNode(n[0])
+  if n.len > 0 and n[RaiseExpr].kind != nnkEmpty:
+    result &= " " & renderNode(n[RaiseExpr])
 
 proc renderTryStmt(n: MyNimNode): string =
   result = ind() & "try:\n"
   incIndent()
-  if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= renderNode(n[0])
+  if n.len > 0 and n[TryBody].kind != nnkEmpty:
+    result &= renderNode(n[TryBody])
   decIndent()
   for i in 1..<n.len:
     result &= "\n" & renderNode(n[i])
@@ -392,15 +394,15 @@ proc renderExceptBranch(n: MyNimNode): string =
 proc renderFinally(n: MyNimNode): string =
   result = ind() & "finally:\n"
   incIndent()
-  if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= renderStmtOrExpr(n[0])
+  if n.len > 0 and n[FinallyBody].kind != nnkEmpty:
+    result &= renderStmtOrExpr(n[FinallyBody])
   decIndent()
 
 proc renderDefer(n: MyNimNode): string =
   result = ind() & "defer:\n"
   incIndent()
-  if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= renderStmtOrExpr(n[0])
+  if n.len > 0 and n[DeferBody].kind != nnkEmpty:
+    result &= renderStmtOrExpr(n[DeferBody])
   decIndent()
 
 # Procedure/function rendering
@@ -410,101 +412,129 @@ proc renderFormalParams(n: MyNimNode): string =
     if i > 1: result &= ", "
     result &= renderIdentDefs(n[i])
   result &= ")"
-  if n.len > 0 and n[0].kind != nnkEmpty:
-    let returnType = renderNode(n[0])
+  if n.len > 0 and n[FormalParamsReturn].kind != nnkEmpty:
+    let returnType = renderNode(n[FormalParamsReturn])
     if returnType != "void":
       result &= ": " & returnType
 
+proc renderLambda(n: MyNimNode): string =
+  # Lambda using sugar module's => syntax: (params) => body
+  # Much cleaner than proc syntax for inline lambdas
+  result = "("
+
+  # Render parameters (LambdaFormalParams contains formal params)
+  if n.len > LambdaFormalParams and n[LambdaFormalParams].kind == nnkFormalParams:
+    let params = n[LambdaFormalParams]
+    # Skip return type (params[FormalParamsReturn]) and render parameters starting from params[1]
+    var paramList: seq[string]
+    for i in 1 ..< params.len:
+      let param = params[i]
+      if param.kind == nnkIdentDefs:
+        # param has: [names..., type, default]
+        let paramCount = param.len - 2  # names count
+        for j in 0 ..< paramCount:
+          if param[j].kind != nnkEmpty:
+            paramList.add(renderNode(param[j]))
+    result &= paramList.join(", ")
+
+  result &= ") => "
+
+  # Render body
+  if n.len > LambdaBody and n[LambdaBody].kind != nnkEmpty:
+    result &= renderNode(n[LambdaBody])
+  else:
+    result &= "discard"
+
 proc renderProcDef(n: MyNimNode): string =
   result = ind() & "proc "
-  if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= renderNode(n[0])
-  if n.len > 2 and n[2].kind != nnkEmpty:
-    result &= "[" & renderNode(n[2]) & "]"
-  if n.len > 3 and n[3].kind != nnkEmpty:
-    result &= renderFormalParams(n[3])
-  if n.len > 4 and n[4].kind == nnkPragma:
-    result &= " {." & renderNode(n[4]) & ".}"
+  if n.len > 0 and n[ProcName].kind != nnkEmpty:
+    result &= renderNode(n[ProcName])
+  if n.len > 2 and n[ProcGenericParams].kind != nnkEmpty:
+    result &= "[" & renderNode(n[ProcGenericParams]) & "]"
+  if n.len > 3 and n[ProcFormalParams].kind != nnkEmpty:
+    result &= renderFormalParams(n[ProcFormalParams])
+  if n.len > 4 and n[ProcPragmas].kind == nnkPragma:
+    result &= " {." & renderNode(n[ProcPragmas]) & ".}"
   result &= " =\n"
   incIndent()
-  if n.len > 6 and n[6].kind != nnkEmpty:
-    result &= renderNode(n[6])
+  if n.len > 6 and n[ProcBody].kind != nnkEmpty:
+    result &= renderNode(n[ProcBody])
   else:
     result &= ind() & "discard"
-  result &= "\n"
+  result &= "\n\n"
   decIndent()
 
 proc renderFuncDef(n: MyNimNode): string =
   result = ind() & "func "
-  if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= renderNode(n[0])
-  if n.len > 2 and n[2].kind != nnkEmpty:
-    result &= "[" & renderNode(n[2]) & "]"
-  if n.len > 3 and n[3].kind != nnkEmpty:
-    result &= renderFormalParams(n[3])
+  if n.len > 0 and n[FuncName].kind != nnkEmpty:
+    result &= renderNode(n[FuncName])
+  if n.len > 2 and n[FuncGenericParams].kind != nnkEmpty:
+    result &= "[" & renderNode(n[FuncGenericParams]) & "]"
+  if n.len > 3 and n[FuncFormalParams].kind != nnkEmpty:
+    result &= renderFormalParams(n[FuncFormalParams])
   result &= " =\n"
   incIndent()
-  if n.len > 6 and n[6].kind != nnkEmpty:
-    result &= renderNode(n[6])
+  if n.len > 6 and n[FuncBody].kind != nnkEmpty:
+    result &= renderNode(n[FuncBody])
   else:
     result &= ind() & "discard"
   decIndent()
 
 proc renderMethodDef(n: MyNimNode): string =
   result = ind() & "method "
-  if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= renderNode(n[0])
-  if n.len > 3 and n[3].kind != nnkEmpty:
-    result &= renderFormalParams(n[3])
+  if n.len > 0 and n[MethodName].kind != nnkEmpty:
+    result &= renderNode(n[MethodName])
+  if n.len > 3 and n[MethodFormalParams].kind != nnkEmpty:
+    result &= renderFormalParams(n[MethodFormalParams])
   result &= " =\n"
   incIndent()
-  if n.len > 6 and n[6].kind != nnkEmpty:
-    result &= renderNode(n[6])
+  if n.len > 6 and n[MethodBody].kind != nnkEmpty:
+    result &= renderNode(n[MethodBody])
   decIndent()
 
 proc renderIteratorDef(n: MyNimNode): string =
   result = ind() & "iterator "
-  if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= renderNode(n[0])
-  if n.len > 3 and n[3].kind != nnkEmpty:
-    result &= renderFormalParams(n[3])
+  if n.len > 0 and n[IteratorName].kind != nnkEmpty:
+    result &= renderNode(n[IteratorName])
+  if n.len > 3 and n[IteratorFormalParams].kind != nnkEmpty:
+    result &= renderFormalParams(n[IteratorFormalParams])
   result &= " =\n"
   incIndent()
-  if n.len > 6 and n[6].kind != nnkEmpty:
-    result &= renderNode(n[6])
+  if n.len > 6 and n[IteratorBody].kind != nnkEmpty:
+    result &= renderNode(n[IteratorBody])
   decIndent()
 
 proc renderTemplateDef(n: MyNimNode): string =
   result = ind() & "template "
-  if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= renderNode(n[0])
-  if n.len > 3 and n[3].kind != nnkEmpty:
-    result &= renderFormalParams(n[3])
+  if n.len > 0 and n[TemplateName].kind != nnkEmpty:
+    result &= renderNode(n[TemplateName])
+  if n.len > 3 and n[TemplateFormalParams].kind != nnkEmpty:
+    result &= renderFormalParams(n[TemplateFormalParams])
   result &= " =\n"
   incIndent()
-  if n.len > 6 and n[6].kind != nnkEmpty:
-    result &= renderNode(n[6])
+  if n.len > 6 and n[TemplateBody].kind != nnkEmpty:
+    result &= renderNode(n[TemplateBody])
   decIndent()
 
 proc renderMacroDef(n: MyNimNode): string =
   result = ind() & "macro "
-  if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= renderNode(n[0])
-  if n.len > 3 and n[3].kind != nnkEmpty:
-    result &= renderFormalParams(n[3])
+  if n.len > 0 and n[MacroName].kind != nnkEmpty:
+    result &= renderNode(n[MacroName])
+  if n.len > 3 and n[MacroFormalParams].kind != nnkEmpty:
+    result &= renderFormalParams(n[MacroFormalParams])
   result &= " =\n"
   incIndent()
-  if n.len > 6 and n[6].kind != nnkEmpty:
-    result &= renderNode(n[6])
+  if n.len > 6 and n[MacroBody].kind != nnkEmpty:
+    result &= renderNode(n[MacroBody])
   decIndent()
 
 # Type rendering
 proc renderTypeDef(n: MyNimNode): string =
-  result = ind() & renderNode(n[0])
-  if n.len > 1 and n[1].kind != nnkEmpty:
-    result &= "[" & renderNode(n[1]) & "]"
-  if n.len > 2 and n[2].kind != nnkEmpty:
-    result &= " = " & renderNode(n[2])
+  result = ind() & renderNode(n[TypeDefName])
+  if n.len > 1 and n[TypeDefGenericParams].kind != nnkEmpty:
+    result &= "[" & renderNode(n[TypeDefGenericParams]) & "]"
+  if n.len > 2 and n[TypeDefBody].kind != nnkEmpty:
+    result &= " = " & renderNode(n[TypeDefBody])
 
 proc renderTypeSection(n: MyNimNode): string =
   result = ""
@@ -514,12 +544,12 @@ proc renderTypeSection(n: MyNimNode): string =
 
 proc renderObjectTy(n: MyNimNode): string =
   result = "object"
-  if n.len > 0 and n[0].kind != nnkEmpty:
-    result &= " of " & renderNode(n[0])
-  if n.len > 2 and n[2].kind != nnkEmpty:
+  if n.len > 0 and n[ObjectTyBase].kind != nnkEmpty:
+    result &= " of " & renderNode(n[ObjectTyBase])
+  if n.len > 2 and n[ObjectTyRecList].kind != nnkEmpty:
     result &= "\n"
     incIndent()
-    result &= renderNode(n[2])
+    result &= renderNode(n[ObjectTyRecList])
     decIndent()
 
 proc renderRecList(n: MyNimNode): string =
@@ -530,28 +560,28 @@ proc renderRecList(n: MyNimNode): string =
 proc renderRefTy(n: MyNimNode): string =
   result = "ref "
   if n.len > 0:
-    result &= renderNode(n[0])
+    result &= renderNode(n[RefTypeWrapped])
 
 proc renderPtrTy(n: MyNimNode): string =
   result = "ptr "
   if n.len > 0:
-    result &= renderNode(n[0])
+    result &= renderNode(n[PtrTypeWrapped])
 
 proc renderVarTy(n: MyNimNode): string =
   result = "var "
   if n.len > 0:
-    result &= renderNode(n[0])
+    result &= renderNode(n[VarTypeWrapped])
 
 proc renderDistinctTy(n: MyNimNode): string =
   result = "distinct "
   if n.len > 0:
-    result &= renderNode(n[0])
+    result &= renderNode(n[DistinctTypeWrapped])
 
 proc renderEnumFieldDef(n: MyNimNode): string =
-  if n.len > 0 and n[0].kind != nnkEmpty:
-    result = renderNode(n[0])
-    if n.len > 1 and n[1].kind != nnkEmpty:
-      result &= " = " & renderNode(n[1])
+  if n.len > 0 and n[EnumFieldName].kind != nnkEmpty:
+    result = renderNode(n[EnumFieldName])
+    if n.len > 1 and n[EnumFieldValue].kind != nnkEmpty:
+      result &= " = " & renderNode(n[EnumFieldValue])
 
 proc renderEnumTy(n: MyNimNode): string =
   result = "enum\n"
@@ -572,7 +602,7 @@ proc renderTupleTy(n: MyNimNode): string =
 proc renderProcTy(n: MyNimNode): string =
   result = "proc"
   if n.len > 0:
-    result &= renderFormalParams(n[0])
+    result &= renderFormalParams(n[ProcTyParams])
 
 # Import/export rendering
 proc renderImportStmt(n: MyNimNode): string =
@@ -588,8 +618,8 @@ proc renderExportStmt(n: MyNimNode): string =
     result &= renderNode(child)
 
 proc renderFromStmt(n: MyNimNode): string =
-  result = ind() & "from " & renderNode(n[0]) & " import "
-  for i in 1..<n.len:
+  result = ind() & "from " & renderNode(n[FromModule]) & " import "
+  for i in 1..<n.len:  # n[1..] = imported symbols
     if i > 1: result &= ", "
     result &= renderNode(n[i])
 
@@ -606,12 +636,12 @@ proc renderPragma(n: MyNimNode): string =
     result &= renderNode(child)
 
 proc renderPragmaExpr(n: MyNimNode): string =
-  result = renderNode(n[0]) & " {." & renderNode(n[1]) & ".}"
+  result = renderNode(n[PragmaExprBase]) & " {." & renderNode(n[PragmaExprPragma]) & ".}"
 
 # Comment rendering
 proc renderCommentStmt(n: MyNimNode): string =
   if n.len > 0:
-    let commentText = n[0].strVal
+    let commentText = n[CommentText].strVal
     # Check if it's a multi-line doc comment (starts with ##[)
     if commentText.startsWith("##["):
       # For multi-line doc comments, output as-is without "# " prefix
@@ -743,6 +773,8 @@ proc renderNode(n: MyNimNode): string =
     result = renderTemplateDef(n)
   of nnkMacroDef:
     result = renderMacroDef(n)
+  of nnkLambda:
+    result = renderLambda(n)
   of nnkFormalParams:
     result = renderFormalParams(n)
 

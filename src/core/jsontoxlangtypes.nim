@@ -32,11 +32,19 @@ proc parseXLangJson*(filePath: string): XLangNode =
   var jsonString = readFile(filePath).stripBOM()
   var jsonNode = jsonString.parseJson()
 
-  # Add default enum fields to all memberAccessExpr nodes
+  # Add default fields to all nodes
   proc addDefaultsToJson(j: var JsonNode) =
     if j.kind == JObject:
       if j.hasKey("kind") and j["kind"].kind == JString:
         let kindStr = j["kind"].getStr()
+
+        # Add UUID fields if missing (will be generated later)
+        if not j.hasKey("id"):
+          j["id"] = newJNull()
+        if not j.hasKey("parentId"):
+          j["parentId"] = newJNull()
+
+        # Add enum-specific fields for memberAccessExpr
         if kindStr == "xnkMemberAccessExpr":
           if not j.hasKey("isEnumAccess"):
             j["isEnumAccess"] = %false

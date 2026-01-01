@@ -1,229 +1,34 @@
 import core/xlangtypes
+import core/helpers
 import ../../helpers
 import options, strutils, tables, sets, sequtils, algorithm, os
 import my_nim_node
 import naming_conventions
 import semantic/semantic_analysis
+import transforms/transform_context
+import error_collector
+import uuid4
 
 # ==============================================================================
-# CONVERSION CONTEXT
+# NOTE: ConversionContext has been replaced by TransformContext
+# TransformContext (from transforms/transform_context) now handles all conversion state
 # ==============================================================================
-#
-# Context object that tracks state during XLang → Nim conversion.
-# Enables:
-# - Knowing current class name for constructors (newPerson not just new)
-# - Tracking required imports (tables, options, asyncdispatch)
-# - Type inference through symbol tables
-# - Scope management (fields vs local variables)
 
-type
-  Scope* = ref object
-    kind*: ScopeKind
-    node*: Option[XLangNode]  # The node that created this scope
-    symbols*: Table[string, XLangNode]  # Symbols declared in this scope
+# Helper functions for TransformContext (conversion-specific)
+# These were previously methods on ConversionContext but are now standalone procs
 
-  ScopeKind* = enum
-    skModule, skClass, skFunction, skBlock, skLoop
-
-  ConversionContext* = ref object
-    # ===== Current Scope Context (XLangNode references) =====
-    currentClass*: Option[XLangNode]
-    # ^ The xnkClassDecl/xnkInterfaceDecl we're inside
-    # Gives access to: className, classGenerics, classFields, classMethods, etc.
-
-    currentFunction*: Option[XLangNode]
-    # ^ The xnkFuncDecl/xnkMethodDecl we're inside
-    # Gives access to: funcName, returnType, params, isAsync, etc.
-
-    currentNamespace*: Option[XLangNode]
-    # ^ The xnkNamespace we're inside
-    # Gives access to: namespace path
-
-    currentModule*: Option[XLangNode]
-    # ^ The xnkFile/xnkModule being converted
-    # Gives access to: moduleName, all top-level declarations
-
-    inConstructor*: bool
-    # ^ True if we're currently inside a constructor body
-
-    currentFile*: string
-    # ^ The source file path being processed (for error reporting)
-    # Note: Similar to currentModule but stores the file path string
-
-    inputLang*: string
-    # ^ The source language being transpiled (e.g., "csharp", "java", "python")
-    # Used to import language-specific compatibility modules (e.g., cs_compat)
-
-    nodeStack*: seq[XLangNode]
-    # ^ Stack of nodes being converted (for error reporting - shows hierarchy)
-
-    # ===== Symbol Tables (XLangNode references) =====
-    types*: Table[string, XLangNode]
-    # ^ All type declarations: xnkClassDecl, xnkInterfaceDecl, xnkEnumDecl
-    # Key: type name, Value: the declaration node
-
-    variables*: Table[string, XLangNode]
-    # ^ All variable declarations: xnkVarDecl, xnkLetDecl, xnkParamDecl
-    # Key: variable name, Value: the declaration node
-
-    functions*: Table[string, XLangNode]
-    # ^ All function/method declarations
-    # Key: function name, Value: xnkFuncDecl/xnkMethodDecl node
-
-    # ===== Scope Stack =====
-    scopeStack*: seq[Scope]
-    # ^ Stack of nested scopes (module → class → function → block)
-
-    # ===== Import Tracking =====
-    requiredImports*: HashSet[string]
-    # ^ Nim modules to import (tables, options, asyncdispatch, etc.)
-
-    # ===== Semantic Analysis Results =====
-    semanticInfo*: SemanticInfo
-    # ^ Symbol tables and resolution from semantic analysis pass
-    # Use for: identifier resolution, rename lookups, closure detection
-
-    # ===== Multi-class File Handling =====
-    classCount*: int
-    # ^ Number of classes in the file (0 if not set)
-    # When > 1, static class methods get prefixed with class name
-
-# ===== Context Creation =====
-proc newContext*(): ConversionContext =
-  result = ConversionContext(
-    currentClass: none(XLangNode),
-    currentFunction: none(XLangNode),
-    currentNamespace: none(XLangNode),
-    currentModule: none(XLangNode),
-    currentFile: "",
-    inputLang: "",
-    nodeStack: @[],
-    types: initTable[string, XLangNode](),
-    variables: initTable[string, XLangNode](),
-    functions: initTable[string, XLangNode](),
-    scopeStack: @[],
-    requiredImports: initHashSet[string]()
-  )
-
-# ===== Import Management =====
-proc addImport*(ctx: ConversionContext, module: string) =
-  ## Track that a Nim module needs to be imported
-  ctx.requiredImports.incl(module)
-
-proc getImports*(ctx: ConversionContext): seq[string] =
-  ## Get sorted list of required imports
-  result = toSeq(ctx.requiredImports)
-  result.sort()
-
-# ===== Context Modification (for entering/exiting scopes) =====
-proc setCurrentClass*(ctx: ConversionContext, classNode: XLangNode) =
-  ## Set the current class being converted
-  ctx.currentClass = some(classNode)
-
-proc clearCurrentClass*(ctx: ConversionContext) =
-  ## Clear the current class context
-  ctx.currentClass = none(XLangNode)
-
-proc setCurrentFunction*(ctx: ConversionContext, funcNode: XLangNode) =
-  ## Set the current function being converted
-  ctx.currentFunction = some(funcNode)
-
-proc clearCurrentFunction*(ctx: ConversionContext) =
-  ## Clear the current function context
-  ctx.currentFunction = none(XLangNode)
-
-proc setCurrentNamespace*(ctx: ConversionContext, nsNode: XLangNode) =
-  ## Set the current namespace
-  ctx.currentNamespace = some(nsNode)
-
-proc clearCurrentNamespace*(ctx: ConversionContext) =
-  ctx.currentNamespace = none(XLangNode)
-
-# ===== Scope Management =====
-proc enterScope*(ctx: ConversionContext, kind: ScopeKind, node: XLangNode = nil) =
-  ## Enter a new scope (class, function, block, etc.)
-  let scopeNode = if node.isNil: none(XLangNode) else: some(node)
-  ctx.scopeStack.add(Scope(
-    kind: kind,
-    node: scopeNode,
-    symbols: initTable[string, XLangNode]()
-  ))
-
-proc exitScope*(ctx: ConversionContext) =
-  ## Exit the current scope
-  if ctx.scopeStack.len > 0:
-    discard ctx.scopeStack.pop()
-
-proc currentScope*(ctx: ConversionContext): Scope =
-  ## Get the current scope
-  if ctx.scopeStack.len > 0:
-    result = ctx.scopeStack[^1]
-  else:
-    # Return empty scope if none exists
-    result = Scope(
-      kind: skModule,
-      node: none(XLangNode),
-      symbols: initTable[string, XLangNode]()
-    )
-
-# ===== Symbol Declaration =====
-proc declareType*(ctx: ConversionContext, name: string, node: XLangNode) =
-  ## Register a type declaration (class, interface, enum)
-  ctx.types[name] = node
-  if ctx.scopeStack.len > 0:
-    ctx.currentScope().symbols[name] = node
-
-proc declareVariable*(ctx: ConversionContext, name: string, node: XLangNode) =
-  ## Register a variable in current scope
-  ctx.variables[name] = node
-  if ctx.scopeStack.len > 0:
-    ctx.currentScope().symbols[name] = node
-
-proc declareFunction*(ctx: ConversionContext, name: string, node: XLangNode) =
-  ## Register a function/method
-  ctx.functions[name] = node
-  if ctx.scopeStack.len > 0:
-    ctx.currentScope().symbols[name] = node
-
-# ===== Symbol Lookup =====
-proc lookupType*(ctx: ConversionContext, name: string): Option[XLangNode] =
-  ## Look up a type declaration
-  if name in ctx.types:
-    result = some(ctx.types[name])
-  else:
-    result = none(XLangNode)
-
-proc lookupVariable*(ctx: ConversionContext, name: string): Option[XLangNode] =
-  ## Look up a variable (searches scopes from innermost to outermost)
-  # Search scope stack from innermost to outermost
-  for i in countdown(ctx.scopeStack.len - 1, 0):
-    let scope = ctx.scopeStack[i]
-    if name in scope.symbols:
-      return some(scope.symbols[name])
-
-  # Not in any scope
-  result = none(XLangNode)
-
-proc lookupFunction*(ctx: ConversionContext, name: string): Option[XLangNode] =
-  ## Look up a function declaration
-  if name in ctx.functions:
-    result = some(ctx.functions[name])
-  else:
-    result = none(XLangNode)
-
-# ===== Class Context Helpers =====
-proc isInClassScope*(ctx: ConversionContext): bool =
+proc isInClassScope*(ctx: TransformContext): bool =
   ## Check if we're currently inside a class
   ctx.currentClass.isSome()
 
-proc getClassName*(ctx: ConversionContext): string =
+proc getClassName*(ctx: TransformContext): string =
   ## Get the name of the current class (or empty string)
   if ctx.currentClass.isSome():
     result = ctx.currentClass.get().typeNameDecl
   else:
     result = ""
 
-proc isClassField*(ctx: ConversionContext, name: string): bool =
+proc isClassField*(ctx: TransformContext, name: string): bool =
   ## Check if a name is a field of the current class
   if ctx.currentClass.isSome():
     let classNode = ctx.currentClass.get()
@@ -232,53 +37,75 @@ proc isClassField*(ctx: ConversionContext, name: string): bool =
         return true
   return false
 
-proc classHasBaseTypes*(ctx: ConversionContext): bool =
+proc classHasBaseTypes*(ctx: TransformContext): bool =
   ## Check if the current class has any base types (inheritance)
   if ctx.currentClass.isSome():
     let classNode = ctx.currentClass.get()
     return classNode.baseTypes.len > 0
   return false
 
-# ===== Function Context Helpers =====
-proc isInFunctionScope*(ctx: ConversionContext): bool =
+proc isInFunctionScope*(ctx: TransformContext): bool =
   ## Check if we're currently inside a function
   ctx.currentFunction.isSome()
 
-proc isInAsyncFunction*(ctx: ConversionContext): bool =
+proc isInAsyncFunction*(ctx: TransformContext): bool =
   ## Check if we're in an async function
   if ctx.currentFunction.isSome():
     return ctx.currentFunction.get().isAsync
   return false
 
-# ===== RAII-style Context Templates =====
-template withClassContext*(ctx: ConversionContext, classNode: XLangNode, body: untyped) =
-  ## Execute body with class context set
-  ## Automatically enters/exits scope and sets/clears currentClass
-  let prevClass = ctx.currentClass
-  ctx.setCurrentClass(classNode)
-  ctx.enterScope(skClass, classNode)
-  try:
-    body
-  finally:
-    ctx.exitScope()
-    if prevClass.isSome():
-      ctx.setCurrentClass(prevClass.get())
-    else:
-      ctx.clearCurrentClass()
+proc addImport*(ctx: TransformContext, module: string) =
+  ## Track that a Nim module needs to be imported
+  ctx.requiredImports.incl(module)
 
-template withFunctionContext*(ctx: ConversionContext, funcNode: XLangNode, body: untyped) =
-  ## Execute body with function context set
-  let prevFunc = ctx.currentFunction
-  ctx.setCurrentFunction(funcNode)
-  ctx.enterScope(skFunction, funcNode)
-  try:
-    body
-  finally:
-    ctx.exitScope()
-    if prevFunc.isSome():
-      ctx.setCurrentFunction(prevFunc.get())
-    else:
-      ctx.clearCurrentFunction()
+proc getImports*(ctx: TransformContext): seq[string] =
+  ## Get sorted list of required imports
+  result = toSeq(ctx.requiredImports)
+  result.sort()
+
+proc setCurrentClass*(ctx: TransformContext, classNode: XLangNode) =
+  ## Set the current class being converted
+  ctx.currentClass = some(classNode)
+
+proc clearCurrentClass*(ctx: TransformContext) =
+  ## Clear the current class context
+  ctx.currentClass = none(XLangNode)
+
+proc setCurrentFunction*(ctx: TransformContext, funcNode: XLangNode) =
+  ## Set the current function being converted
+  ctx.currentFunction = some(funcNode)
+
+proc clearCurrentFunction*(ctx: TransformContext) =
+  ## Clear the current function context
+  ctx.currentFunction = none(XLangNode)
+
+proc setCurrentNamespace*(ctx: TransformContext, nsNode: XLangNode) =
+  ## Set the current namespace
+  ctx.currentNamespace = some(nsNode)
+
+proc clearCurrentNamespace*(ctx: TransformContext) =
+  ctx.currentNamespace = none(XLangNode)
+
+proc newMinimalContext*(): TransformContext =
+  ## Create a minimal TransformContext for backward compatibility
+  ## when no semantic analysis or error collection is needed
+  let emptySemanticInfo = SemanticInfo(
+    nodeToSymbol: initTable[XLangNode, Symbol](),
+    declToSymbol: initTable[XLangNode, Symbol](),
+    nodeToScope: initTable[XLangNode, Scope](),
+    allSymbols: @[],
+    allScopes: @[],
+    symbolById: initTable[Uuid, Symbol](),
+    scopeById: initTable[Uuid, Scope](),
+    renames: initTable[Symbol, string](),
+    targetKeywords: initHashSet[string](),
+    errors: @[],
+    warnings: @[]
+  )
+  newTransformContext(
+    semanticInfo = emptySemanticInfo,
+    errorCollector = newErrorCollector()
+  )
 
 # Track warnings for unsupported constructs
 type TranspileWarning* = object
@@ -423,14 +250,16 @@ proc nodesEqual*(a, b: XLangNode): bool =
 
 
 # Forward declaration for mutual recursion (helpers call this)
-proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode
+proc convertToNimAST(node: XLangNode, ctx: TransformContext = nil): MyNimNode
 
 # Helper procs for each XLang node kind — extract case logic here
-proc conv_xnkFile(node: XLangNode, ctx: ConversionContext): MyNimNode =
+
+proc conv_xnkFile(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newStmtList()
 
   # Process imports from moduleDecls (xnkImport nodes)
-  if ctx.inputLang == "csharp":
+  # Note: std/sugar import is added by modifyBeforeConversion if lambdas are detected
+  if ctx.sourceLang == "csharp":
     # Separate stdlib and user imports
     var stdlibImports: seq[string] = @[]
     var userImports: seq[string] = @[]
@@ -467,11 +296,11 @@ proc conv_xnkFile(node: XLangNode, ctx: ConversionContext): MyNimNode =
       importStmt.add(newIdentNode(modulePath))
       result.add(importStmt)
 
-  elif ctx.inputLang != "" and ctx.inputLang != "unknown" and ctx.inputLang != "nim":
+  elif ctx.sourceLang != "" and ctx.sourceLang != "unknown" and ctx.sourceLang != "nim":
     # Fallback for non-C# languages: add blanket compat import
     let compatImport = newNimNode(nnkImportStmt)
     let homeDir = getEnv("HOME")
-    let compatPath = homeDir & "/.transpiler/compat/" & ctx.inputLang & "_compat"
+    let compatPath = homeDir & "/.transpiler/compat/" & ctx.sourceLang & "_compat"
     compatImport.add(newStrLitNode(compatPath))
     result.add(compatImport)
 
@@ -480,20 +309,20 @@ proc conv_xnkFile(node: XLangNode, ctx: ConversionContext): MyNimNode =
     if decl.kind != xnkImport:
       result.add(convertToNimAST(decl, ctx))
 
-proc conv_xnkModule(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkModule(node: XLangNode, ctx: TransformContext): MyNimNode =
   # Nim doesn't have a direct equivalent to Java's module system
   # We'll create a comment node to preserve the information
   result = newCommentStmtNode("Module: " & node.moduleName)
   for stmt in node.moduleBody:
     result.add(convertToNimAST(stmt, ctx))
 
-proc conv_xnkNamespace(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkNamespace(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newStmtList()
   result.add(newCommentStmtNode("Namespace: " & node.namespaceName))
   for stmt in node.namespaceBody:
     result.add(convertToNimAST(stmt, ctx))
 
-proc conv_xnkFuncDecl_standalone(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkFuncDecl_standalone(node: XLangNode, ctx: TransformContext): MyNimNode =
   ## Convert standalone function (not a class method)
   ## For static class methods in multi-class files, adds class name prefix
   result = newNimNode(nnkProcDef)
@@ -533,7 +362,7 @@ proc conv_xnkFuncDecl_standalone(node: XLangNode, ctx: ConversionContext): MyNim
   if node.isAsync:
     setPragma(result, newPragma(newIdentNode("async")))
 
-proc conv_xnkFuncDecl_instanceMethod(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkFuncDecl_instanceMethod(node: XLangNode, ctx: TransformContext): MyNimNode =
   ## Convert instance method (class member, non-static)
   ## Adds 'self' parameter as first parameter
   ## Uses 'method' (nnkMethodDef) if class has inheritance, otherwise 'proc' (nnkProcDef)
@@ -580,7 +409,7 @@ proc conv_xnkFuncDecl_instanceMethod(node: XLangNode, ctx: ConversionContext): M
   if node.isAsync:
     setPragma(result, newPragma(newIdentNode("async")))
 
-proc conv_xnkClassDecl_structDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkClassDecl_structDecl(node: XLangNode, ctx: TransformContext): MyNimNode =
   # Set class context for converting members (methods, constructors, fields)
   ctx.setCurrentClass(node)
   defer: ctx.clearCurrentClass()  # Ensure cleanup happens even on error
@@ -626,7 +455,7 @@ proc conv_xnkClassDecl_structDecl(node: XLangNode, ctx: ConversionContext): MyNi
       else:
         result.add(convertToNimAST(member, ctx))
 
-proc conv_xnkInterfaceDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkInterfaceDecl(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkTypeSection)
   let conceptDef = newNimNode(nnkTypeDef)
   conceptDef.add(newIdentNode(node.typeNameDecl))
@@ -637,7 +466,7 @@ proc conv_xnkInterfaceDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
   conceptDef.add(conceptTy)
   result.add(conceptDef)
 
-proc conv_xnkEnumDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkEnumDecl(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkTypeSection)
   let enumTy = newNimNode(nnkEnumTy)
   enumTy.add(newEmptyNode())
@@ -655,7 +484,7 @@ proc conv_xnkEnumDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
   typeDef.add(enumTy)
   result.add(typeDef)
 
-proc conv_xnkVarLetConst(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkVarLetConst(node: XLangNode, ctx: TransformContext): MyNimNode =
   let kind = if node.kind == xnkVarDecl: nnkVarSection elif node.kind == xnkLetDecl: nnkLetSection else: nnkConstSection
   result = newNimNode(kind)
   let identDefs = newNimNode(nnkIdentDefs)
@@ -670,7 +499,7 @@ proc conv_xnkVarLetConst(node: XLangNode, ctx: ConversionContext): MyNimNode =
     identDefs.add(newEmptyNode())
   result.add(identDefs)
 
-proc conv_xnkIfStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkIfStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkIfStmt)
   let branchNode = newNimNode(nnkElifBranch)
   branchNode.add(convertToNimAST(node.ifCondition, ctx))
@@ -681,12 +510,12 @@ proc conv_xnkIfStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
     elseNode.add(convertToNimAST(node.elseBody.get, ctx))
     result.add(elseNode)
 
-proc conv_xnkWhileStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkWhileStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkWhileStmt)
   result.add(convertToNimAST(node.whileCondition, ctx))
   result.add(convertToNimAST(node.whileBody, ctx))
 
-proc conv_xnkForStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkForStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   # Handle C-style or for-in style
   if node.extForInit.isSome() and node.extForCond.isSome() and node.extForIncrement.isSome():
     result = newStmtList()
@@ -706,7 +535,7 @@ proc conv_xnkForStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
     else:
       result.add(newEmptyNode())
 
-proc conv_xnkBlockStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkBlockStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   # xlangtypes: blockBody is a seq[XLangNode]
   # C# blocks don't need to be Nim blocks - just return the statement list
   result = newStmtList()
@@ -714,7 +543,7 @@ proc conv_xnkBlockStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
     result.add(convertToNimAST(stmt, ctx))
 
 # Patch member access and index kinds to xlangtypes style
-proc conv_xnkMemberAccess(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkMemberAccess(node: XLangNode, ctx: TransformContext): MyNimNode =
   # Note: Enum member access should already be normalized by the enum transformation pass
   # (transformEnumNormalization) which converts EnumType.Value → etValue
   # This includes both source-defined enums and external BCL enums detected via isEnumAccess
@@ -767,13 +596,13 @@ proc conv_xnkMemberAccess(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
   result.add(newIdentNode(memberName))
 
-proc conv_xnkIndexExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkIndexExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkBracketExpr)
   result.add(convertToNimAST(node.indexExpr, ctx))
   for arg in node.indexArgs:
     result.add(convertToNimAST(arg, ctx))
 
-proc conv_xnkReturnStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkReturnStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkReturnStmt)
   if node.returnExpr.isSome:
     result.add(convertToNimAST(node.returnExpr.get, ctx))
@@ -781,21 +610,21 @@ proc conv_xnkReturnStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
     result.add(newEmptyNode())
 
 ## Unified iterator yield: Python yield, C# yield return, Nim yield
-proc conv_xnkIteratorYield(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkIteratorYield(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkYieldStmt)
   if node.iteratorYieldValue.isSome:
     result.add(convertToNimAST(node.iteratorYieldValue.get, ctx))
   else:
     result.add(newEmptyNode())
 
-proc conv_xnkDiscardStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkDiscardStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkDiscardStmt)
   if node.discardExpr.isSome:
     result.add(convertToNimAST(node.discardExpr.get, ctx))
   else:
     result.add(newEmptyNode())
 
-proc conv_xnkCaseStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkCaseStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkCaseStmt)
   if node.expr.isSome():
     result.add(convertToNimAST(node.expr.get, ctx))
@@ -812,7 +641,7 @@ proc conv_xnkCaseStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
     elseBranch.add(convertToNimAST(node.caseElseBody.get, ctx))
     result.add(elseBranch)
 
-proc conv_xnkTryStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkTryStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkTryStmt)
   result.add(convertToNimAST(node.tryBody, ctx))
   for exceptt in node.catchClauses:
@@ -828,14 +657,14 @@ proc conv_xnkTryStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
     finallyBranch.add(convertToNimAST(node.finallyClause.get.finallyBody, ctx))
     result.add(finallyBranch)
 
-proc conv_xnkRaiseStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkRaiseStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkRaiseStmt)
   if node.raiseExpr.isSome:
     result.add(convertToNimAST(node.raiseExpr.get, ctx))
   else:
     result.add(newEmptyNode())
 
-proc conv_xnkTypeDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkTypeDecl(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkTypeSection)
   let typeDef = newNimNode(nnkTypeDef)
   typeDef.add(newIdentNode(node.typeDefName))
@@ -843,7 +672,7 @@ proc conv_xnkTypeDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
   typeDef.add(convertToNimAST(node.typeDefBody, ctx))
   result.add(typeDef)
 
-proc conv_xnkImportStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkImportStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   ## Convert import statements, converting C# namespaces to Nim module paths
   ## Example: "System.Collections.Generic" -> "system/collections/generic"
   result = newNimNode(nnkImportStmt)
@@ -851,7 +680,7 @@ proc conv_xnkImportStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
     let modulePath = namespaceToModulePath(item)
     result.add(newIdentNode(modulePath))
 
-proc conv_xnkImport(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkImport(node: XLangNode, ctx: TransformContext): MyNimNode =
   ## Convert single import, converting C# namespace to Nim module path
   result = newNimNode(nnkImportStmt)
   let modulePath = namespaceToModulePath(node.importPath)
@@ -860,16 +689,16 @@ proc conv_xnkImport(node: XLangNode, ctx: ConversionContext): MyNimNode =
     result.add(newIdentNode("as"))
     result.add(newIdentNode(node.importAlias.get))
 
-proc conv_xnkExport(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkExport(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkExportStmt)
   result.add(convertToNimAST(node.exportedDecl, ctx))
 
-proc conv_xnkExportStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkExportStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkExportStmt)
   for item in node.exports:
     result.add(newIdentNode(item))
 
-proc conv_xnkFromImportStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkFromImportStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkFromStmt)
   result.add(newIdentNode(node.module))
   let importList = newNimNode(nnkImportStmt)
@@ -877,7 +706,7 @@ proc conv_xnkFromImportStmt(node: XLangNode, ctx: ConversionContext): MyNimNode 
     importList.add(newIdentNode(item))
   result.add(importList)
 
-proc conv_xnkGenericParameter(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkGenericParameter(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkGenericParams)
   let identDefs = newNimNode(nnkIdentDefs)
   identDefs.add(newIdentNode(node.genericParamName))
@@ -889,7 +718,7 @@ proc conv_xnkGenericParameter(node: XLangNode, ctx: ConversionContext): MyNimNod
   identDefs.add(newEmptyNode())
   result.add(identDefs)
 
-proc conv_xnkIdentifier(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkIdentifier(node: XLangNode, ctx: TransformContext): MyNimNode =
   # Get the effective name (handles keyword renames from semantic analysis)
   var identName = node.identName
   if ctx.semanticInfo != nil:
@@ -908,7 +737,7 @@ proc conv_xnkIdentifier(node: XLangNode, ctx: ConversionContext): MyNimNode =
     # Regular identifier (or in constructor where we access params directly)
     result = newIdentNode(identName)
 
-proc conv_xnkComment(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkComment(node: XLangNode, ctx: TransformContext): MyNimNode =
   if node.isDocComment:
     # Use multi-line doc comment syntax for doc comments
     result = newCommentStmtNode("##[ " & node.commentText & " ]##")
@@ -916,7 +745,7 @@ proc conv_xnkComment(node: XLangNode, ctx: ConversionContext): MyNimNode =
     # Regular comments - just pass through without adding prefix (astprinter will add "# ")
     result = newCommentStmtNode(node.commentText)
 
-proc conv_xnkNumberLit(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkNumberLit(node: XLangNode, ctx: TransformContext): MyNimNode =
   # Preserve the literal format from source when possible
   var literal = node.numberValue
 
@@ -967,29 +796,29 @@ proc conv_xnkNumberLit(node: XLangNode, ctx: ConversionContext): MyNimNode =
       result = newIntLitNode(0)  # Placeholder
       result.literalText = literal
 
-proc conv_xnkIntLit(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkIntLit(node: XLangNode, ctx: TransformContext): MyNimNode =
   # Parse integer literal value and create integer literal node
   result = newIntLitNode(parseInt(node.literalValue))
 
-proc conv_xnkFloatLit(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkFloatLit(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newFloatLitNode(parseFloat(node.literalValue))
 
-proc conv_xnkStringLit(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkStringLit(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newStrLitNode(node.literalValue)
 
-proc conv_xnkCharLit(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkCharLit(node: XLangNode, ctx: TransformContext): MyNimNode =
   if node.literalValue.len > 0:
     result = newCharNode(node.literalValue[0])
   else:
     result = newCharNode('\0')
 
-proc conv_xnkBoolLit(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkBoolLit(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newIdentNode(if node.boolValue: "true" else: "false")
 
-proc conv_xnkNilLit(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkNilLit(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNilLit()
 
-proc conv_xnkTemplateMacro(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkTemplateMacro(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = if node.kind == xnkTemplateDef: newNimNode(nnkTemplateDef) else: newNimNode(nnkMacroDef)
   result.add(newIdentNode(node.name))
   result.add(newEmptyNode())
@@ -1008,24 +837,24 @@ proc conv_xnkTemplateMacro(node: XLangNode, ctx: ConversionContext): MyNimNode =
     postfix.add(result)
     result = postfix
 
-proc conv_xnkPragma(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkPragma(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkPragma)
   for pragma in node.pragmas:
     result.add(convertToNimAST(pragma, ctx))
 
-proc conv_xnkStaticStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkStaticStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkStaticStmt)
   result.add(convertToNimAST(node.staticBody, ctx))
 
-proc conv_xnkDeferStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkDeferStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkDefer)
   result.add(convertToNimAST(node.staticBody, ctx))
 
-proc conv_xnkAsmStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkAsmStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkAsmStmt)
   result.add(newStrLitNode(node.asmCode))
 
-proc conv_xnkDistinctTypeDef(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkDistinctTypeDef(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkTypeSection)
   let typeDef = newNimNode(nnkTypeDef)
   typeDef.add(newIdentNode(node.distinctName))
@@ -1035,7 +864,7 @@ proc conv_xnkDistinctTypeDef(node: XLangNode, ctx: ConversionContext): MyNimNode
   typeDef.add(distinctTy)
   result.add(typeDef)
 
-proc conv_xnkConceptDef(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkConceptDef(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkTypeSection)
   let typeDef = newNimNode(nnkTypeDef)
   typeDef.add(newIdentNode(node.conceptName))
@@ -1046,22 +875,22 @@ proc conv_xnkConceptDef(node: XLangNode, ctx: ConversionContext): MyNimNode =
   typeDef.add(conceptTy)
   result.add(typeDef)
 
-proc conv_xnkMixinStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkMixinStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkMixinStmt)
   for name in node.mixinNames:
     result.add(newIdentNode(name))
 
-proc conv_xnkBindStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkBindStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkBindStmt)
   for name in node.bindNames:
     result.add(newIdentNode(name))
 
-proc conv_xnkTupleConstr(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkTupleConstr(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkTupleConstr)
   for elem in node.tupleElements:
     result.add(convertToNimAST(elem, ctx))
 
-proc conv_xnkTupleUnpacking(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkTupleUnpacking(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkVarTuple)
   for target in node.unpackTargets:
     result.add(convertToNimAST(target, ctx))
@@ -1070,13 +899,13 @@ proc conv_xnkTupleUnpacking(node: XLangNode, ctx: ConversionContext): MyNimNode 
 
 # ## C# using statement → should be lowered to xnkResourceStmt first
 # ## (Keeping stub implementation for now, but should use transform pass)
-# proc conv_xnkUsingStmt_DEPRECATED(node: XLangNode, ctx: ConversionContext): MyNimNode =
+# proc conv_xnkUsingStmt_DEPRECATED(node: XLangNode, ctx: TransformContext): MyNimNode =
 #   result = newNimNode(nnkUsingStmt)
 #   result.add(convertToNimAST(node.usingExpr, ctx))
 #   result.add(convertToNimAST(node.usingBody, ctx))
 
 
-proc conv_xnkCallExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkCallExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkCall)
 
   # Check if this is a constructor call (callee is a type name)
@@ -1091,7 +920,7 @@ proc conv_xnkCallExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
   for arg in node.args:
     result.add(convertToNimAST(arg, ctx))
 
-proc conv_xnkThisCall(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkThisCall(node: XLangNode, ctx: TransformContext): MyNimNode =
   ## C# constructor initializer: this(...)
   ## Convert to a call to the current type's constructor
   ## In Nim, this would typically be handled differently, but we approximate with a proc call
@@ -1107,7 +936,7 @@ proc conv_xnkThisCall(node: XLangNode, ctx: ConversionContext): MyNimNode =
   for arg in node.arguments:
     result.add(convertToNimAST(arg, ctx))
 
-proc conv_xnkBaseCall(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkBaseCall(node: XLangNode, ctx: TransformContext): MyNimNode =
   ## C# constructor initializer: base(...)
   ## Convert to a call to the parent type's constructor
   ## In Nim, there's no direct equivalent, so we approximate with a proc call
@@ -1128,12 +957,12 @@ proc conv_xnkBaseCall(node: XLangNode, ctx: ConversionContext): MyNimNode =
   for arg in node.arguments:
     result.add(convertToNimAST(arg, ctx))
 
-proc conv_xnkDotExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkDotExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkDotExpr)
   result.add(convertToNimAST(node.dotBase, ctx))
   result.add(convertToNimAST(node.member, ctx))
 
-proc conv_xnkBracketExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkBracketExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkBracketExpr)
   result.add(convertToNimAST(node.base, ctx))
   result.add(convertToNimAST(node.index, ctx))
@@ -1212,14 +1041,14 @@ proc unaryOpToNim(op: UnaryOp): string =
   of opAwait: "await"
   of opSpread: "..."         # May need lowering
 
-proc conv_xnkBinaryExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkBinaryExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkInfix)
   # nnkInfix structure: [operator, left, right]
   result.add(newIdentNode(binaryOpToNim(node.binaryOp)))
   result.add(convertToNimAST(node.binaryLeft, ctx))
   result.add(convertToNimAST(node.binaryRight, ctx))
 
-proc conv_xnkUnaryExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkUnaryExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   # Handle increment/decrement specially as they need statement conversion
   case node.unaryOp
   of opPreIncrement, opPostIncrement, opPreDecrement, opPostDecrement:
@@ -1261,36 +1090,36 @@ template notYetImpl(kind: string): MyNimNode =
 # - xnkYieldFromStmt → (deprecated, use xnkIteratorDelegate)
 # - (xnkConditionalAccessExpr removed - duplicate of xnkSafeNavigationExpr)
 # - xnkUnionType → union_to_variant.nim
-proc conv_xnkPropertyDecl(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkPropertyDecl")
-proc conv_xnkExternal_Event(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkExternal_Event")
-proc conv_xnkDoWhileStmt(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkDoWhileStmt")
-proc conv_xnkTernaryExpr(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkTernaryExpr")
+proc conv_xnkPropertyDecl(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkPropertyDecl")
+proc conv_xnkExternal_Event(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkExternal_Event")
+proc conv_xnkDoWhileStmt(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkDoWhileStmt")
+proc conv_xnkTernaryExpr(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkTernaryExpr")
 ## Python 'with' / C# 'using' → should be lowered to xnkResourceStmt
-proc conv_xnkWithStmt(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkWithStmt")
-proc conv_xnkUsingStmt(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkUsingStmt")
+proc conv_xnkWithStmt(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkWithStmt")
+proc conv_xnkUsingStmt(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkUsingStmt")
 
 ## Unified resource management → should be lowered to defer pattern
-proc conv_xnkResourceStmt(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkResourceStmt")
-proc conv_xnkResourceItem(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkResourceItem")
-proc conv_xnkWithItem(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkWithItem")
-proc conv_xnkStringInterpolation(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkStringInterpolation")
-proc conv_xnkNullCoalesceExpr(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkNullCoalesceExpr")
-proc conv_xnkSafeNavigationExpr(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkSafeNavigationExpr")
-proc conv_xnkComprehensionExpr(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkComprehensionExpr")
-proc conv_xnkDestructureObj(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkDestructureObj")
-proc conv_xnkDestructureArray(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkDestructureArray")
-proc conv_xnkIteratorDelegate(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkIteratorDelegate")
+proc conv_xnkResourceStmt(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkResourceStmt")
+proc conv_xnkResourceItem(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkResourceItem")
+proc conv_xnkWithItem(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkWithItem")
+proc conv_xnkStringInterpolation(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkStringInterpolation")
+proc conv_xnkNullCoalesceExpr(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkNullCoalesceExpr")
+proc conv_xnkSafeNavigationExpr(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkSafeNavigationExpr")
+proc conv_xnkComprehensionExpr(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkComprehensionExpr")
+proc conv_xnkDestructureObj(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkDestructureObj")
+proc conv_xnkDestructureArray(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkDestructureArray")
+proc conv_xnkIteratorDelegate(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkIteratorDelegate")
 # Legacy yield nodes (deprecated - unified into xnkIteratorYield):
-proc conv_xnkYieldStmt(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkYieldStmt")
-proc conv_xnkYieldExpr(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkYieldExpr")
-proc conv_xnkYieldFromStmt(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkYieldFromStmt")
+proc conv_xnkYieldStmt(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkYieldStmt")
+proc conv_xnkYieldExpr(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkYieldExpr")
+proc conv_xnkYieldFromStmt(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkYieldFromStmt")
 # xnkConditionalAccessExpr removed - was duplicate of xnkSafeNavigationExpr
 
 # ==== SIMPLE DIRECT MAPPINGS ====
 
 ## C#: `this.x`
 ## Nim: `self.x`
-proc conv_xnkThisExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkThisExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   # In constructors, 'this' should be 'result'
   # In instance methods, 'this' should be 'self'
   if ctx.inConstructor:
@@ -1300,57 +1129,57 @@ proc conv_xnkThisExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 ## C#: `break;`
 ## Nim: `break`
-proc conv_xnkBreakStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkBreakStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   newNimNode(nnkBreakStmt)
 
 ## C#: `continue;`
 ## Nim: `continue`
-proc conv_xnkContinueStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkContinueStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   newNimNode(nnkContinueStmt)
 
 ## C#: `;` or empty statement
 ## Nim: (empty node)
-proc conv_xnkEmptyStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkEmptyStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   newNimNode(nnkEmpty)
 
 ## Python: `pass`
 ## Nim: `discard`
-proc conv_xnkPassStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkPassStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   newNimNode(nnkDiscardStmt)
 
 ## Python: `None` or C#: `null`
 ## Nim: `nil`
-proc conv_xnkNoneLit(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkNoneLit(node: XLangNode, ctx: TransformContext): MyNimNode =
   newIdentNode("nil")
 
 ## C#: `[Attribute]` (discarded - Nim uses pragmas differently)
 ## Nim: (discarded)
-proc conv_xnkAttribute(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkAttribute(node: XLangNode, ctx: TransformContext): MyNimNode =
   newNimNode(nnkDiscardStmt)
 
 ## C#: `abstract void Foo();` (no body in Nim)
 ## Nim: (discarded - interface handles this)
-proc conv_xnkAbstractDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkAbstractDecl(node: XLangNode, ctx: TransformContext): MyNimNode =
   newNimNode(nnkDiscardStmt)
 
-proc conv_xnkAbstractType(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkAbstractType(node: XLangNode, ctx: TransformContext): MyNimNode =
   newNimNode(nnkDiscardStmt)
 
 ## Metadata/annotations
 ## Nim: (discarded)
-proc conv_xnkMetadata(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkMetadata(node: XLangNode, ctx: TransformContext): MyNimNode =
   newNimNode(nnkDiscardStmt)
 
 ## Unknown constructs
 ## Nim: `discard`
-proc conv_xnkUnknown(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkUnknown(node: XLangNode, ctx: TransformContext): MyNimNode =
   newNimNode(nnkDiscardStmt)
 
 # ==== DECLARATIONS NEEDING IMPLEMENTATION ====
 
 ## Python: `def gen(): yield x` or C#: `IEnumerable<T> Gen()`
 ## Nim: `iterator gen(): T = yield x`
-proc conv_xnkIteratorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkIteratorDecl(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkIteratorDef)
   result.add(newIdentNode(node.iteratorName))
   result.add(newEmptyNode())  # term-rewriting
@@ -1372,7 +1201,7 @@ proc conv_xnkIteratorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 ## C#: `int x;` or `private int x = 5;`
 ## Nim: `var x: int` or `var x: int = 5`
-proc conv_xnkFieldDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkFieldDecl(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkIdentDefs)
   result.add(newIdentNode(node.fieldName))
   result.add(convertToNimAST(node.fieldType, ctx))
@@ -1386,7 +1215,7 @@ proc conv_xnkFieldDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
 ## C#:   public MyClass(int x) { this.x = x; }
 ## Java: public MyClass(int x) { this.x = x; }
 ## Nim:  proc newMyClass(x: int): MyClass = result.x = x
-proc conv_xnkConstructorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkConstructorDecl(node: XLangNode, ctx: TransformContext): MyNimNode =
   # NOTE: In Nim, constructors are factory procs named `new<TypeName>`
   # The type name comes from the current class context
   result = newNimNode(nnkProcDef)
@@ -1439,7 +1268,7 @@ proc conv_xnkConstructorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode
   ctx.inConstructor = true
 
   # Helper to convert field assignment to result.field = value
-  proc convertConstructorFieldAssignment(stmt: XLangNode, ctx: ConversionContext): MyNimNode =
+  proc convertConstructorFieldAssignment(stmt: XLangNode, ctx: TransformContext): MyNimNode =
     # Check if this is a field assignment
     if stmt.kind == xnkAsgn:
       var fieldName = ""
@@ -1486,7 +1315,7 @@ proc conv_xnkConstructorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode
 
 ## C#: `~MyClass()` → Destructor (Nim has no destructors)
 ## Nim: (discarded or use destructor hooks)
-proc conv_xnkDestructorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkDestructorDecl(node: XLangNode, ctx: TransformContext): MyNimNode =
   ## Convert C# destructor/finalizer to Nim =destroy hook
   ## C#: ~ClassName() { body }
   ## Nim: proc `=destroy`(self: var ClassName) = body
@@ -1532,7 +1361,7 @@ proc conv_xnkDestructorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode 
 
 ## C#: `delegate void D(int x);`
 ## Nim: `type D = proc(x: int)`
-proc conv_xnkDelegateDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkDelegateDecl(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkTypeSection)
   let typeDef = newNimNode(nnkTypeDef)
   typeDef.add(newIdentNode(node.extDelegateName))
@@ -1557,14 +1386,14 @@ proc conv_xnkDelegateDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 ## C#: `int this[int i] { get; }`
 ## Nim: proc `[]` and `[]=` operators (lowered by indexer_to_procs.nim)
-proc conv_xnkIndexerDecl(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkIndexerDecl")
+proc conv_xnkIndexerDecl(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkIndexerDecl")
 
 ## Operator overload declaration
 ## C#:      static Vector operator+(Vector a, Vector b) { ... }
 ## C++:     Vector operator+(const Vector& a, const Vector& b) { ... }
 ## Python:  def __add__(self, other): ...
 ## Nim:     proc `+`(a, b: Vector): Vector = ...
-proc conv_xnkOperatorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkOperatorDecl(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkProcDef)
 
   # Operator name with backticks (e.g., `+`, `-`, `*`)
@@ -1607,7 +1436,7 @@ proc conv_xnkOperatorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
   result.add(body)
 
-proc conv_xnkConversionOperatorDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkConversionOperatorDecl(node: XLangNode, ctx: TransformContext): MyNimNode =
   ## Convert C# conversion operators to Nim procs
   ## C#: public static implicit operator int(Integer value) => value.Value;
   ## Nim: proc toInt*(value: Integer): int = value.value
@@ -1689,18 +1518,18 @@ proc conv_xnkConversionOperatorDecl(node: XLangNode, ctx: ConversionContext): My
   ctx.currentClass = savedClass
 
   result.add(newBody)
-proc conv_xnkEnumMember(node: XLangNode, ctx: ConversionContext): MyNimNode = notYetImpl("xnkEnumMember")
+proc conv_xnkEnumMember(node: XLangNode, ctx: TransformContext): MyNimNode = notYetImpl("xnkEnumMember")
 
 ## C: `extern void foo(int x);`
 ## Nim: `proc foo(x: cint) {.importc.}`
-proc conv_xnkCFuncDecl(node: XLangNode, ctx: ConversionContext): MyNimNode = notYetImpl("xnkCFuncDecl")
+proc conv_xnkCFuncDecl(node: XLangNode, ctx: TransformContext): MyNimNode = notYetImpl("xnkCFuncDecl")
 
-proc conv_xnkExternalVar(node: XLangNode, ctx: ConversionContext): MyNimNode = notYetImpl("xnkExternalVar")
-proc conv_xnkLibDecl(node: XLangNode, ctx: ConversionContext): MyNimNode = notYetImpl("xnkLibDecl")
+proc conv_xnkExternalVar(node: XLangNode, ctx: TransformContext): MyNimNode = notYetImpl("xnkExternalVar")
+proc conv_xnkLibDecl(node: XLangNode, ctx: TransformContext): MyNimNode = notYetImpl("xnkLibDecl")
 
 ## C#: `foreach (var x in arr) { }`
 ## Nim: `for x in arr:`
-proc conv_xnkForeachStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkForeachStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkForStmt)
   # For foreach, we only need the variable name, not the full declaration with type
   # The loop variable type is inferred from the iterable
@@ -1714,7 +1543,7 @@ proc conv_xnkForeachStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 ## C#: `catch (Exception e) { }`
 ## Nim: `except e:`
-proc conv_xnkCatchStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkCatchStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkExceptBranch)
   # Exception type
   if node.catchType.isSome():
@@ -1729,7 +1558,7 @@ proc conv_xnkCatchStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 ## C#: `finally { }`
 ## Nim: `finally:`
-proc conv_xnkFinallyStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkFinallyStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkFinally)
   result.add(convertToNimAST(node.finallyBody, ctx))
 
@@ -1737,7 +1566,7 @@ proc conv_xnkFinallyStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 ## C#: `throw e;` → Should be migrated to xnkRaiseStmt by parser
 ## Nim: `raise e`
-proc conv_xnkThrowStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkThrowStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   # Legacy support: convert throw to raise on the fly
   result = newNimNode(nnkRaiseStmt)
   result.add(convertToNimAST(node.throwExpr, ctx))
@@ -1745,47 +1574,47 @@ proc conv_xnkThrowStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
 ## Python/Nim: `raise` or `raise e`  (already defined earlier at line ~368)
 ## C#: `Debug.Assert(x);`
 ## Nim: `assert x`
-proc conv_xnkAssertStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkAssertStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkCall)
   result.add(newIdentNode("assert"))
   result.add(convertToNimAST(node.assertCond, ctx))
 ## C#: `myLabel: statement;` (Nim has no goto/labels)
 ## Nim: (discarded)
-proc conv_xnkLabeledStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkLabeledStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   convertToNimAST(node.labeledStmt, ctx)  # Just convert the statement, discard label
 
 ## C#: `goto label;` (Nim has no goto)
 ## Nim: (discarded - should restructure code)
-proc conv_xnkGotoStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkGotoStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   addWarning(xnkGotoStmt, "goto statement not supported in Nim - code needs restructuring")
   result = newCommentStmtNode("UNSUPPORTED: goto " & node.gotoLabel & " - requires manual restructuring")
 
 ## C#: `fixed (int* p = arr) { }` (unsafe pointers)
 ## Nim: (discarded - use ptr manually)
-proc conv_xnkFixedStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkFixedStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   addWarning(xnkExternal_Fixed, "fixed statement not supported - use ptr manually in Nim")
   result = newCommentStmtNode("UNSUPPORTED: fixed statement - use unsafe pointer operations manually")
 
 ## C#: `lock (obj) { }` → should be lowered by lock_to_withlock.nim transform
 ## Nim: `withLock obj:` or acquire/defer/release pattern
-proc conv_xnkLockStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkLockStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   assertLowered("xnkLockStmt")
 
 ## C#: `unsafe { }` (Nim doesn't need unsafe blocks)
 ## Nim: (just convert body)
-proc conv_xnkUnsafeStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkUnsafeStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   convertToNimAST(node.extUnsafeBody, ctx)
 
 ## C#: `checked { }` / `unchecked { }` (overflow checking)
 ## Nim: (discarded - Nim has compile-time overflow checks)
-proc conv_xnkCheckedStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkCheckedStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   convertToNimAST(node.extCheckedBody, ctx)
 
 ## C#: local function inside method
 ## Nim: nested proc
 ## C#: Local function inside method
 ## Nim: Nested proc
-proc conv_xnkLocalFunctionStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkLocalFunctionStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkProcDef)
   result.add(newIdentNode(node.extLocalFuncName))
   result.add(newEmptyNode())  # term-rewriting
@@ -1810,14 +1639,14 @@ proc conv_xnkLocalFunctionStmt(node: XLangNode, ctx: ConversionContext): MyNimNo
     result.add(newEmptyNode())
 
 ## Ruby: `unless x` → `if not x` (lowered by normalize_simple.nim)
-proc conv_xnkUnlessStmt(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkUnlessStmt")
+proc conv_xnkUnlessStmt(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkUnlessStmt")
 
 ## `repeat...until x` → `while not x` (lowered by normalize_simple.nim)
-proc conv_xnkUntilStmt(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkUntilStmt")
+proc conv_xnkUntilStmt(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkUntilStmt")
 
 ## C++: `static_assert(x)`
 ## Nim: `static: assert x`
-proc conv_xnkStaticAssert(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkStaticAssert(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkStaticStmt)
   let assertCall = newNimNode(nnkCall)
   assertCall.add(newIdentNode("assert"))
@@ -1826,7 +1655,7 @@ proc conv_xnkStaticAssert(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 ## C#: `switch (x) { case 1: ...; default: ...; }`
 ## Nim: `case x: of 1: ...; else: ...`
-proc conv_xnkSwitchStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkSwitchStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkCaseStmt)
   result.add(convertToNimAST(node.switchExpr, ctx))
   for caseNode in node.switchCases:
@@ -1834,7 +1663,7 @@ proc conv_xnkSwitchStmt(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 ## C#: `case 1: case 2: statements;`
 ## Nim: `of 1, 2: statements`
-proc conv_xnkCaseClause(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkCaseClause(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkOfBranch)
   for val in node.caseValues:
     result.add(convertToNimAST(val, ctx))
@@ -1842,7 +1671,7 @@ proc conv_xnkCaseClause(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 ## C#: `default: statements;`
 ## Nim: `else: statements`
-proc conv_xnkDefaultClause(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkDefaultClause(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkElse)
   result.add(convertToNimAST(node.defaultBody, ctx))
 # ==== EXPRESSION CONVERSIONS ====
@@ -1851,14 +1680,14 @@ proc conv_xnkDefaultClause(node: XLangNode, ctx: ConversionContext): MyNimNode =
 ## Nim: `[1, 2, 3]`
 ## Array literal `[1, 2, 3]` (fixed-size)
 ## Nim: `[1, 2, 3]`
-proc conv_xnkArrayLiteral(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkArrayLiteral(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkBracket)
   for elem in node.elements:
     result.add(convertToNimAST(elem, ctx))
 
 ## Sequence literal `[1, 2, 3]` (dynamic)
 ## Nim: `@[1, 2, 3]`
-proc conv_xnkSequenceLiteral(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkSequenceLiteral(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkPrefix)
   result.add(newIdentNode("@"))
   let bracket = newNimNode(nnkBracket)
@@ -1868,14 +1697,14 @@ proc conv_xnkSequenceLiteral(node: XLangNode, ctx: ConversionContext): MyNimNode
 
 ## Set literal `{1, 2, 3}`
 ## Nim: `{1, 2, 3}`
-proc conv_xnkSetLiteral(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkSetLiteral(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkCurly)
   for elem in node.elements:
     result.add(convertToNimAST(elem, ctx))
 
 ## Map/Dict literal `{"a": 1, "b": 2}`
 ## Nim: `{"a": 1, "b": 2}.toTable`
-proc conv_xnkMapLiteral(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkMapLiteral(node: XLangNode, ctx: TransformContext): MyNimNode =
   # Map literals require the tables module
   ctx.addImport("tables")
   result = newNimNode(nnkTableConstr)
@@ -1883,28 +1712,28 @@ proc conv_xnkMapLiteral(node: XLangNode, ctx: ConversionContext): MyNimNode =
     result.add(convertToNimAST(entry, ctx))
 
 # Legacy (deprecated - use *Literal):
-proc conv_xnkArrayLit(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkArrayLit")
-proc conv_xnkListExpr(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkListExpr")
-proc conv_xnkSetExpr(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkSetExpr")
-proc conv_xnkDictExpr(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkDictExpr")
+proc conv_xnkArrayLit(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkArrayLit")
+proc conv_xnkListExpr(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkListExpr")
+proc conv_xnkSetExpr(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkSetExpr")
+proc conv_xnkDictExpr(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkDictExpr")
 
 ## Tuple literal `(1, 2, 3)`
 ## Nim: `(1, 2, 3)`
-proc conv_xnkTupleExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkTupleExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkTupleConstr)
   for elem in node.elements:
     result.add(convertToNimAST(elem, ctx))
 
 ## Dictionary entry `"key": value`
 ## Nim: `"key": value`
-proc conv_xnkDictEntry(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkDictEntry(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkExprColonExpr)
   result.add(convertToNimAST(node.key, ctx))
   result.add(convertToNimAST(node.value, ctx))
 
 ## Python: `arr[1:3]`
 ## Nim: `arr[1..3]` or `arr[1..^1]`
-proc conv_xnkSliceExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkSliceExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkInfix)
   result.add(newIdentNode(".."))
   if node.sliceStart.isSome():
@@ -1927,7 +1756,7 @@ proc conv_xnkSliceExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
 ## JavaScript: (x) => x * 2
 ## C#:         x => x * 2
 ## Nim:        proc(x: auto): auto = x * 2
-proc conv_xnkLambdaExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkLambdaExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkLambda)
 
   # Empty name for anonymous lambda
@@ -1967,7 +1796,7 @@ proc conv_xnkLambdaExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 ## Python/Nim: `proc(x, y): return x + y`
 ## Nim: `proc(x, y: auto): auto = x + y`
-proc conv_xnkLambdaProc(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkLambdaProc(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkLambda)
   result.add(newEmptyNode())  # Empty name
   result.add(newEmptyNode())  # Empty term-rewriting
@@ -1992,7 +1821,7 @@ proc conv_xnkLambdaProc(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 ## JS: `x => x + 1`
 ## Nim: `proc (x: auto): auto = x + 1`
-proc conv_xnkArrowFunc(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkArrowFunc(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkLambda)
   result.add(newEmptyNode())  # Empty name
   result.add(newEmptyNode())  # Empty term-rewriting
@@ -2018,7 +1847,7 @@ proc conv_xnkArrowFunc(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 ## TypeScript: `x as string`
 ## Nim: `x`  (type assertion not needed at runtime)
-proc conv_xnkTypeAssertion(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkTypeAssertion(node: XLangNode, ctx: TransformContext): MyNimNode =
   # Check if this is a null check: `x is null`
   if node.assertType.kind == xnkNamedType and node.assertType.typeName == "null":
     # Convert to: x == nil
@@ -2032,7 +1861,7 @@ proc conv_xnkTypeAssertion(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 ## C#: `(T)x`
 ## Nim: `cast[T](x)` or `T(x)`
-proc conv_xnkCastExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkCastExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkCast)
   result.add(convertToNimAST(node.castType, ctx))
   result.add(convertToNimAST(node.castExpr, ctx))
@@ -2040,37 +1869,37 @@ proc conv_xnkCastExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
 ## Nim: `procCall Method(self)` (needs proper super implementation)
 ## C#: `base.Method()` or Java: `super.method()`
 ## Nim: `procCall baseType.method(self)`
-proc conv_xnkBaseExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkBaseExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   # In Nim, we use procCall to call base implementation
   # For now, just return identifier "procCall" - full implementation needs member access context
   newIdentNode("procCall")
 
 ## C#: `ref x` or `&x`
 ## Nim: `addr x`
-proc conv_xnkRefExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkRefExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkAddr)
   result.add(convertToNimAST(node.refExpr, ctx))
 
 ## Instance variable, class variable, global variable
 ## These are just variable references (identifiers)
 ## The actual dot expression is handled by xnkDotExpr
-proc conv_xnkInstanceVar(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkInstanceVar(node: XLangNode, ctx: TransformContext): MyNimNode =
   newIdentNode(node.varName)
 
-proc conv_xnkClassVar(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkClassVar(node: XLangNode, ctx: TransformContext): MyNimNode =
   newIdentNode(node.varName)
 
-proc conv_xnkGlobalVar(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkGlobalVar(node: XLangNode, ctx: TransformContext): MyNimNode =
   newIdentNode(node.varName)
 
 ## Nim: `proc = body` literal
-proc conv_xnkProcLiteral(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkProcLiteral(node: XLangNode, ctx: TransformContext): MyNimNode =
   # Just convert the body as anonymous proc
   convertToNimAST(node.procBody, ctx)
 
 ## C: Function pointer `void (*f)(int)`
 ## Nim: `proc(x: int)` (proc type)
-proc conv_xnkProcPointer(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkProcPointer(node: XLangNode, ctx: TransformContext): MyNimNode =
   # Just return the identifier - proc pointers are first-class in Nim
   newIdentNode(node.procPointerName)
 
@@ -2078,11 +1907,11 @@ proc conv_xnkProcPointer(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 ## Ruby: `:symbol`
 ## Nim: (convert to string or ident)
-proc conv_xnkSymbolLit(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkSymbolLit(node: XLangNode, ctx: TransformContext): MyNimNode =
   newStrLitNode(node.symbolValue)
 ## Python: `x: Any` or JS: `any`
 ## Nim: No direct equivalent - use generics or RootObj
-proc conv_xnkDynamicType(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkDynamicType(node: XLangNode, ctx: TransformContext): MyNimNode =
   # In Nim, we can use RootRef or just "auto" for generic code
   if node.dynamicConstraint.isSome():
     convertToNimAST(node.dynamicConstraint.get, ctx)
@@ -2090,23 +1919,23 @@ proc conv_xnkDynamicType(node: XLangNode, ctx: ConversionContext): MyNimNode =
     newIdentNode("RootRef")
 
 ## Python: `(x*2 for x in range(10))` → iterator (lowered by generator_expressions.nim)
-proc conv_xnkGeneratorExpr(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkGeneratorExpr")
+proc conv_xnkGeneratorExpr(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkGeneratorExpr")
 ## Async/await expression
 ## Python:     await asyncFunc()
 ## JavaScript: await asyncFunc()
 ## C#:         await AsyncFunc()
 ## Nim:        await asyncFunc()
-proc conv_xnkAwaitExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkAwaitExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   # Await requires asyncdispatch module
   ctx.addImport("asyncdispatch")
   result = newNimNode(nnkCommand)
   result.add(newIdentNode("await"))
   result.add(convertToNimAST(node.extAwaitExpr, ctx))
-proc conv_xnkCompFor(node: XLangNode, ctx: ConversionContext): MyNimNode = notYetImpl("xnkCompFor")
+proc conv_xnkCompFor(node: XLangNode, ctx: TransformContext): MyNimNode = notYetImpl("xnkCompFor")
 
 ## C#: `default(T)` or `default`
 ## Nim: `default(T)` or type-specific defaults
-proc conv_xnkDefaultExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkDefaultExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   if node.defaultType.isSome():
     result = newNimNode(nnkCall)
     result.add(newIdentNode("default"))
@@ -2117,7 +1946,7 @@ proc conv_xnkDefaultExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 ## C#: `typeof(T)`
 ## Nim: `T` (type identifier) or `type(value)`
-proc conv_xnkTypeOfExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkTypeOfExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   # In Nim, typeof is just the type itself or type() proc
   result = newNimNode(nnkCall)
   result.add(newIdentNode("type"))
@@ -2125,30 +1954,30 @@ proc conv_xnkTypeOfExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 ## C#/C: `sizeof(T)`
 ## Nim: `sizeof(T)`
-proc conv_xnkSizeOfExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkSizeOfExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkCall)
   result.add(newIdentNode("sizeof"))
   result.add(convertToNimAST(node.sizeOfType, ctx))
 
 ## C#: `checked(expr)` - overflow checking
 ## Nim: Just the expression (Nim checks by default in debug, or use -d:nimOldCaseObjects)
-proc conv_xnkCheckedExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkCheckedExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   # Nim has overflow checking in debug builds, so just convert the expression
   convertToNimAST(node.checkedExpr, ctx)
 
 ## C#: `throw new Exception()` as expression (lowered by throw_expression.nim)
-proc conv_xnkThrowExpr(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkThrowExpr")
+proc conv_xnkThrowExpr(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkThrowExpr")
 
 ## C#: Switch expression `x switch { 1 => "one", _ => "other" }`
 ## Nim: Case expression
-proc conv_xnkSwitchExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkSwitchExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkCaseStmt)
   result.add(convertToNimAST(node.extSwitchExprValue, ctx))
   for arm in node.extSwitchExprArms:
     result.add(convertToNimAST(arm, ctx))
 ## C#: `stackalloc int[10]`
 ## Nim: `var arr: array[10, int]` (Nim is stack-allocated by default)
-proc conv_xnkStackAllocExpr(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkStackAllocExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   # In Nim, arrays are stack-allocated by default, so create array type
   result = newNimNode(nnkBracketExpr)
   result.add(newIdentNode("array"))
@@ -2162,18 +1991,18 @@ proc conv_xnkStackAllocExpr(node: XLangNode, ctx: ConversionContext): MyNimNode 
 
 ## C#: `new[] { 1, 2, 3 }` - implicit array creation
 ## Nim: `@[1, 2, 3]` or array literal
-proc conv_xnkImplicitArrayCreation(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkImplicitArrayCreation(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkPrefix)
   result.add(newIdentNode("@"))
   let bracket = newNimNode(nnkBracket)
   for elem in node.implicitArrayElements:
     bracket.add(convertToNimAST(elem, ctx))
   result.add(bracket)
-proc conv_xnkNamedType(node: XLangNode, ctx: ConversionContext): MyNimNode = newIdentNode(node.typeName)
+proc conv_xnkNamedType(node: XLangNode, ctx: TransformContext): MyNimNode = newIdentNode(node.typeName)
 
 ## C#: `int[]` or `int[10]`
 ## Nim: `seq[int]` or `array[10, int]`
-proc conv_xnkArrayType(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkArrayType(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkBracketExpr)
   if node.arraySize.isSome():
     # Fixed-size array
@@ -2187,7 +2016,7 @@ proc conv_xnkArrayType(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 ## C#: `Dictionary<K, V>`
 ## Nim: `Table[K, V]`
-proc conv_xnkMapType(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkMapType(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkBracketExpr)
   result.add(newIdentNode("Table"))
   result.add(convertToNimAST(node.keyType, ctx))
@@ -2195,7 +2024,7 @@ proc conv_xnkMapType(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 ## Function type: `(int) -> string`
 ## Nim: `proc(x: int): string`
-proc conv_xnkFuncType(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkFuncType(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkProcTy)
   var params = newNimNode(nnkFormalParams)
   # Return type first
@@ -2209,40 +2038,40 @@ proc conv_xnkFuncType(node: XLangNode, ctx: ConversionContext): MyNimNode =
   result.add(params)
   result.add(newEmptyNode()) # pragmas
 
-proc conv_xnkFunctionType(node: XLangNode, ctx: ConversionContext): MyNimNode = conv_xnkFuncType(node, ctx)
+proc conv_xnkFunctionType(node: XLangNode, ctx: TransformContext): MyNimNode = conv_xnkFuncType(node, ctx)
 
 ## C: `int*`
 ## Nim: `ptr int`
-proc conv_xnkPointerType(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkPointerType(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkPtrTy)
   result.add(convertToNimAST(node.referentType, ctx))
 
 ## C#: `ref T`
 ## Nim: `ref T`
-proc conv_xnkReferenceType(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkReferenceType(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkRefTy)
   result.add(convertToNimAST(node.referentType, ctx))
 
 ## C#: `List<T>`
 ## Nim: `List[T]`
-proc conv_xnkGenericType(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkGenericType(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkBracketExpr)
   result.add(newIdentNode(node.genericTypeName))
   for arg in node.genericArgs:
     result.add(convertToNimAST(arg, ctx))
-proc conv_xnkUnionType(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkUnionType")
+proc conv_xnkUnionType(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkUnionType")
 
 ## TypeScript: `A & B` (should be lowered by transform)
-proc conv_xnkIntersectionType(node: XLangNode, ctx: ConversionContext): MyNimNode = assertLowered("xnkIntersectionType")
+proc conv_xnkIntersectionType(node: XLangNode, ctx: TransformContext): MyNimNode = assertLowered("xnkIntersectionType")
 
 ## Nim: `distinct int`
-proc conv_xnkDistinctType(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkDistinctType(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkDistinctTy)
   result.add(convertToNimAST(node.distinctBaseType, ctx))
 
 ## Parameter in function signature
 ## Nim: `x: int` → nnkIdentDefs
-proc conv_xnkParameter(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkParameter(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkIdentDefs)
   result.add(newIdentNode(node.paramName))
   if node.paramType.isSome():
@@ -2255,31 +2084,31 @@ proc conv_xnkParameter(node: XLangNode, ctx: ConversionContext): MyNimNode =
     result.add(newEmptyNode())
 
 ## Argument in function call (just the expression)
-proc conv_xnkArgument(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkArgument(node: XLangNode, ctx: TransformContext): MyNimNode =
   convertToNimAST(node.argValue, ctx)
 ## Python decorator (should be lowered to pragmas or discarded)
-proc conv_xnkDecorator(node: XLangNode, ctx: ConversionContext): MyNimNode = newNimNode(nnkDiscardStmt)
+proc conv_xnkDecorator(node: XLangNode, ctx: TransformContext): MyNimNode = newNimNode(nnkDiscardStmt)
 
-proc conv_xnkConceptRequirement(node: XLangNode, ctx: ConversionContext): MyNimNode = notYetImpl("xnkConceptRequirement")
-proc conv_xnkConceptDecl(node: XLangNode, ctx: ConversionContext): MyNimNode = notYetImpl("xnkConceptDecl")
+proc conv_xnkConceptRequirement(node: XLangNode, ctx: TransformContext): MyNimNode = notYetImpl("xnkConceptRequirement")
+proc conv_xnkConceptDecl(node: XLangNode, ctx: TransformContext): MyNimNode = notYetImpl("xnkConceptDecl")
 
 ## Qualified name: `a.b.c`
 ## Nim: nested dot expression
-proc conv_xnkQualifiedName(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkQualifiedName(node: XLangNode, ctx: TransformContext): MyNimNode =
   # Recursively build: left.right
   result = newNimNode(nnkDotExpr)
   result.add(convertToNimAST(node.qualifiedLeft, ctx))
   result.add(convertToNimAST(node.qualifiedRight, ctx))
 
 ## Alias qualified name: `alias::Name`
-proc conv_xnkAliasQualifiedName(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkAliasQualifiedName(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkDotExpr)
   result.add(newIdentNode(node.aliasQualifier))
   result.add(newIdentNode(node.aliasQualifiedName))
 
 ## Generic name: `List<T>`
 ## Nim: `List[T]` (bracket expression)
-proc conv_xnkGenericName(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkGenericName(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkBracketExpr)
   result.add(newIdentNode(node.genericNameIdentifier))
   for arg in node.genericNameArgs:
@@ -2287,45 +2116,45 @@ proc conv_xnkGenericName(node: XLangNode, ctx: ConversionContext): MyNimNode =
 
 ## Method reference: `obj.Method`
 ## Nim: dot expression
-proc conv_xnkMethodReference(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkMethodReference(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkDotExpr)
   result.add(convertToNimAST(node.refObject, ctx))
   result.add(newIdentNode(node.refMethod))
 ## Python module (convert to statement list)
-proc conv_xnkModuleDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkModuleDecl(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkStmtList)
   for stmt in node.moduleBody:
     result.add(convertToNimAST(stmt, ctx))
 
 ## C#: `using X = Y;`
 ## Nim: `type X = Y`
-proc conv_xnkTypeAlias(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkTypeAlias(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkTypeDef)
   result.add(newIdentNode(node.aliasName))
   result.add(newEmptyNode()) # generic params
   result.add(convertToNimAST(node.aliasTarget, ctx))
 
 ## Nim: `include "filename"`
-proc conv_xnkInclude(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkInclude(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkIncludeStmt)
   result.add(convertToNimAST(node.includeName, ctx))
 
 ## Nim mixin statement
-proc conv_xnkMixinDecl(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkMixinDecl(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkMixinStmt)
   for name in node.mixinNames:
     result.add(newIdentNode(name))
 
-proc conv_xnkTemplateDecl(node: XLangNode, ctx: ConversionContext): MyNimNode = notYetImpl("xnkTemplateDecl")
-proc conv_xnkMacroDecl(node: XLangNode, ctx: ConversionContext): MyNimNode = notYetImpl("xnkMacroDecl")
-proc conv_xnkExtend(node: XLangNode, ctx: ConversionContext): MyNimNode = notYetImpl("xnkExtend")
-proc conv_xnkTypeSwitchStmt(node: XLangNode, ctx: ConversionContext): MyNimNode = notYetImpl("xnkTypeSwitchStmt")
-proc conv_xnkTypeCaseClause(node: XLangNode, ctx: ConversionContext): MyNimNode = notYetImpl("xnkTypeCaseClause")
-proc conv_xnkSwitchCase(node: XLangNode, ctx: ConversionContext): MyNimNode = notYetImpl("xnkSwitchCase")
+proc conv_xnkTemplateDecl(node: XLangNode, ctx: TransformContext): MyNimNode = notYetImpl("xnkTemplateDecl")
+proc conv_xnkMacroDecl(node: XLangNode, ctx: TransformContext): MyNimNode = notYetImpl("xnkMacroDecl")
+proc conv_xnkExtend(node: XLangNode, ctx: TransformContext): MyNimNode = notYetImpl("xnkExtend")
+proc conv_xnkTypeSwitchStmt(node: XLangNode, ctx: TransformContext): MyNimNode = notYetImpl("xnkTypeSwitchStmt")
+proc conv_xnkTypeCaseClause(node: XLangNode, ctx: TransformContext): MyNimNode = notYetImpl("xnkTypeCaseClause")
+proc conv_xnkSwitchCase(node: XLangNode, ctx: TransformContext): MyNimNode = notYetImpl("xnkSwitchCase")
 ## Assignment statement
 ## Universal: x = 5, arr[i] = 10, obj.field = "hello"
 ## Nim: Same syntax
-proc conv_xnkAsgn(node: XLangNode, ctx: ConversionContext): MyNimNode =
+proc conv_xnkAsgn(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkAsgn)
   result.add(convertToNimAST(node.asgnLeft, ctx))
   result.add(convertToNimAST(node.asgnRight, ctx))
@@ -2365,7 +2194,57 @@ proc getNodeDescription(node: XLangNode): string =
   else:
     discard
 
-proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode =
+proc modifyBeforeConversion(node: XLangNode, ctx: TransformContext): XLangNode =
+  ## Preprocessing pass that modifies the XLang AST before conversion to Nim AST
+  ## This is where we add necessary imports based on what features are used
+  result = node
+
+  # Only process at file level
+  if node.kind != xnkFile:
+    return result
+
+  # Collect all node kinds used in the AST
+  var mutableNode = node
+  let kinds = collectAllKinds(mutableNode)
+
+  # Track which imports we need to add
+  var importsToAdd: seq[string] = @[]
+
+  # Check if file contains lambdas → need std/sugar
+  if kinds.contains(xnkLambdaExpr) or kinds.contains(xnkLambdaProc) or kinds.contains(xnkArrowFunc):
+    importsToAdd.add("std/sugar")
+
+  # Check if file uses async/await → need asyncdispatch
+  # Note: xnkExternal_Await is the node kind for await expressions
+  # Also check for async functions by scanning for functions with isAsync=true
+  if kinds.contains(xnkExternal_Await):
+    importsToAdd.add("asyncdispatch")
+  else:
+    # Also check if any function/method declarations have isAsync=true
+    var needsAsync = false
+    traverseTree(mutableNode, proc(n: var XLangNode) =
+      if n.kind in {xnkFuncDecl, xnkMethodDecl} and n.isAsync:
+        needsAsync = true
+    )
+    if needsAsync:
+      importsToAdd.add("asyncdispatch")
+
+  # Check if file uses map/dictionary literals → need tables
+  if kinds.contains(xnkMapLiteral):
+    importsToAdd.add("tables")
+
+  # Add all required imports at the beginning of moduleDecls
+  for i, importPath in importsToAdd:
+    let importNode = XLangNode(
+      kind: xnkImport,
+      importPath: importPath,
+      importAlias: none(string)
+    )
+    # Insert in reverse order so they appear in the order we added them
+    result.moduleDecls.insert(importNode, 0)
+
+
+proc convertToNimAST(node: XLangNode, ctx: TransformContext = nil): MyNimNode =
   # Check for nil node
   if node.isNil:
     let fileInfo = if not ctx.isNil and ctx.currentFile != "": " in " & ctx.currentFile else: ""
@@ -2373,7 +2252,7 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
     return newNimNode(nnkDiscardStmt)
 
   # Create temporary context if none provided (for backward compatibility)
-  let context = if ctx.isNil: newContext() else: ctx
+  let context = if ctx.isNil: newMinimalContext() else: ctx
 
   # Push node onto stack for error tracking
   context.nodeStack.add(node)
@@ -2772,22 +2651,6 @@ proc convertToNimAST*(node: XLangNode, ctx: ConversionContext = nil): MyNimNode 
     raise  # Re-raise the exception with original stack trace
 
 
-
-# # proc convertXLangASTToNimAST*(xlangAST: XLangAST): MyNimNode =
-# #   result = newStmtList()
-# #   for node in xlangAST:
-# #     result.add(convertToNimAST(node, ctx))
-
-# # Example usage
-# when isMainModule:
-#   let xlangAST = XLangNode(kind: xnkFile, fileName: "example.nim", declarations: @[
-#     XLangNode(kind: xnkFuncDecl, funcName: "main", params: @[], returnType: none(XLangNode),
-#       body: XLangNode(kind: xnkBlockStmt, body: @[
-#         XLangNode(kind: xnkCallExpr, callee: XLangNode(kind: xnkIdentifier, identName: "echo"),
-#                  args: @[XLangNode(kind: xnkStringLit, literalValue: "Hello, World!")])
-#       ])
-#     )
-#   ])
-
-#   let nimAST = convertToNimAST(xlangAST, ctx)
-#   echo nimAST.repr
+proc xlangToNimAST*(node: XLangNode, ctx: TransformContext = nil): MyNimNode =
+  let modifiedNode = modifyBeforeConversion(node, ctx)
+  convertToNimAST(modifiedNode, ctx)

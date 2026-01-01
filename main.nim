@@ -83,9 +83,7 @@ proc main() =
   # Convert target language string to enum
   let targetLang = case targetLangStr.toLowerAscii()
     of "nim": olNim
-    of "go": olGo
-    of "rust": olRust
-    of "cpp": olCpp
+    # etc. for other languages
     else:
       quit("Unknown target language: " & targetLangStr & "\nSupported: nim, go, rust, cpp")
 
@@ -135,33 +133,32 @@ proc main() =
   )
 
   # Create backend based on target language
-  case targetLang
+
+  var backend = case targetLang
   of olNim:
-    let backend = newNimBackend()
-    var pipeline = newTranspilationPipeline(baseConfig, backend)
+    newNimBackend()
+  # of olGo: -- for example.
+    # quit("Go backend not yet implemented")
+    # newGoBackend()
 
-    # Process each xljs file
-    for inputFile in xlsjFiles:
-      # Update config with current input file
-      pipeline.config.inputFile = inputFile
+  var pipeline = newTranspilationPipeline(baseConfig, backend)
 
-      # Run the pipeline
-      let result = pipeline.run()
+  # Process each xljs file
+  for inputFile in xlsjFiles:
+    # Update config with current input file
+    pipeline.config.inputFile = inputFile
 
-      # Handle errors
-      if not result.success:
-        for error in result.errors:
-          echo "ERROR [", inputFile, "]: ", error
+    # Run the pipeline
+    let result = pipeline.run()
 
-    # Report results
-    pipeline.reportResults()
+    # Handle errors
+    if not result.success:
+      for error in result.errors:
+        echo "ERROR [", inputFile, "]: ", error
 
-  of olGo:
-    quit("Go backend not yet implemented")
-  of olRust:
-    quit("Rust backend not yet implemented")
-  of olCpp:
-    quit("C++ backend not yet implemented")
+  # Report results
+  pipeline.reportResults()
+
 
 when isMainModule:
   main()

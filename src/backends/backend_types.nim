@@ -11,9 +11,7 @@ type
   OutputLanguage* = enum
     ## Supported output languages
     olNim = "nim"
-    olGo = "go"
-    olRust = "rust"
-    olCpp = "cpp"
+    
 
   BackendContext* = object
     ## Context passed to backend operations for file output

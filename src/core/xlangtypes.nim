@@ -241,7 +241,7 @@ type
 
   XLangNode* = ref object
     ## Common fields (available for all node kinds)
-    id*: Uuid              ## Unique identifier for this node
+    id*: Option[Uuid]        ## Unique identifier for this node (assigned during parsing or by buildNodeIndex)
     parentId*: Option[Uuid]  ## Parent node's UUID (for traversing up the tree)
 
     case kind*: XLangNodeKind  ## Variant fields (depends on node kind)

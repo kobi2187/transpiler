@@ -15,11 +15,13 @@ import error_collector
 import uuid4
 import std/tables
 import std/options
+import std/sets
 import core/apply_to_kids
 
 type
   TransformContext* = ref object
-    ## Central context for transform passes - provides access to all services
+    ## Central context for all AST passes - transforms AND conversion
+    ## Provides access to semantic info, scope tracking, and all services
 
     # Core semantic data
     semanticInfo*: SemanticInfo        ## Symbol tables, scopes, resolved references
@@ -39,8 +41,24 @@ type
     transformCount*: int               ## How many times transforms have been applied
     nodeById*: Table[Uuid, XLangNode]  ## Quick lookup of nodes by UUID (built on demand)
 
-    # Cache/helpers (can be extended)
-    # ... future: type system, constant folding, etc.
+    # Conversion scope tracking (for code generation phase)
+    currentClass*: Option[XLangNode]      ## Current class/interface being converted
+    currentFunction*: Option[XLangNode]   ## Current function/method being converted
+    currentNamespace*: Option[XLangNode]  ## Current namespace being converted
+    currentModule*: Option[XLangNode]     ## Current file/module being converted
+    inConstructor*: bool                  ## True if inside a constructor body
+    nodeStack*: seq[XLangNode]            ## Stack for error reporting (shows hierarchy)
+
+    # Symbol tables for conversion (XLangNode references)
+    types*: Table[string, XLangNode]      ## Type declarations
+    variables*: Table[string, XLangNode]  ## Variable declarations
+    functions*: Table[string, XLangNode]  ## Function declarations
+
+    # Import tracking
+    requiredImports*: HashSet[string]     ## Nim modules to import (tables, options, etc.)
+
+    # Multi-class file handling
+    classCount*: int                      ## Number of classes in file (for static method prefixing)
 
 proc newTransformContext*(semanticInfo: SemanticInfo,
                          errorCollector: ErrorCollector,
@@ -57,7 +75,19 @@ proc newTransformContext*(semanticInfo: SemanticInfo,
     currentFile: currentFile,
     verbose: verbose,
     transformCount: 0,
-    nodeById: initTable[Uuid, XLangNode]()
+    nodeById: initTable[Uuid, XLangNode](),
+    # Initialize conversion state fields
+    currentClass: none(XLangNode),
+    currentFunction: none(XLangNode),
+    currentNamespace: none(XLangNode),
+    currentModule: none(XLangNode),
+    inConstructor: false,
+    nodeStack: @[],
+    types: initTable[string, XLangNode](),
+    variables: initTable[string, XLangNode](),
+    functions: initTable[string, XLangNode](),
+    requiredImports: initHashSet[string](),
+    classCount: 0
   )
 
 # =============================================================================
@@ -183,8 +213,8 @@ proc addFieldToClass*(ctx: TransformContext, classNode: XLangNode, field: XLangN
   if classNode.kind in {xnkClassDecl, xnkStructDecl, xnkInterfaceDecl}:
     classNode.members.add(field)
     # Also register the new field in nodeById if it has an ID
-    if field.id != Uuid():  # Check if ID is set
-      ctx.nodeById[field.id] = field
+    if field.id.isSome:
+      ctx.nodeById[field.id.get()] = field
     ctx.log("Added field '" & field.fieldName & "' to type '" & classNode.typeNameDecl & "'")
 
 proc buildNodeIndex*(ctx: TransformContext, root: var XLangNode) =
@@ -194,18 +224,18 @@ proc buildNodeIndex*(ctx: TransformContext, root: var XLangNode) =
 
   proc assignIdsAndParents(node: var XLangNode, parentId: Option[Uuid]) =
     # Assign a new UUID if not set
-    if node.id == Uuid():
-      node.id = uuid4()
+    if node.id.isNone:
+      node.id = some(uuid4())
 
     # Set parent ID
     node.parentId = parentId
 
     # Add to lookup table
-    ctx.nodeById[node.id] = node
+    ctx.nodeById[node.id.get()] = node
 
     # Recursively process children with this node as parent
-    let currentId = some(node.id)
-    let nodeId = node.id  # Capture the ID, not the node itself
+    let currentId = node.id
+    let nodeId = node.id.get()  # Capture the ID value, not the node itself
     case node.kind
     of xnkFile:
       for child in node.moduleDecls.mitems:
@@ -216,7 +246,7 @@ proc buildNodeIndex*(ctx: TransformContext, root: var XLangNode) =
     else:
       # For all other node types, use the visitor pattern
       visit(node, proc(child: var XLangNode) =
-        if child.id != nodeId:  # Don't re-process the current node
+        if child.id.isSome and child.id.get() != nodeId:  # Don't re-process the current node
           assignIdsAndParents(child, currentId)
       )
 
