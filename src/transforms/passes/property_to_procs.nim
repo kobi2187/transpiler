@@ -54,7 +54,7 @@ proc transformPropertyHelper(node: XLangNode, ctx: TransformContext, parentClass
           fieldType: if prop.extPropType.isSome(): prop.extPropType.get else: XLangNode(kind: xnkNamedType, typeName: "auto"),
           fieldInitializer: none(XLangNode)
         )
-        ctx.addFieldToClass("PropertyToProcs", containingClass, backingField)
+        ctx.queueFieldForClass("PropertyToProcs", containingClass, backingField)
       else:
         echo "containingClass is nil"
         ctx.addWarning(tekTransformError,

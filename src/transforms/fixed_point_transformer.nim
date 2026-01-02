@@ -245,7 +245,11 @@ proc run*(pm: FixedPointTransformer, root: var XLangNode, verbose: bool = false,
     # Apply transforms
     traverseTree(root, proc(node: var XLangNode) =
       applyTransform(pm, node, counter, applicableKinds, reintroducedKinds))
-    
+
+    # Flush any pending fields that transforms queued
+    if pm.transformContext != nil:
+      pm.transformContext.flushPendingFields()
+
     # Cycle detection
     if shouldWarnAboutCycle(iterations, reintroducedKinds, cycleWarningShown):
       markLoopWarning(pm.result, reintroducedKinds)

@@ -24,12 +24,19 @@ type
   # Phase-Specific State Objects
   # =============================================================================
   
+  PendingField* = object
+    ## A field to be added to a class after iteration completes
+    classId*: Uuid        ## UUID of the class to add to
+    field*: XLangNode     ## The field to add
+    source*: string       ## Transform that requested it
+
   TransformState* = object
     ## State used during the transform/lowering phase
     ## Access via ctx.transform.*
     nodeById*: Table[Uuid, XLangNode]  ## Quick lookup of nodes by UUID
     transformCount*: int               ## How many times transforms have been applied
     log*: seq[string]                  ## Audit log of transform actions
+    pendingFields*: seq[PendingField]  ## Fields to add after iteration
 
   ConversionState* = object
     ## State used during the conversion/code-gen phase
@@ -75,7 +82,8 @@ proc initTransformState(): TransformState =
   TransformState(
     nodeById: initTable[Uuid, XLangNode](),
     transformCount: 0,
-    log: @[]
+    log: @[],
+    pendingFields: @[]
   )
 
 proc initConversionState(): ConversionState =
@@ -297,16 +305,35 @@ proc registerFieldInIndex(ctx: TransformContext, field: XLangNode) =
   if field.id.isSome:
     ctx.transform.nodeById[field.id.get()] = field
 
-proc addFieldToClass*(ctx: TransformContext, source: string, classNode: XLangNode, field: XLangNode) =
-  ## Add a field to a class/struct declaration
+proc queueFieldForClass*(ctx: TransformContext, source: string, classNode: XLangNode, field: XLangNode) =
+  ## Queue a field to be added to a class after iteration completes
   ## source: name of the transform performing this action (for logging)
-  ## Updates the node index to include the new field
+  ## This avoids modifying the members seq during iteration
   if not canAddField(classNode):
     return
-  classNode.members.add(field)
-  linkFieldToParent(field, classNode)
-  registerFieldInIndex(ctx, field)
-  ctx.logAction(source, "added field '" & field.fieldName & "' to " & classNode.typeNameDecl)
+  if classNode.id.isNone:
+    ctx.logAction(source, "ERROR: class has no id, cannot queue field '" & field.fieldName & "'")
+    return
+  ctx.transform.pendingFields.add(PendingField(
+    classId: classNode.id.get(),
+    field: field,
+    source: source
+  ))
+  ctx.logAction(source, "queued field '" & field.fieldName & "' for " & classNode.typeNameDecl)
+
+proc flushPendingFields*(ctx: TransformContext) =
+  ## Add all pending fields to their classes
+  ## Call this after each iteration of the fixed-point transformer
+  for pending in ctx.transform.pendingFields:
+    let classNode = ctx.getNodeById(pending.classId)
+    if classNode.isNil:
+      ctx.logAction(pending.source, "ERROR: class not found for pending field")
+      continue
+    classNode.members.add(pending.field)
+    linkFieldToParent(pending.field, classNode)
+    registerFieldInIndex(ctx, pending.field)
+    ctx.logAction(pending.source, "added field '" & pending.field.fieldName & "' to " & classNode.typeNameDecl)
+  ctx.transform.pendingFields.setLen(0)
 
 # =============================================================================
 # Node Index Building Helpers
@@ -337,6 +364,9 @@ proc assignIdsAndParents(node: var XLangNode, parentId: Option[Uuid], ctx: Trans
   case node.kind
   of xnkFile:
     for child in node.moduleDecls.mitems:
+      assignIdsAndParents(child, currentId, ctx)
+  of xnkNamespace:
+    for child in node.namespaceBody.mitems:
       assignIdsAndParents(child, currentId, ctx)
   of xnkClassDecl, xnkStructDecl, xnkInterfaceDecl:
     for member in node.members.mitems:
