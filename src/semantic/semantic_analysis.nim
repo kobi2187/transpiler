@@ -1022,6 +1022,21 @@ proc markKeywordConflicts*(info: SemanticInfo) =
   ## DEPRECATED: Use sanitizeAndCheckKeywords instead
   sanitizeAndCheckKeywords(info)
 
+proc applyNimNamingConventions*(info: SemanticInfo) =
+  ## Apply Nim naming conventions to symbols (camelCase for methods/functions/fields).
+  ## This should be called after sanitizeAndCheckKeywords.
+  for sym in info.allSymbols:
+    # Only convert functions, fields, and properties to camelCase
+    # Type names, constants, etc. keep their original naming
+    if sym.kind in {skFunction, skField, skProperty}:
+      let currentName = if sym.mangledName != "": sym.mangledName else: sym.name
+      # Apply simple first-letter lowercase for camelCase
+      if currentName.len > 0 and currentName[0].isUpperAscii:
+        var nimName = currentName
+        nimName[0] = currentName[0].toLowerAscii
+        sym.mangledName = nimName
+        info.renames[sym] = nimName
+
 # =============================================================================
 # Public API
 # =============================================================================
@@ -1064,6 +1079,7 @@ proc analyzeProgram*(root: XLangNode, targetKeywords: seq[string] = @[]): Semant
 
   # Post-processing
   result.markKeywordConflicts()
+  result.applyNimNamingConventions()
 
 # =============================================================================
 # Query Helpers (for transforms and emitter)

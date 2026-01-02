@@ -19,19 +19,19 @@ import uuid4
 
 proc isInClassScope*(ctx: TransformContext): bool =
   ## Check if we're currently inside a class
-  ctx.currentClass.isSome()
+  ctx.conversion.currentClass.isSome()
 
 proc getClassName*(ctx: TransformContext): string =
   ## Get the name of the current class (or empty string)
-  if ctx.currentClass.isSome():
-    result = ctx.currentClass.get().typeNameDecl
+  if ctx.conversion.currentClass.isSome():
+    result = ctx.conversion.currentClass.get().typeNameDecl
   else:
     result = ""
 
 proc isClassField*(ctx: TransformContext, name: string): bool =
   ## Check if a name is a field of the current class
-  if ctx.currentClass.isSome():
-    let classNode = ctx.currentClass.get()
+  if ctx.conversion.currentClass.isSome():
+    let classNode = ctx.conversion.currentClass.get()
     for member in classNode.members:
       if member.kind == xnkFieldDecl and member.fieldName == name:
         return true
@@ -39,52 +39,52 @@ proc isClassField*(ctx: TransformContext, name: string): bool =
 
 proc classHasBaseTypes*(ctx: TransformContext): bool =
   ## Check if the current class has any base types (inheritance)
-  if ctx.currentClass.isSome():
-    let classNode = ctx.currentClass.get()
+  if ctx.conversion.currentClass.isSome():
+    let classNode = ctx.conversion.currentClass.get()
     return classNode.baseTypes.len > 0
   return false
 
 proc isInFunctionScope*(ctx: TransformContext): bool =
   ## Check if we're currently inside a function
-  ctx.currentFunction.isSome()
+  ctx.conversion.currentFunction.isSome()
 
 proc isInAsyncFunction*(ctx: TransformContext): bool =
   ## Check if we're in an async function
-  if ctx.currentFunction.isSome():
-    return ctx.currentFunction.get().isAsync
+  if ctx.conversion.currentFunction.isSome():
+    return ctx.conversion.currentFunction.get().isAsync
   return false
 
 proc addImport*(ctx: TransformContext, module: string) =
   ## Track that a Nim module needs to be imported
-  ctx.requiredImports.incl(module)
+  ctx.conversion.requiredImports.incl(module)
 
 proc getImports*(ctx: TransformContext): seq[string] =
   ## Get sorted list of required imports
-  result = toSeq(ctx.requiredImports)
+  result = toSeq(ctx.conversion.requiredImports)
   result.sort()
 
 proc setCurrentClass*(ctx: TransformContext, classNode: XLangNode) =
   ## Set the current class being converted
-  ctx.currentClass = some(classNode)
+  ctx.conversion.currentClass = some(classNode)
 
 proc clearCurrentClass*(ctx: TransformContext) =
   ## Clear the current class context
-  ctx.currentClass = none(XLangNode)
+  ctx.conversion.currentClass = none(XLangNode)
 
 proc setCurrentFunction*(ctx: TransformContext, funcNode: XLangNode) =
   ## Set the current function being converted
-  ctx.currentFunction = some(funcNode)
+  ctx.conversion.currentFunction = some(funcNode)
 
 proc clearCurrentFunction*(ctx: TransformContext) =
   ## Clear the current function context
-  ctx.currentFunction = none(XLangNode)
+  ctx.conversion.currentFunction = none(XLangNode)
 
 proc setCurrentNamespace*(ctx: TransformContext, nsNode: XLangNode) =
   ## Set the current namespace
-  ctx.currentNamespace = some(nsNode)
+  ctx.conversion.currentNamespace = some(nsNode)
 
 proc clearCurrentNamespace*(ctx: TransformContext) =
-  ctx.currentNamespace = none(XLangNode)
+  ctx.conversion.currentNamespace = none(XLangNode)
 
 proc newMinimalContext*(): TransformContext =
   ## Create a minimal TransformContext for backward compatibility
@@ -332,9 +332,9 @@ proc conv_xnkFuncDecl_standalone(node: XLangNode, ctx: TransformContext): MyNimN
   var baseName = memberNameToNim(node.funcName)
 
   # If this is a static method in a file with multiple classes, add class name prefix
-  if ctx.currentClass.isSome() and node.funcIsStatic and ctx.classCount > 1:
+  if ctx.conversion.currentClass.isSome() and node.funcIsStatic and ctx.conversion.classCount > 1:
     # Get the class name and create prefix (e.g., JarUtil -> jarUtil_)
-    let className = ctx.currentClass.get().typeNameDecl
+    let className = ctx.conversion.currentClass.get().typeNameDecl
     let prefix = className[0].toLowerAscii() & className[1..^1] & "_"
     baseName = prefix & baseName
 
@@ -728,7 +728,7 @@ proc conv_xnkIdentifier(node: XLangNode, ctx: TransformContext): MyNimNode =
 
   # Check if this identifier is a class field being accessed in an instance method
   # In constructors, don't add self. prefix - fields will be accessed directly or via result.
-  if ctx.isInClassScope() and ctx.isClassField(node.identName) and not ctx.inConstructor:
+  if ctx.isInClassScope() and ctx.isClassField(node.identName) and not ctx.conversion.inConstructor:
     # Convert to self.fieldName
     result = newNimNode(nnkDotExpr)
     result.add(newIdentNode("self"))
@@ -927,8 +927,8 @@ proc conv_xnkThisCall(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkCall)
 
   # Get the current class name for the constructor call
-  let typeName = if ctx.currentClass.isSome():
-    ctx.currentClass.get().typeNameDecl
+  let typeName = if ctx.conversion.currentClass.isSome():
+    ctx.conversion.currentClass.get().typeNameDecl
   else:
     "UnknownType"
 
@@ -943,9 +943,9 @@ proc conv_xnkBaseCall(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkCall)
 
   # Try to determine parent type name
-  let parentTypeName = if ctx.currentClass.isSome() and ctx.currentClass.get().baseTypes.len > 0:
+  let parentTypeName = if ctx.conversion.currentClass.isSome() and ctx.conversion.currentClass.get().baseTypes.len > 0:
     # Get first base type name (simplified - assumes it's xnkNamedType)
-    let baseType = ctx.currentClass.get().baseTypes[0]
+    let baseType = ctx.conversion.currentClass.get().baseTypes[0]
     if baseType.kind == xnkNamedType:
       baseType.typeName
     else:
@@ -1122,7 +1122,7 @@ proc conv_xnkYieldFromStmt(node: XLangNode, ctx: TransformContext): MyNimNode = 
 proc conv_xnkThisExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   # In constructors, 'this' should be 'result'
   # In instance methods, 'this' should be 'self'
-  if ctx.inConstructor:
+  if ctx.conversion.inConstructor:
     newIdentNode("result")
   else:
     newIdentNode("self")
@@ -1265,7 +1265,7 @@ proc conv_xnkConstructorDecl(node: XLangNode, ctx: TransformContext): MyNimNode 
     body.add(initStmt)
 
   # Set constructor flag so field accesses use result. instead of self.
-  ctx.inConstructor = true
+  ctx.conversion.inConstructor = true
 
   # Helper to convert field assignment to result.field = value
   proc convertConstructorFieldAssignment(stmt: XLangNode, ctx: TransformContext): MyNimNode =
@@ -1309,7 +1309,7 @@ proc conv_xnkConstructorDecl(node: XLangNode, ctx: TransformContext): MyNimNode 
       body.add(convertConstructorFieldAssignment(node.constructorBody, ctx))
 
   # Clear constructor flag
-  ctx.inConstructor = false
+  ctx.conversion.inConstructor = false
 
   result.add(body)
 
@@ -1335,11 +1335,11 @@ proc conv_xnkDestructorDecl(node: XLangNode, ctx: TransformContext): MyNimNode =
   params.add(newEmptyNode()) # no return type (void)
 
   # Add self parameter as var (destructors modify the object)
-  if ctx.currentClass.isSome():
+  if ctx.conversion.currentClass.isSome():
     let selfParam = newNimNode(nnkIdentDefs)
     selfParam.add(newIdentNode("self"))
     let varType = newNimNode(nnkVarTy)
-    varType.add(newIdentNode(ctx.currentClass.get().typeNameDecl))
+    varType.add(newIdentNode(ctx.conversion.currentClass.get().typeNameDecl))
     selfParam.add(varType)
     selfParam.add(newEmptyNode())
     params.add(selfParam)
@@ -1478,7 +1478,7 @@ proc conv_xnkConversionOperatorDecl(node: XLangNode, ctx: TransformContext): MyN
 
   # IMPORTANT: Conversion operators are ALWAYS static in C#
   # Create a non-class context to prevent identifier resolution from adding implicit self.
-  let savedClass = ctx.currentClass
+  let savedClass = ctx.conversion.currentClass
   ctx.clearCurrentClass()
 
   let newBody = newStmtList()
@@ -1515,7 +1515,7 @@ proc conv_xnkConversionOperatorDecl(node: XLangNode, ctx: TransformContext): MyN
       newBody.add(convertToNimAST(stmt, ctx))
 
   # Restore class context
-  ctx.currentClass = savedClass
+  ctx.conversion.currentClass = savedClass
 
   result.add(newBody)
 proc conv_xnkEnumMember(node: XLangNode, ctx: TransformContext): MyNimNode = notYetImpl("xnkEnumMember")
@@ -2255,10 +2255,10 @@ proc convertToNimAST(node: XLangNode, ctx: TransformContext = nil): MyNimNode =
   let context = if ctx.isNil: newMinimalContext() else: ctx
 
   # Push node onto stack for error tracking
-  context.nodeStack.add(node)
+  context.conversion.nodeStack.add(node)
   defer:
     # Pop node from stack when we exit (success or failure)
-    discard context.nodeStack.pop()
+    discard context.conversion.nodeStack.pop()
 
   # Wrap in try-except to provide better error context
   try:
@@ -2640,13 +2640,13 @@ proc convertToNimAST(node: XLangNode, ctx: TransformContext = nil): MyNimNode =
     # Print hierarchy only once - when we first catch the error
     # Check if this is the first time we're seeing this error by checking
     # if we're deeper in the stack than a simple File node
-    if context.nodeStack.len > 1:
+    if context.conversion.nodeStack.len > 1:
       let fileInfo = if context.currentFile != "": " in " & context.currentFile else: ""
       echo "ERROR", fileInfo, ":"
       echo "  ", e.msg
       echo "  Node hierarchy (innermost first):"
-      for i in countdown(context.nodeStack.len - 1, 0):
-        let desc = getNodeDescription(context.nodeStack[i])
+      for i in countdown(context.conversion.nodeStack.len - 1, 0):
+        let desc = getNodeDescription(context.conversion.nodeStack[i])
         echo "    ", desc
     raise  # Re-raise the exception with original stack trace
 

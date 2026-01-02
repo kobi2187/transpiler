@@ -115,4 +115,7 @@ proc reportSummary*(ec: ErrorCollector) =
   if ec.hasWarnings():
     echo ""
     echo "Transpilation completed with ", ec.getWarningCount(), " warning(s)"
+    for i, warning in ec.warnings:
+      echo formatError(warning, "WARNING " & $(i+1))
+      echo ""
     echo "Run with -v for details"

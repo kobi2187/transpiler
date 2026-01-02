@@ -19,7 +19,15 @@ proc transformPropertyHelper(node: XLangNode, ctx: TransformContext, parentClass
     var results: seq[XLangNode] = @[]
 
     # Determine if this is an auto-property (no explicit getter/setter bodies)
-    let isAutoProperty = prop.extPropGetter.isNone() and prop.extPropSetter.isNone()
+    let isAutoFullProperty = prop.extPropGetter.isNone() and prop.extPropSetter.isNone()
+    let isAutoGetProperty = prop.extPropSetter.isNone() and prop.extPropGetter.isSome() and
+                            prop.extPropGetter.get.kind == xnkEmptyStmt
+    let isAutoSetProperty = prop.extPropGetter.isNone() and prop.extPropSetter.isSome() and
+                            prop.extPropSetter.get.kind == xnkEmptyStmt
+    
+    let isAutoProperty = isAutoFullProperty or isAutoGetProperty or isAutoSetProperty
+
+
 
     # Register the property rename in semantic info
     # Look up the property symbol and register its getter/setter names
@@ -29,7 +37,7 @@ proc transformPropertyHelper(node: XLangNode, ctx: TransformContext, parentClass
         let sym = propSym.get()
         # Register getter as the primary rename for property access
         let getterName = "get" & prop.extPropName
-        ctx.semanticInfo.renames[sym] = getterName
+        ctx.renameSymbol("PropertyToProcs", sym, getterName)
 
     # For auto-properties, create a private backing field and add it to the containing class
     # Following C# convention: PropertyName -> _propertyName
@@ -37,7 +45,8 @@ proc transformPropertyHelper(node: XLangNode, ctx: TransformContext, parentClass
       let backingFieldName = "_" & prop.extPropName[0].toLowerAscii() & prop.extPropName[1..^1]
 
       # Find the containing class and add the backing field to it
-      let containingClass = ctx.findContainingClass(node)
+      var containingClass = ctx.findContainingClass(node)
+      
       if containingClass != nil:
         let backingField = XLangNode(
           kind: xnkFieldDecl,
@@ -45,10 +54,11 @@ proc transformPropertyHelper(node: XLangNode, ctx: TransformContext, parentClass
           fieldType: if prop.extPropType.isSome(): prop.extPropType.get else: XLangNode(kind: xnkNamedType, typeName: "auto"),
           fieldInitializer: none(XLangNode)
         )
-        ctx.addFieldToClass(containingClass, backingField)
+        ctx.addFieldToClass("PropertyToProcs", containingClass, backingField)
       else:
+        echo "containingClass is nil"
         ctx.addWarning(tekTransformError,
-          "Auto-property '" & prop.extPropName & "' not inside a class - cannot create backing field",
+          "Auto-property '" & prop.extPropName & " - containingClass was nil",
           ctx.currentFile)
 
       # Create getter that returns backing field
@@ -111,7 +121,7 @@ proc transformPropertyHelper(node: XLangNode, ctx: TransformContext, parentClass
         funcIsStatic: false
       )
       results.add(setter)
-      stderr.writeLine("DEBUG: Added setter, total results.len = ", results.len)
+
     else:
       # Explicit getter/setter bodies - use them directly
       # Create getter proc

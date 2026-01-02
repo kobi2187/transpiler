@@ -52,7 +52,7 @@ const nimDefaultPassIDs* = @[
 
   # Resource management
   tpResourceToDefer,
-  tpResourceToTryFinally,
+  # tpResourceToTryFinally,
   tpLockToWithLock,
 
   # Async/await
