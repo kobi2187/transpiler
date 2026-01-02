@@ -115,7 +115,23 @@ type
     # Spread/Splat
     opSpread = "spread"        # ... (spread operator, JavaScript/Python)
 
+    # Delete operator
+    opDelete = "delete"        # delete (property deletion, JavaScript)
+
 type
+  # Import/Export types
+  ImportKind* = enum
+    ikSideEffect    # import "./file" - no bindings, just side effects
+    ikDefault       # import def from "mod" - default import
+    ikNamespace     # import * as ns from "mod" - namespace import
+    ikNamed         # import { a, b } from "mod" - named imports
+    ikMixed         # import def, { named } from "mod" - default + named
+
+  ImportBinding* = object
+    sourceName*: string        # Original name in the module
+    localName*: string         # Local name to bind to (may differ if aliased)
+    isDefault*: bool           # Is this the default export binding?
+
   XLangNodeKind* = enum
     # xnkNone
     # Basic structure
@@ -135,6 +151,7 @@ type
     xnkAsgn, xnkBlockStmt, xnkIfStmt, xnkSwitchStmt, xnkCaseClause, xnkDefaultClause, xnkWhileStmt
     xnkDoWhileStmt, xnkForeachStmt, xnkTryStmt, xnkCatchStmt, xnkFinallyStmt
     xnkReturnStmt, xnkIteratorYield, xnkIteratorDelegate, xnkBreakStmt, xnkContinueStmt
+    xnkExpressionStmt, xnkDeleteStmt
     # Legacy (deprecated - unified into iterator nodes):
     xnkYieldStmt, xnkYieldExpr, xnkYieldFromStmt
     xnkThrowStmt, xnkAssertStmt, xnkPassStmt, xnkTypeSwitchStmt,
@@ -368,6 +385,10 @@ type
       label*: Option[string]
     of xnkThrowStmt:
       throwExpr*: XLangNode
+    of xnkExpressionStmt:
+      expr*: XLangNode  # Expression used as a statement
+    of xnkDeleteStmt:
+      deleteTarget*: XLangNode  # Target to delete (property, array element, etc.)
     of xnkAssertStmt:
       assertCond*: XLangNode
       assertMsg*: Option[XLangNode]
@@ -407,6 +428,7 @@ type
     of xnkCallExpr:
       callee*: XLangNode
       args*: seq[XLangNode]
+      isConstructor*: bool  # true for 'new Class()' expressions
     of xnkThisCall, xnkBaseCall:
       ## C# constructor initializers: this(...) or base(...)
       arguments*: seq[XLangNode]
@@ -468,6 +490,8 @@ type
     of xnkDictEntry:
       key*: XLangNode
       value*: XLangNode
+      isComputed*: bool  # true for [expr]: value (computed property name)
+      isShorthand*: bool  # true for { name } → { name: name } shorthand
     # of xnkComprehensionExpr:
     #   compExpr*: XLangNode
     #   fors*: seq[XLangNode]
@@ -523,7 +547,9 @@ type
 
     of xnkImport:
       importPath*: string
-      importAlias*: Option[string]
+      importKind*: ImportKind  # Type of import (default, named, namespace, etc.)
+      importBindings*: seq[ImportBinding]  # What names to import and their bindings
+      importAlias*: Option[string]  # DEPRECATED: Use importBindings instead (kept for backward compat)
     of xnkExport:
       exportedDecl*: XLangNode
     of xnkAttribute:
@@ -1148,7 +1174,7 @@ proc `$`*(node: XLangNode): string =
      xnkDoWhileStmt, xnkForeachStmt, xnkTryStmt, xnkFinallyStmt,
      xnkReturnStmt, xnkIteratorYield, xnkIteratorDelegate,
      xnkYieldStmt, xnkYieldExpr, xnkYieldFromStmt,
-     xnkThrowStmt, xnkAssertStmt,  xnkPassStmt, xnkTypeSwitchStmt,
+     xnkThrowStmt, xnkExpressionStmt, xnkDeleteStmt, xnkAssertStmt,  xnkPassStmt, xnkTypeSwitchStmt,
       xnkWithItem, xnkDiscardStmt, xnkCaseStmt, xnkRaiseStmt,
      xnkTypeCaseClause, xnkEmptyStmt, 
             xnkUnlessStmt, xnkUntilStmt, xnkStaticAssert, xnkSwitchCase,
