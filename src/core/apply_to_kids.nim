@@ -54,8 +54,9 @@ proc visit*(node: var XLangNode, p: proc (x: var XLangNode)) =
 
   of xnkExternal_Property:
     if node.extPropType.isSome(): visit node.extPropType.get, p
-    if node.extPropGetter.isSome(): visit node.extPropGetter.get, p
-    if node.extPropSetter.isSome(): visit node.extPropSetter.get, p
+    if node.extPropGetterBody.isSome(): visit node.extPropGetterBody.get, p
+    if node.extPropSetterBody.isSome(): visit node.extPropSetterBody.get, p
+    if node.extPropInitializer.isSome(): visit node.extPropInitializer.get, p
 
   of xnkFieldDecl:
     visit node.fieldType, p

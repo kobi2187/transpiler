@@ -9,7 +9,7 @@
 import core/xlangtypes
 import transforms/transform_context
 import options
-import sequtils
+# import sequtils
 import strutils
 
 proc transformDestructuring*(node: XLangNode, ctx: TransformContext): XLangNode =

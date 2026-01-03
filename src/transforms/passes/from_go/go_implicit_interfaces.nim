@@ -16,7 +16,7 @@
 import core/xlangtypes
 import transforms/transform_context
 import options
-import strutils
+# import strutils
 
 proc transformGoInterface*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform Go interface to Nim concept

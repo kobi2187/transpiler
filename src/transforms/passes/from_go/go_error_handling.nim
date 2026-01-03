@@ -23,7 +23,7 @@
 import core/xlangtypes
 import transforms/transform_context
 import options
-import strutils
+# import strutils
 
 proc isErrorCheckPattern(node: XLangNode): bool =
   ## Check if this is Go's error checking pattern: if err != nil

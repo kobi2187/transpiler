@@ -13,8 +13,8 @@ import core/xlangtypes
 import types
 import transform_context
 import error_collector
-import options
-import semantic/semantic_analysis
+# import options
+# import semantic/semantic_analysis
 import tables
 import sets, strutils, sequtils
 import core/helpers

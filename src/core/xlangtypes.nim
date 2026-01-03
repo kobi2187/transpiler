@@ -760,12 +760,17 @@ type
     # These share the same field structure as their common counterparts.
     # The external prefix indicates they must be lowered by transformation passes.
 
-    # C# Property → shares fields with xnkPropertyDecl
+    # C# Property with explicit accessor info
     of xnkExternal_Property:
       extPropName*: string
       extPropType*: Option[XLangNode]
-      extPropGetter*: Option[XLangNode]
-      extPropSetter*: Option[XLangNode]
+      extPropVisibility*: string          # "public", "private", "protected", "internal"
+      extPropIsStatic*: bool
+      extPropHasGetter*: bool             # Does get accessor exist?
+      extPropHasSetter*: bool             # Does set accessor exist?
+      extPropGetterBody*: Option[XLangNode]  # Body if explicit, none if auto
+      extPropSetterBody*: Option[XLangNode]  # Body if explicit, none if auto
+      extPropInitializer*: Option[XLangNode] # For: public int X { get; } = 5;
 
     # C# Indexer → shares fields with xnkIndexerDecl
     of xnkExternal_Indexer:

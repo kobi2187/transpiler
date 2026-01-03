@@ -8,7 +8,7 @@
 
 import core/xlangtypes
 import transforms/transform_context
-import options
+# import options
 
 proc normalizeOperators*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Convert special operators to their External node types

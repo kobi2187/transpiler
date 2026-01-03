@@ -18,7 +18,7 @@
 import core/xlangtypes
 import transforms/transform_context
 import options
-import strutils
+# import strutils
 import tables
 
 # Common decorator/attribute mappings to Nim pragmas

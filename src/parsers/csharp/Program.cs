@@ -1048,21 +1048,37 @@ partial class Program
 
     static JObject ConvertProperty(PropertyDeclarationSyntax property)
     {
+        // Extract visibility from modifiers
+        var visibility = "public"; // default
+        if (property.Modifiers.Any(m => m.Text == "private")) visibility = "private";
+        else if (property.Modifiers.Any(m => m.Text == "protected")) visibility = "protected";
+        else if (property.Modifiers.Any(m => m.Text == "internal")) visibility = "internal";
+
+        var isStatic = property.Modifiers.Any(m => m.Text == "static");
+
         var result = new JObject
         {
             ["kind"] = "xnkExternal_Property",
-            ["extPropName"] = property.Identifier.Text
+            ["extPropName"] = property.Identifier.Text,
+            ["extPropType"] = ConvertType(property.Type),
+            ["extPropVisibility"] = visibility,
+            ["extPropIsStatic"] = isStatic,
+            ["extPropHasGetter"] = false,
+            ["extPropHasSetter"] = false
         };
 
-        // extPropType as XLangNode
-        result["extPropType"] = ConvertType(property.Type);
+        // Handle property initializer: public int X { get; } = 5;
+        if (property.Initializer != null)
+        {
+            result["extPropInitializer"] = ConvertExpression(property.Initializer.Value);
+        }
 
-        // extPropGetter and extPropSetter as Option[XLangNode]
         // Handle expression-bodied properties: public int Age => 42;
+        // This is equivalent to a getter-only property with an explicit body
         if (property.ExpressionBody != null)
         {
-            // Expression-bodied property is a getter-only property
-            result["extPropGetter"] = new JObject
+            result["extPropHasGetter"] = true;
+            result["extPropGetterBody"] = new JObject
             {
                 ["kind"] = "xnkBlockStmt",
                 ["blockBody"] = new JArray(new JObject
@@ -1074,18 +1090,21 @@ partial class Program
         }
         else if (property.AccessorList != null)
         {
-            // Handle explicit accessor list: public int Age { get { return 42; } set { ... } }
+            // Handle accessor list: { get; set; } or { get { ... } set { ... } }
             var getAccessor = property.AccessorList.Accessors.FirstOrDefault(a => a.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.GetAccessorDeclaration);
             if (getAccessor != null)
             {
+                result["extPropHasGetter"] = true;
+
                 if (getAccessor.Body != null)
                 {
-                    result["extPropGetter"] = ConvertBlock(getAccessor.Body);
+                    // Explicit body: get { return x; }
+                    result["extPropGetterBody"] = ConvertBlock(getAccessor.Body);
                 }
                 else if (getAccessor.ExpressionBody != null)
                 {
                     // Expression-bodied accessor: get => expression;
-                    result["extPropGetter"] = new JObject
+                    result["extPropGetterBody"] = new JObject
                     {
                         ["kind"] = "xnkBlockStmt",
                         ["blockBody"] = new JArray(new JObject
@@ -1095,24 +1114,29 @@ partial class Program
                         })
                     };
                 }
+                // else: auto-property (get;) - no body, extPropGetterBody stays null
             }
 
             var setAccessor = property.AccessorList.Accessors.FirstOrDefault(a => a.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.SetAccessorDeclaration);
             if (setAccessor != null)
             {
+                result["extPropHasSetter"] = true;
+
                 if (setAccessor.Body != null)
                 {
-                    result["extPropSetter"] = ConvertBlock(setAccessor.Body);
+                    // Explicit body: set { x = value; }
+                    result["extPropSetterBody"] = ConvertBlock(setAccessor.Body);
                 }
                 else if (setAccessor.ExpressionBody != null)
                 {
                     // Expression-bodied accessor: set => field = value;
-                    result["extPropSetter"] = new JObject
+                    result["extPropSetterBody"] = new JObject
                     {
                         ["kind"] = "xnkBlockStmt",
                         ["blockBody"] = new JArray(ConvertExpression(setAccessor.ExpressionBody.Expression))
                     };
                 }
+                // else: auto-property (set;) - no body, extPropSetterBody stays null
             }
         }
 

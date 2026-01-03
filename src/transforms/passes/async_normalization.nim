@@ -7,7 +7,7 @@
 
 import core/xlangtypes
 import transforms/transform_context
-import options
+# import options
 
 proc transformAsyncNormalization*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Normalize async/await patterns to Nim conventions

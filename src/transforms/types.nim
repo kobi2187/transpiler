@@ -2,7 +2,7 @@
 
 
 import core/xlangtypes
-import semantic/semantic_analysis
+# import semantic/semantic_analysis
 import transform_context
 import sets, hashes
 

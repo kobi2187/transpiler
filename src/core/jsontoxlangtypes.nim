@@ -52,6 +52,17 @@ proc parseXLangJson*(filePath: string): XLangNode =
             j["enumTypeName"] = %""
           if not j.hasKey("enumFullName"):
             j["enumFullName"] = %""
+
+        # Add property-specific fields for xnkExternal_Property
+        if kindStr == "xnkExternal_Property":
+          if not j.hasKey("extPropVisibility"):
+            j["extPropVisibility"] = %"public"
+          if not j.hasKey("extPropIsStatic"):
+            j["extPropIsStatic"] = %false
+          if not j.hasKey("extPropHasGetter"):
+            j["extPropHasGetter"] = %false
+          if not j.hasKey("extPropHasSetter"):
+            j["extPropHasSetter"] = %false
       for key, val in j.mpairs:
         addDefaultsToJson(val)
     elif j.kind == JArray:

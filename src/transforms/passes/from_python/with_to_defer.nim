@@ -14,7 +14,7 @@
 import core/xlangtypes
 import transforms/transform_context
 import options
-import strutils
+# import strutils
 
 proc transformWithToDefer*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform with statements to defer pattern

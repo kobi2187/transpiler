@@ -11,7 +11,8 @@
 
 import core/xlangtypes
 import transforms/transform_context
-import options, sequtils
+# import options
+import sequtils
 
 proc transformSafeNavigation*(node: XLangNode, ctx: TransformContext): XLangNode
 
