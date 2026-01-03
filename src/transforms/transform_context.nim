@@ -46,6 +46,7 @@ type
     currentNamespace*: Option[XLangNode]  ## Current namespace being converted
     currentModule*: Option[XLangNode]     ## Current file/module being converted
     inConstructor*: bool                  ## True if inside a constructor body
+    inStaticFunction*: bool               ## True if inside a static function (no self access)
     nodeStack*: seq[XLangNode]            ## Stack for error reporting (shows hierarchy)
     types*: Table[string, XLangNode]      ## Type declarations
     variables*: Table[string, XLangNode]  ## Variable declarations

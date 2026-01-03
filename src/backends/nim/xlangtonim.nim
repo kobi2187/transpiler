@@ -357,8 +357,11 @@ proc conv_xnkFuncDecl_standalone(node: XLangNode, ctx: TransformContext): MyNimN
   result.add(newEmptyNode())
   # 5: reserved
   result.add(newEmptyNode())
-  # 6: body
+  # 6: body - set static context so identifiers don't get self. prefix
+  let wasInStatic = ctx.conversion.inStaticFunction
+  ctx.conversion.inStaticFunction = true
   result.add(convertToNimAST(node.body, ctx))
+  ctx.conversion.inStaticFunction = wasInStatic
   if node.isAsync:
     setPragma(result, newPragma(newIdentNode("async")))
 
@@ -727,8 +730,9 @@ proc conv_xnkIdentifier(node: XLangNode, ctx: TransformContext): MyNimNode =
       identName = effectiveName.get
 
   # Check if this identifier is a class field being accessed in an instance method
-  # In constructors, don't add self. prefix - fields will be accessed directly or via result.
-  if ctx.isInClassScope() and ctx.isClassField(node.identName) and not ctx.conversion.inConstructor:
+  # In constructors and static functions, don't add self. prefix
+  if ctx.isInClassScope() and ctx.isClassField(node.identName) and
+     not ctx.conversion.inConstructor and not ctx.conversion.inStaticFunction:
     # Convert to self.fieldName
     result = newNimNode(nnkDotExpr)
     result.add(newIdentNode("self"))
