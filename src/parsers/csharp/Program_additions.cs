@@ -1550,7 +1550,7 @@ partial class Program
     {
         return new JObject
         {
-            ["kind"] = "xnkExternal_With",
+            ["kind"] = "xnkExternal_RecordWith",
             ["extWithExpression"] = ConvertExpression(withExpr.Expression),
             ["extWithInitializer"] = withExpr.Initializer != null
                 ? ConvertInitializer(withExpr.Initializer)

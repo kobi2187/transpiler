@@ -299,6 +299,27 @@ partial class Program
         // Add using directives as xnkImport nodes at the beginning of moduleDecls
         foreach (var usingDirective in cu.Usings)
         {
+            // Handle type alias using (e.g., using NodeId = int; or using InterfaceInfo = (Foo, Bar);)
+            // In C# 12, Name can be null for type alias usings that use NamespaceOrType syntax
+            if (usingDirective.Name == null)
+            {
+                // This is a type alias using directive
+                if (usingDirective.Alias != null)
+                {
+                    // Get the type from NamespaceOrType (C# 12 "alias any type" feature)
+                    var typeAlias = new JObject
+                    {
+                        ["kind"] = "xnkTypeAlias",
+                        ["aliasName"] = usingDirective.Alias.Name.ToString(),
+                        ["aliasTarget"] = usingDirective.NamespaceOrType != null
+                            ? ConvertType(usingDirective.NamespaceOrType)
+                            : new JObject { ["kind"] = "xnkNamedType", ["typeName"] = "unknown" }
+                    };
+                    moduleDecls.Add(typeAlias);
+                }
+                continue;
+            }
+
             var importObj = new JObject
             {
                 ["kind"] = "xnkImport",

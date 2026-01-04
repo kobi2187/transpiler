@@ -6,6 +6,7 @@
 import os, parseopt, strutils, sequtils
 import core/xlangtypes
 import pipeline_manager
+import error_collector
 
 # =============================================================================
 # CLI Options Type
@@ -221,6 +222,8 @@ proc buildPipelineConfig(opts: CliOptions): PipelineConfig =
 # File Processing
 # =============================================================================
 
+var allErrors: seq[string] = @[]
+
 proc processOneFile(pipeline: var TranspilationPipeline, inputFile: string) =
   ## Process a single .xljs file through the pipeline
   pipeline.config.inputFile = inputFile
@@ -228,6 +231,7 @@ proc processOneFile(pipeline: var TranspilationPipeline, inputFile: string) =
   if not result.success:
     for error in result.errors:
       echo "ERROR [", inputFile, "]: ", error
+      allErrors.add(inputFile & ":" & error)
 
 proc processAllFiles(pipeline: var TranspilationPipeline, files: seq[string]) =
   ## Process all .xljs files through the pipeline
@@ -265,6 +269,8 @@ proc runTranspiler() =
   
   # Report results
   pipeline.reportResults()
+  for error in allErrors:
+    echo "ERROR: ", error
 
 proc main() =
   ## Entry point

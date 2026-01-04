@@ -263,7 +263,8 @@ proc getParentNode*(ctx: TransformContext, node: XLangNode): XLangNode =
 
 proc isClassOrStruct(node: XLangNode): bool =
   ## Check if node is a class or struct declaration
-  node.kind in {xnkClassDecl, xnkStructDecl}
+  # node.kind in {xnkClassDecl, xnkStructDecl}
+  node.kind in {xnkStructDecl, xnkClassDecl}
 
 proc exceedsMaxDepth(depth: int): bool =
   ## Check if we've exceeded safe traversal depth
@@ -340,18 +341,28 @@ proc flushPendingFields*(ctx: TransformContext) =
 # Node Index Building Helpers
 # =============================================================================
 
-proc ensureNodeHasId(node: var XLangNode) =
+proc ensureNodeHasId*(node: var XLangNode) =
   ## Assign a UUID if node doesn't have one
   if node.id.isNone:
     node.id = some(uuid4())
 
-proc setParentId(node: var XLangNode, parentId: Option[Uuid]) =
+proc setParentId*(node: var XLangNode, parentId: Option[Uuid]) =
   ## Set the parent ID on a node
   node.parentId = parentId
 
-proc addToNodeIndex(ctx: TransformContext, node: XLangNode) =
+proc addToNodeIndex*(ctx: TransformContext, node: XLangNode) =
   ## Add node to the lookup table
-  ctx.transform.nodeById[node.id.get()] = node
+  if node.id.isSome:
+    ctx.transform.nodeById[node.id.get()] = node
+
+proc registerNewNode*(ctx: TransformContext, node: var XLangNode, parentId: Option[Uuid] = none(Uuid)) =
+  ## Register a newly created node with UUID and parent link
+  ## Call this on nodes created during transformations to ensure they're properly tracked
+  ensureNodeHasId(node)
+  setParentId(node, parentId)
+  addToNodeIndex(ctx, node)
+
+proc registerNodeTree*(ctx: TransformContext, node: var XLangNode, parentId: Option[Uuid] = none(Uuid))
 
 proc assignIdsAndParents(node: var XLangNode, parentId: Option[Uuid], ctx: TransformContext) =
   ## Recursively assign IDs and parent links to all nodes
@@ -392,6 +403,11 @@ proc buildNodeIndex*(ctx: TransformContext, root: var XLangNode) =
   clearNodeIndex(ctx)
   assignIdsAndParents(root, none(Uuid), ctx)
   logNodeIndexSize(ctx)
+
+proc registerNodeTree*(ctx: TransformContext, node: var XLangNode, parentId: Option[Uuid] = none(Uuid)) =
+  ## Register a newly created node tree (node and all its children) with UUIDs and parent links
+  ## Use this when a transformation creates new nodes to ensure they're properly tracked
+  assignIdsAndParents(node, parentId, ctx)
 
 # Future additions:
 # - Type inference helpers

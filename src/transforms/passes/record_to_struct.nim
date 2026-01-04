@@ -16,10 +16,7 @@
 
 import core/xlangtypes
 import transforms/transform_context
-import error_collector
 import options
-import strutils
-import strformat
 
 proc makeConstructorName(recordName: string): string =
   ## Convert RecordName to newRecordName
@@ -269,6 +266,11 @@ proc generateRecordToString(record: XLangNode): XLangNode =
     funcIsStatic: false
   )
 
+# TODO2: refactor all the utilities from the specific transforms, to reusable common transform_utils module
+
+#TODO: handle inheritance, positional vs non-positional parameters etc. ?? maybe.
+
+# TODO: register the new struct in the semantic symbol tables, uuid map etc.
 proc transformRecordToStruct*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform C# record declarations into Nim structs with auto-generated methods
   if node.kind != xnkExternal_Record:
@@ -314,3 +316,7 @@ proc transformRecordToStruct*(node: XLangNode, ctx: TransformContext): XLangNode
       kind: xnkBlockStmt,
       blockBody: results
     )
+
+  # Register the new node tree with UUIDs and parent links
+  # Use the original record's parent as the parent for the new nodes
+  ctx.registerNodeTree(result, node.parentId)

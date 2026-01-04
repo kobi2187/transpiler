@@ -1044,6 +1044,7 @@ proc unaryOpToNim(op: UnaryOp): string =
   of opDereference: "[]"     # Will need special handling
   of opAwait: "await"
   of opSpread: "..."         # May need lowering
+  of opIndexFromEnd: "^"     # Nim uses same syntax for backIndex
 
 proc conv_xnkBinaryExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkInfix)

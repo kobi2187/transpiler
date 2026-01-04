@@ -115,6 +115,9 @@ type
     # Spread/Splat
     opSpread = "spread"        # ... (spread operator, JavaScript/Python)
 
+    # Index from end (C# ^)
+    opIndexFromEnd = "^"       # ^n (index from end, C# 8+)
+
 type
   XLangNodeKind* = enum
     # xnkNone
@@ -239,6 +242,7 @@ type
 
     # C# 9+ Features
     xnkExternal_Record          # C# record type → lowered to struct/class with value equality
+    xnkExternal_RecordWith      # C# with expression → record copy with modifications
 
 
 
@@ -981,6 +985,10 @@ type
       extRecordBaseTypes*: seq[XLangNode]
       extRecordMembers*: seq[XLangNode]
 
+    of xnkExternal_RecordWith:
+      extWithExpression*: XLangNode        # The base record expression to copy from
+      extWithInitializer*: XLangNode       # The object initializer with modifications
+
     of xnkUnknown:
       unknownData*: string
     # else: discard
@@ -1100,6 +1108,8 @@ proc `$`*(node: XLangNode): string =
     result &= "(" & $node.tupleTypeElements.len & " elements)"
   of xnkExternal_Record:
     result &= "(" & node.extRecordName & ")"
+  of xnkExternal_RecordWith:
+    result &= "(with expression)"
   of xnkQualifiedName:
     result &= "(" & $node.qualifiedRight.kind & ")"
   of xnkAliasQualifiedName:
