@@ -10,9 +10,26 @@ using Newtonsoft.Json.Linq;
 
 partial class Program
 {
+    // Structure to track detailed error information
+    private class ConstructError
+    {
+        public string FilePath { get; set; }
+        public string SourceSample { get; set; }
+        public int LineNumber { get; set; }
+
+        public ConstructError(string filePath, string sourceSample, int lineNumber)
+        {
+            FilePath = filePath;
+            SourceSample = sourceSample;
+            LineNumber = lineNumber;
+        }
+    }
+
     // Global dictionary to track missing/unknown constructs
     private static Dictionary<string, int> constructStats = new Dictionary<string, int>();
+    private static Dictionary<string, List<ConstructError>> constructErrors = new Dictionary<string, List<ConstructError>>();
     private static List<string> errorLog = new List<string>();
+    private static string currentFilePath = "";
 
     // Semantic model for type resolution
     private static SemanticModel? semanticModel = null;
@@ -94,6 +111,30 @@ partial class Program
                 Console.WriteLine($"{stat.Key}: {stat.Value} occurrences");
             }
             Console.WriteLine();
+
+            // Print detailed error samples
+            Console.WriteLine("=== DETAILED ERROR SAMPLES ===");
+            foreach (var stat in sortedStats.Take(10))  // Show top 10 construct types
+            {
+                Console.WriteLine($"\n--- {stat.Key} ({stat.Value} total occurrences) ---");
+                if (constructErrors.ContainsKey(stat.Key))
+                {
+                    int sampleNum = 1;
+                    foreach (var error in constructErrors[stat.Key].Take(3))  // Show up to 3 samples per type
+                    {
+                        Console.WriteLine($"\nSample #{sampleNum}:");
+                        Console.WriteLine($"  File: {error.FilePath}:{error.LineNumber}");
+                        Console.WriteLine($"  Source:");
+                        // Indent each line of source code
+                        foreach (var line in error.SourceSample.Split('\n'))
+                        {
+                            Console.WriteLine($"    {line}");
+                        }
+                        sampleNum++;
+                    }
+                }
+            }
+            Console.WriteLine();
         }
 
         if (errorLog.Count > 0)
@@ -108,6 +149,7 @@ partial class Program
 
     static void ProcessSingleFile(string filePath, bool outputToConsole)
     {
+        currentFilePath = filePath;
         string sourceCode = File.ReadAllText(filePath);
         var tree = CSharpSyntaxTree.ParseText(sourceCode);
         var root = tree.GetRoot();
@@ -170,6 +212,7 @@ partial class Program
         string nodeType = node.GetType().Name;
         string key = $"{context}:{nodeType}";
 
+        // Update count
         if (constructStats.ContainsKey(key))
         {
             constructStats[key]++;
@@ -177,6 +220,27 @@ partial class Program
         else
         {
             constructStats[key] = 1;
+        }
+
+        // Store detailed error info (limit to first 10 examples per construct type)
+        if (!constructErrors.ContainsKey(key))
+        {
+            constructErrors[key] = new List<ConstructError>();
+        }
+
+        if (constructErrors[key].Count < 10)
+        {
+            var lineSpan = node.GetLocation().GetLineSpan();
+            int lineNumber = lineSpan.StartLinePosition.Line + 1;
+
+            // Get source code sample (up to 200 chars)
+            string sourceSample = node.ToString();
+            if (sourceSample.Length > 200)
+            {
+                sourceSample = sourceSample.Substring(0, 200) + "...";
+            }
+
+            constructErrors[key].Add(new ConstructError(currentFilePath, sourceSample, lineNumber));
         }
 
         return new JObject
@@ -276,13 +340,23 @@ partial class Program
         return member switch
         {
             NamespaceDeclarationSyntax ns => ConvertNamespace(ns),
+            FileScopedNamespaceDeclarationSyntax fileScopedNs => ConvertFileScopedNamespace(fileScopedNs),
             ClassDeclarationSyntax cls => ConvertClass(cls),
+            RecordDeclarationSyntax record => ConvertRecord(record),
             EnumDeclarationSyntax enumDecl => ConvertEnum(enumDecl),
             InterfaceDeclarationSyntax interfaceDecl => ConvertInterface(interfaceDecl),
             StructDeclarationSyntax structDecl => ConvertStruct(structDecl),
             DelegateDeclarationSyntax delegateDecl => ConvertDelegate(delegateDecl),
             GlobalStatementSyntax globalStmt => ConvertStatement(globalStmt.Statement),
             FieldDeclarationSyntax field => ConvertField(field),
+            // Namespace-level members (static/extension methods, properties, operators, etc.)
+            MethodDeclarationSyntax method => ConvertMethod(method),
+            PropertyDeclarationSyntax property => ConvertProperty(property),
+            OperatorDeclarationSyntax operatorDecl => ConvertOperator(operatorDecl),
+            ConversionOperatorDeclarationSyntax conversionOp => ConvertConversionOperator(conversionOp),
+            IndexerDeclarationSyntax indexer => ConvertIndexer(indexer),
+            ConstructorDeclarationSyntax constructor => ConvertConstructor(constructor),
+            IncompleteMemberSyntax incompleteMember => ConvertIncompleteMember(incompleteMember),
             _ => CreateUnknownNode(member, "member")
         };
     }
@@ -349,6 +423,7 @@ partial class Program
             PropertyDeclarationSyntax property => ConvertProperty(property),
             ConstructorDeclarationSyntax constructor => ConvertConstructor(constructor),
             ClassDeclarationSyntax cls => ConvertClass(cls),
+            RecordDeclarationSyntax record => ConvertRecord(record),
             EnumDeclarationSyntax enumDecl => ConvertEnum(enumDecl),
             InterfaceDeclarationSyntax interfaceDecl => ConvertInterface(interfaceDecl),
             StructDeclarationSyntax structDecl => ConvertStruct(structDecl),
@@ -380,6 +455,7 @@ partial class Program
             ArrayTypeSyntax arrayType => ConvertArrayType(arrayType),
             GenericNameSyntax genericName => ConvertGenericName(genericName),
             QualifiedNameSyntax qualifiedName => ConvertQualifiedName(qualifiedName),
+            TupleTypeSyntax tupleType => ConvertTupleType(tupleType),
             // Fallback: create a NamedType with the type's string representation
             _ => new JObject
             {
@@ -531,6 +607,7 @@ partial class Program
             TryStatementSyntax tryStmt => ConvertTry(tryStmt),
             WhileStatementSyntax whileStmt => ConvertWhile(whileStmt),
             ForEachStatementSyntax forEachStmt => ConvertForEach(forEachStmt),
+            ForEachVariableStatementSyntax forEachVar => ConvertForEachVariable(forEachVar),
             ThrowStatementSyntax throwStmt => ConvertThrow(throwStmt),
             SwitchStatementSyntax switchStmt => ConvertSwitch(switchStmt),
             UsingStatementSyntax usingStmt => ConvertUsing(usingStmt),
@@ -589,10 +666,12 @@ partial class Program
             ImplicitObjectCreationExpressionSyntax implicitObjCreate => ConvertImplicitObjectCreation(implicitObjCreate),
             CastExpressionSyntax cast => ConvertCast(cast),
             ElementAccessExpressionSyntax elemAccess => ConvertElementAccess(elemAccess),
+            ImplicitElementAccessSyntax implicitElemAccess => ConvertImplicitElementAccess(implicitElemAccess),
             ThisExpressionSyntax thisExpr => ConvertThis(thisExpr),
             ArrayCreationExpressionSyntax arrayCreate => ConvertArrayCreation(arrayCreate),
             InitializerExpressionSyntax initializer => ConvertInitializer(initializer),
             StackAllocArrayCreationExpressionSyntax stackAlloc => ConvertStackAllocArray(stackAlloc),
+            ImplicitStackAllocArrayCreationExpressionSyntax implicitStackAlloc => ConvertImplicitStackAllocArray(implicitStackAlloc),
             ImplicitArrayCreationExpressionSyntax implicitArray => ConvertImplicitArrayCreation(implicitArray),
             QualifiedNameSyntax qualifiedName => ConvertQualifiedName(qualifiedName),
             SwitchExpressionSyntax switchExpr => ConvertSwitchExpression(switchExpr),
@@ -605,7 +684,11 @@ partial class Program
             SizeOfExpressionSyntax sizeOf => ConvertSizeOf(sizeOf),
             ArrayTypeSyntax arrayType => ConvertArrayType(arrayType),
             NullableTypeSyntax nullableType => ConvertNullableType(nullableType),
+            TupleTypeSyntax tupleType => ConvertTupleType(tupleType),
             AliasQualifiedNameSyntax aliasQualified => ConvertAliasQualifiedName(aliasQualified),
+            CollectionExpressionSyntax collectionExpr => ConvertCollectionExpression(collectionExpr),
+            RangeExpressionSyntax rangeExpr => ConvertRangeExpression(rangeExpr),
+            WithExpressionSyntax withExpr => ConvertWithExpression(withExpr),
             _ => CreateUnknownNode(expr, "expression")
         };
     }
@@ -1118,9 +1201,12 @@ partial class Program
             }
 
             var setAccessor = property.AccessorList.Accessors.FirstOrDefault(a => a.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.SetAccessorDeclaration);
+            var initAccessor = property.AccessorList.Accessors.FirstOrDefault(a => a.Kind() == Microsoft.CodeAnalysis.CSharp.SyntaxKind.InitAccessorDeclaration);
+
             if (setAccessor != null)
             {
                 result["extPropHasSetter"] = true;
+                result["extPropIsInitOnly"] = false;
 
                 if (setAccessor.Body != null)
                 {
@@ -1138,6 +1224,26 @@ partial class Program
                 }
                 // else: auto-property (set;) - no body, extPropSetterBody stays null
             }
+            else if (initAccessor != null)
+            {
+                // C# 9 init-only setter
+                result["extPropHasSetter"] = true;
+                result["extPropIsInitOnly"] = true;
+
+                if (initAccessor.Body != null)
+                {
+                    result["extPropSetterBody"] = ConvertBlock(initAccessor.Body);
+                }
+                else if (initAccessor.ExpressionBody != null)
+                {
+                    result["extPropSetterBody"] = new JObject
+                    {
+                        ["kind"] = "xnkBlockStmt",
+                        ["blockBody"] = new JArray(ConvertExpression(initAccessor.ExpressionBody.Expression))
+                    };
+                }
+                // else: auto-property (init;) - no body
+            }
         }
 
         return result;
@@ -1145,6 +1251,25 @@ partial class Program
 
     static JObject ConvertConstructor(ConstructorDeclarationSyntax constructor)
     {
+        JToken bodyToken;
+        if (constructor.Body != null)
+        {
+            bodyToken = ConvertBlock(constructor.Body);
+        }
+        else if (constructor.ExpressionBody != null)
+        {
+            // Expression-bodied constructor: public Point(int x, int y) => (X, Y) = (x, y);
+            bodyToken = new JObject
+            {
+                ["kind"] = "xnkBlockStmt",
+                ["blockBody"] = new JArray(ConvertExpression(constructor.ExpressionBody.Expression))
+            };
+        }
+        else
+        {
+            bodyToken = JValue.CreateNull();
+        }
+
         return new JObject
         {
             ["kind"] = "xnkConstructorDecl",
@@ -1155,7 +1280,6 @@ partial class Program
                 ["paramType"] = p.Type != null ? ConvertType(p.Type) : new JObject { ["kind"] = "xnkNamedType", ["typeName"] = "auto" },
                 ["defaultValue"] = p.Default != null ? ConvertExpression(p.Default.Value) : JValue.CreateNull()
             })),
-            // TODO: Handle constructor initializers: this(...) and base(...) calls
             ["constructorInitializers"] = constructor.Initializer != null
                 ? new JArray(new JObject
                 {
@@ -1163,7 +1287,7 @@ partial class Program
                     ["arguments"] = new JArray(constructor.Initializer.ArgumentList.Arguments.Select(arg => ConvertExpression(arg.Expression)))
                 })
                 : new JArray(),
-            ["constructorBody"] = constructor.Body != null ? ConvertBlock(constructor.Body) : JValue.CreateNull()
+            ["constructorBody"] = bodyToken
         };
     }
 }

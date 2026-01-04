@@ -338,7 +338,7 @@ proc conv_xnkFuncDecl_standalone(node: XLangNode, ctx: TransformContext): MyNimN
     let prefix = className[0].toLowerAscii() & className[1..^1] & "_"
     baseName = prefix & baseName
 
-  let procName = if node.funcVisibility == "public": baseName & "*" else: baseName
+  let procName = wrapProcName(baseName, node.funcVisibility == "public")
   result.add(newIdentNode(procName))
   # 1: pattern/term rewriting placeholder
   result.add(newEmptyNode())
@@ -377,7 +377,7 @@ proc conv_xnkFuncDecl_instanceMethod(node: XLangNode, ctx: TransformContext): My
   # 0: name - add asterisk for public procs/methods
   # Convert C# PascalCase to Nim camelCase (e.g., ToString -> toString)
   let baseName = memberNameToNim(node.funcName)
-  let procName = if node.funcVisibility == "public": baseName & "*" else: baseName
+  let procName = wrapProcName(baseName, node.funcVisibility == "public")
   result.add(newIdentNode(procName))
   # 1: pattern/term rewriting placeholder
   result.add(newEmptyNode())
@@ -2056,6 +2056,25 @@ proc conv_xnkReferenceType(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkRefTy)
   result.add(convertToNimAST(node.referentType, ctx))
 
+## C#: `(int x, string y)`
+## Nim: `tuple[x: int, y: string]`
+proc conv_xnkTupleType(node: XLangNode, ctx: TransformContext): MyNimNode =
+  result = newNimNode(nnkTupleTy)
+  for elem in node.tupleTypeElements:
+    # Each element should be a Parameter with paramName and paramType
+    if elem.kind == xnkParameter:
+      var identDefs = newNimNode(nnkIdentDefs)
+      if elem.paramName.len > 0:
+        identDefs.add(newIdentNode(elem.paramName))
+      else:
+        identDefs.add(newEmptyNode())  # Unnamed tuple element
+      if elem.paramType.isSome():
+        identDefs.add(convertToNimAST(elem.paramType.get, ctx))
+      else:
+        identDefs.add(newEmptyNode())
+      identDefs.add(newEmptyNode())  # No default value for tuple type fields
+      result.add(identDefs)
+
 ## C#: `List<T>`
 ## Nim: `List[T]`
 proc conv_xnkGenericType(node: XLangNode, ctx: TransformContext): MyNimNode =
@@ -2581,6 +2600,8 @@ proc convertToNimAST(node: XLangNode, ctx: TransformContext = nil): MyNimNode =
       result = conv_xnkPointerType(node, ctx)
     of xnkReferenceType:
       result = conv_xnkReferenceType(node, ctx)
+    of xnkTupleType:
+      result = conv_xnkTupleType(node, ctx)
     of xnkGenericType:
       result = conv_xnkGenericType(node, ctx)
     of xnkUnionType:

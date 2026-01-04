@@ -19,7 +19,12 @@ proc pascalToSnake*(s: string): string =
   ##   "IO" -> "io"
   ##   "IOStream" -> "io_stream"
   ##   "TestApp" -> "test_app"
+  ##   "test-async-44" -> "test_async_44"
   result = s
+
+  # Replace hyphens with underscores (for valid Nim module names)
+  # Handles: "test-async-44" -> "test_async_44"
+  result = result.replace('-', '_')
 
   # Insert underscore before uppercase letters that follow lowercase or digits
   # Handles: "myVar" -> "my_var", "var2Name" -> "var2_name", "TestApp" -> "Test_App"
@@ -73,6 +78,33 @@ proc memberNameToNim*(memberName: string): string =
     result = memberName[0].toLowerAscii() & memberName[1..^1]
   else:
     result = memberName
+
+proc needsBackticks*(name: string): bool =
+  ## Check if a proc name needs backticks in Nim
+  ## Operator names (non-alphabetic) require backticks
+  ## Examples: ==, $, +, -, *, /, <, >, <=, >=, etc.
+  if name.len == 0:
+    return false
+  # Check if name contains only letters, digits, and underscores
+  for c in name:
+    if not (c.isAlphaNumeric() or c == '_'):
+      return true
+  return false
+
+proc wrapProcName*(name: string, isPublic: bool): string =
+  ## Wrap proc name with backticks if needed and add visibility marker
+  ## Examples:
+  ##   ("==", true) -> "`==`*"
+  ##   ("$", true) -> "`$`*"
+  ##   ("add", true) -> "add*"
+  ##   ("helper", false) -> "helper"
+  if needsBackticks(name):
+    result = "`" & name & "`"
+  else:
+    result = name
+
+  if isPublic:
+    result &= "*"
 
 proc sanitizeNimIdentifier*(ident: string): string =
   ## Sanitize identifier to be valid Nim

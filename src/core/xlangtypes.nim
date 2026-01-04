@@ -152,7 +152,7 @@ type
 
     # Types
     xnkNamedType, xnkArrayType, xnkMapType, xnkFuncType, xnkPointerType
-    xnkReferenceType, xnkGenericType, xnkUnionType, xnkIntersectionType, xnkDistinctType
+    xnkReferenceType, xnkGenericType, xnkUnionType, xnkIntersectionType, xnkDistinctType, xnkTupleType
 
     # Other
     xnkIdentifier, xnkComment, xnkImport, xnkExport, xnkAttribute
@@ -236,6 +236,9 @@ type
     xnkExternal_Goroutine       # Go goroutine (go stmt) → lowered to spawn/async
     xnkExternal_GoDefer         # Go defer (different semantics from Nim defer)
     xnkExternal_GoSelect        # Go select statement → lowered to channel multiplexing
+
+    # C# 9+ Features
+    xnkExternal_Record          # C# record type → lowered to struct/class with value equality
 
 
 
@@ -514,6 +517,8 @@ type
       typeMembers*: seq[XLangNode]
     of xnkDistinctType:
       distinctBaseType*: XLangNode
+    of xnkTupleType:
+      tupleTypeElements*: seq[XLangNode]  # Each element is a Parameter with optional name and type
     of xnkIdentifier:
       identName*: string
 
@@ -969,6 +974,13 @@ type
       extSelectCases*: seq[XLangNode]   # select cases (channel operations)
       extSelectDefault*: Option[XLangNode]
 
+    # C# record
+    of xnkExternal_Record:
+      extRecordName*: string
+      extRecordParams*: seq[XLangNode]     # Positional parameters for primary constructor
+      extRecordBaseTypes*: seq[XLangNode]
+      extRecordMembers*: seq[XLangNode]
+
     of xnkUnknown:
       unknownData*: string
     # else: discard
@@ -1084,6 +1096,10 @@ proc `$`*(node: XLangNode): string =
     result &= "(" & node.labelName & ")"
   of xnkGotoStmt:
     result &= "(" & node.gotoLabel & ")"
+  of xnkTupleType:
+    result &= "(" & $node.tupleTypeElements.len & " elements)"
+  of xnkExternal_Record:
+    result &= "(" & node.extRecordName & ")"
   of xnkQualifiedName:
     result &= "(" & $node.qualifiedRight.kind & ")"
   of xnkAliasQualifiedName:
