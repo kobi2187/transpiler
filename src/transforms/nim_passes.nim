@@ -73,7 +73,9 @@ const nimDefaultPassIDs* = @[
   tpLocalFunctionToProc,
   tpUnsafeToNimBlock,
   tpDelegateToProcType,
-  tpRecordToStruct
+  tpRecordToStruct,
+  tpRecordWithToBlock
+
 ]
 
 proc selectTransformsForNim*(): seq[TransformPass] =

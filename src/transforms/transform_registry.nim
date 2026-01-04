@@ -52,6 +52,7 @@ import passes/from_csharp/unsafe_to_nim_block
 import passes/delegate_to_proc_type
 import passes/normalize_operators
 import passes/record_to_struct
+import passes/record_with_to_block
 
 # Import draft/untested transforms
 import passes/from_python/with_to_defer
@@ -141,6 +142,7 @@ proc loadExternalTransforms*() =
   globalTransformRegistry[tpUnsafeToNimBlock] = newTransformPass(tpUnsafeToNimBlock, toClosure(transformUnsafeToNimBlock), @[xnkExternal_Unsafe])
   globalTransformRegistry[tpDelegateToProcType] = newTransformPass(tpDelegateToProcType, toClosure(transformDelegateToTypeAlias), @[xnkExternal_Delegate])
   globalTransformRegistry[tpRecordToStruct] = newTransformPass(tpRecordToStruct, toClosure(transformRecordToStruct), @[xnkExternal_Record])
+  globalTransformRegistry[tpRecordWithToBlock] = newTransformPass(tpRecordWithToBlock, toClosure(transformRecordWithToBlock), @[xnkExternal_RecordWith])
 
 proc loadGoTransforms*() =
   ## Load Go-specific transforms (DRAFT - untested)

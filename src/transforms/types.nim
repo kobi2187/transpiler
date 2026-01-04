@@ -63,6 +63,7 @@ type TransformPassID* = enum
     tpAddSelfParameter = "add-self-parameter"
     tpNormalizeOperators = "normalize-operators"
     tpRecordToStruct = "record-to-struct"
+    tpRecordWithToBlock = "record-with-to-block"
     # Add more passes here as they are implemented
 
 type TransformPass* = ref object
