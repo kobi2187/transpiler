@@ -239,6 +239,12 @@ type
     xnkExternal_Goroutine       # Go goroutine (go stmt) → lowered to spawn/async
     xnkExternal_GoDefer         # Go defer (different semantics from Nim defer)
     xnkExternal_GoSelect        # Go select statement → lowered to channel multiplexing
+    xnkExternal_GoCommClause    # Go select case (communication clause)
+    xnkExternal_GoChannelSend   # Go channel send: ch <- value
+    xnkExternal_GoChanType      # Go channel type: chan T, <-chan T, chan<- T
+    xnkExternal_GoTypeSwitch    # Go type switch: switch x.(type) { }
+    xnkExternal_GoTypeCase      # Go type case clause in type switch
+    xnkExternal_GoVariadic      # Go variadic parameter type: ...T
 
     # C# 9+ Features
     xnkExternal_Record          # C# record type → lowered to struct/class with value equality
@@ -978,6 +984,37 @@ type
       extSelectCases*: seq[XLangNode]   # select cases (channel operations)
       extSelectDefault*: Option[XLangNode]
 
+    # Go communication clause (case in select)
+    of xnkExternal_GoCommClause:
+      extCommOp*: XLangNode              # channel operation (send/recv) or nil for default
+      extCommBody*: XLangNode            # body of the case
+      extCommIsDefault*: bool            # true if this is the default case
+
+    # Go channel send: ch <- value
+    of xnkExternal_GoChannelSend:
+      extSendChannel*: XLangNode         # the channel to send to
+      extSendValue*: XLangNode           # the value to send
+
+    # Go channel type: chan T, <-chan T, chan<- T
+    of xnkExternal_GoChanType:
+      extChanElemType*: XLangNode        # element type of the channel
+      extChanDir*: string                # "both", "recv", or "send"
+
+    # Go type switch: switch x.(type) { }
+    of xnkExternal_GoTypeSwitch:
+      extGoTypeSwitchExpr*: XLangNode    # the expression being switched on
+      extGoTypeSwitchCases*: seq[XLangNode]  # type cases
+
+    # Go type case clause
+    of xnkExternal_GoTypeCase:
+      extTypeCaseTypes*: seq[XLangNode]  # types to match (nil for default)
+      extTypeCaseBody*: XLangNode        # body of the case
+      extTypeCaseIsDefault*: bool        # true if this is the default case
+
+    # Go variadic parameter type: ...T
+    of xnkExternal_GoVariadic:
+      extVariadicElemType*: XLangNode    # element type of the variadic
+
     # C# record
     of xnkExternal_Record:
       extRecordName*: string
@@ -1205,7 +1242,9 @@ proc `$`*(node: XLangNode): string =
      xnkExternal_With, xnkExternal_Destructure, xnkExternal_Await,
      xnkExternal_FallthroughCase, xnkExternal_Unless, xnkExternal_Until,
      xnkExternal_Pass, xnkExternal_Goroutine, xnkExternal_GoDefer,
-     xnkExternal_GoSelect:
+     xnkExternal_GoSelect, xnkExternal_GoCommClause, xnkExternal_GoChannelSend,
+     xnkExternal_GoChanType, xnkExternal_GoTypeSwitch, xnkExternal_GoTypeCase,
+     xnkExternal_GoVariadic:
     discard
     
 
@@ -1233,7 +1272,13 @@ const externalKinds*: set[XLangNodeKind] = {
   xnkExternal_Channel,          # Go channel
   xnkExternal_Goroutine,        # Go goroutine
   xnkExternal_GoDefer,          # Go defer
-  xnkExternal_GoSelect          # Go select
+  xnkExternal_GoSelect,         # Go select
+  xnkExternal_GoCommClause,     # Go select case
+  xnkExternal_GoChannelSend,    # Go channel send
+  xnkExternal_GoChanType,       # Go channel type
+  xnkExternal_GoTypeSwitch,     # Go type switch
+  xnkExternal_GoTypeCase,       # Go type case
+  xnkExternal_GoVariadic        # Go variadic type
 }
 
 proc isExternalKind*(kind: XLangNodeKind): bool =

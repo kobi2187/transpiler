@@ -4,9 +4,10 @@
 ## This is a higher-level manager than FixedPointTransformer - it coordinates
 ## all the steps: parsing, semantic analysis, transformations, and code generation.
 
-import sequtils, strutils
+import sequtils, strutils, os
 import std/tables
 import core/xlangtypes
+import core/xlang_printer
 import transforms/fixed_point_transformer
 import transforms/transform_registry
 import transforms/types
@@ -144,6 +145,18 @@ proc run*(pipeline: TranspilationPipeline): PipelineResult =
   except Exception as e:
     result.errors.add("Primitive type mapping failed: " & e.msg)
     return
+
+  # Step 2.8: Generate XLang text file for debugging
+  try:
+    let xlangTextPath = inputFile.changeFileExt("xlang")
+    let xlangText = printXlang(xlangAst)
+    writeFile(xlangTextPath, xlangText)
+    if verbose:
+      echo "✓ Generated XLang text: ", xlangTextPath
+  except Exception as e:
+    # Non-fatal - just warn and continue
+    if verbose:
+      echo "WARNING: Failed to write .xlang file: ", e.msg
 
   # Step 3: Convert XLang AST to Nim AST and generate code
   var code: string

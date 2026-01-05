@@ -63,13 +63,18 @@ func processFile(filename string, stats *Statistics) error {
 
 	xlangAST := convertToXLang(node, stats)
 
-	jsonData, err := json.MarshalIndent(xlangAST, "", "  ")
+	// Use encoder with SetEscapeHTML(false) to prevent escaping <, >, &
+	var buf strings.Builder
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	err = encoder.Encode(xlangAST)
 	if err != nil {
 		return err
 	}
 
-	outputFilename := strings.TrimSuffix(filename, ".go") + ".xlang.json"
-	err = os.WriteFile(outputFilename, jsonData, 0644)
+	outputFilename := strings.TrimSuffix(filename, ".go") + ".xljs"
+	err = os.WriteFile(outputFilename, []byte(buf.String()), 0644)
 	if err != nil {
 		return err
 	}
@@ -101,6 +106,7 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 		return map[string]interface{}{
 			"kind":        "xnkFile",
 			"fileName":    filepath.Base(n.Name.Name + ".go"),
+			"sourceLang":  "go",
 			"moduleDecls": decls,
 		}
 
@@ -520,6 +526,185 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 		// Transparent - just return inner expression
 		return convertToXLang(n.X, stats)
 
+	case *ast.KeyValueExpr:
+		// Struct field initializer: key: value
+		stats.Constructs["xnkAsgn"]++
+		return map[string]interface{}{
+			"kind":      "xnkAsgn",
+			"asgnLeft":  convertToXLang(n.Key, stats),
+			"asgnRight": convertToXLang(n.Value, stats),
+		}
+
+	case *ast.DeclStmt:
+		// Declaration statement inside function (var x = ...)
+		return convertToXLang(n.Decl, stats)
+
+	case *ast.SelectStmt:
+		// Channel select statement
+		stats.Constructs["xnkExternal_GoSelect"]++
+		cases := []interface{}{}
+		if n.Body != nil {
+			for _, stmt := range n.Body.List {
+				if commClause, ok := stmt.(*ast.CommClause); ok {
+					cases = append(cases, convertCommClause(commClause, stats))
+				}
+			}
+		}
+		return map[string]interface{}{
+			"kind":           "xnkExternal_GoSelect",
+			"extSelectCases": cases,
+		}
+
+	case *ast.CommClause:
+		// Communication clause in select (handled by convertCommClause)
+		return convertCommClause(n, stats)
+
+	case *ast.SendStmt:
+		// Channel send: ch <- value
+		stats.Constructs["xnkExternal_GoChannelSend"]++
+		return map[string]interface{}{
+			"kind":           "xnkExternal_GoChannelSend",
+			"extSendChannel": convertToXLang(n.Chan, stats),
+			"extSendValue":   convertToXLang(n.Value, stats),
+		}
+
+	case *ast.TypeSwitchStmt:
+		// Type switch: switch x.(type) { }
+		stats.Constructs["xnkExternal_GoTypeSwitch"]++
+		cases := []interface{}{}
+		if n.Body != nil {
+			for _, stmt := range n.Body.List {
+				if caseClause, ok := stmt.(*ast.CaseClause); ok {
+					cases = append(cases, convertTypeSwitchCase(caseClause, stats))
+				}
+			}
+		}
+		// Extract the expression being switched on
+		var switchExpr interface{} = nil
+		if n.Assign != nil {
+			if exprStmt, ok := n.Assign.(*ast.ExprStmt); ok {
+				if typeAssert, ok := exprStmt.X.(*ast.TypeAssertExpr); ok {
+					switchExpr = convertToXLang(typeAssert.X, stats)
+				}
+			} else if assignStmt, ok := n.Assign.(*ast.AssignStmt); ok {
+				if len(assignStmt.Rhs) > 0 {
+					if typeAssert, ok := assignStmt.Rhs[0].(*ast.TypeAssertExpr); ok {
+						switchExpr = convertToXLang(typeAssert.X, stats)
+					}
+				}
+			}
+		}
+		return map[string]interface{}{
+			"kind":                  "xnkExternal_GoTypeSwitch",
+			"extGoTypeSwitchExpr":   switchExpr,
+			"extGoTypeSwitchCases":  cases,
+		}
+
+	case *ast.ChanType:
+		// Channel type: chan T, <-chan T, chan<- T
+		stats.Constructs["xnkExternal_GoChanType"]++
+		dir := "both"
+		if n.Dir == ast.RECV {
+			dir = "recv"
+		} else if n.Dir == ast.SEND {
+			dir = "send"
+		}
+		return map[string]interface{}{
+			"kind":            "xnkExternal_GoChanType",
+			"extChanElemType": convertType(n.Value, stats),
+			"extChanDir":      dir,
+		}
+
+	case *ast.Ellipsis:
+		// Variadic ... in function params or slice expansion
+		stats.Constructs["xnkExternal_GoVariadic"]++
+		return map[string]interface{}{
+			"kind":               "xnkExternal_GoVariadic",
+			"extVariadicElemType": convertType(n.Elt, stats),
+		}
+
+	case *ast.FuncType:
+		// Function type (used as type, not declaration)
+		stats.Constructs["xnkFuncType"]++
+		return map[string]interface{}{
+			"kind":       "xnkFuncType",
+			"funcParams": convertParams(n.Params, stats),
+			"funcReturn": convertReturnType(n.Results, stats),
+		}
+
+	case *ast.InterfaceType:
+		// Interface type (used inline, not as declaration)
+		stats.Constructs["xnkInterfaceType"]++
+		members := []interface{}{}
+		if n.Methods != nil {
+			for _, method := range n.Methods.List {
+				if len(method.Names) > 0 {
+					if funcType, ok := method.Type.(*ast.FuncType); ok {
+						members = append(members, map[string]interface{}{
+							"kind":        "xnkMethodDecl",
+							"methodName":  method.Names[0].Name,
+							"mparams":     convertParams(funcType.Params, stats),
+							"mreturnType": convertReturnType(funcType.Results, stats),
+							"mbody":       nil,
+						})
+					}
+				}
+			}
+		}
+		return map[string]interface{}{
+			"kind":    "xnkInterfaceType",
+			"members": members,
+		}
+
+	case *ast.StructType:
+		// Struct type (used inline, not as declaration)
+		stats.Constructs["xnkStructType"]++
+		members := []interface{}{}
+		if n.Fields != nil {
+			for _, field := range n.Fields.List {
+				fieldType := convertType(field.Type, stats)
+				if len(field.Names) == 0 {
+					members = append(members, map[string]interface{}{
+						"kind":             "xnkFieldDecl",
+						"fieldName":        "",
+						"fieldType":        fieldType,
+						"fieldInitializer": nil,
+					})
+				} else {
+					for _, name := range field.Names {
+						members = append(members, map[string]interface{}{
+							"kind":             "xnkFieldDecl",
+							"fieldName":        name.Name,
+							"fieldType":        fieldType,
+							"fieldInitializer": nil,
+						})
+					}
+				}
+			}
+		}
+		return map[string]interface{}{
+			"kind":    "xnkStructType",
+			"members": members,
+		}
+
+	case *ast.ArrayType:
+		// Array/slice type in expression context (e.g., []byte("hello"))
+		stats.Constructs["xnkArrayType"]++
+		return map[string]interface{}{
+			"kind":        "xnkArrayType",
+			"elementType": convertType(n.Elt, stats),
+			"arraySize":   convertToXLang(n.Len, stats),
+		}
+
+	case *ast.MapType:
+		// Map type in expression context
+		stats.Constructs["xnkMapType"]++
+		return map[string]interface{}{
+			"kind":      "xnkMapType",
+			"keyType":   convertType(n.Key, stats),
+			"valueType": convertType(n.Value, stats),
+		}
+
 	case nil:
 		return nil
 
@@ -788,6 +973,82 @@ func convertCaseClause(clause *ast.CaseClause, stats *Statistics) map[string]int
 			"blockBody": body,
 		},
 		"caseFallthrough": false,
+	}
+}
+
+func convertCommClause(clause *ast.CommClause, stats *Statistics) map[string]interface{} {
+	// Communication clause in select statement
+	stats.Constructs["xnkExternal_GoCommClause"]++
+
+	body := []interface{}{}
+	for _, stmt := range clause.Body {
+		converted := convertToXLang(stmt, stats)
+		if converted != nil {
+			body = append(body, converted)
+		}
+	}
+
+	// Default case in select
+	if clause.Comm == nil {
+		return map[string]interface{}{
+			"kind":             "xnkExternal_GoCommClause",
+			"extCommOp":        nil,
+			"extCommBody": map[string]interface{}{
+				"kind":      "xnkBlockStmt",
+				"blockBody": body,
+			},
+			"extCommIsDefault": true,
+		}
+	}
+
+	return map[string]interface{}{
+		"kind":             "xnkExternal_GoCommClause",
+		"extCommOp":        convertToXLang(clause.Comm, stats),
+		"extCommBody": map[string]interface{}{
+			"kind":      "xnkBlockStmt",
+			"blockBody": body,
+		},
+		"extCommIsDefault": false,
+	}
+}
+
+func convertTypeSwitchCase(clause *ast.CaseClause, stats *Statistics) map[string]interface{} {
+	// Type case in type switch
+	stats.Constructs["xnkExternal_GoTypeCase"]++
+	types := []interface{}{}
+	for _, expr := range clause.List {
+		types = append(types, convertType(expr, stats))
+	}
+
+	body := []interface{}{}
+	for _, stmt := range clause.Body {
+		converted := convertToXLang(stmt, stats)
+		if converted != nil {
+			body = append(body, converted)
+		}
+	}
+
+	// Default case
+	if len(types) == 0 {
+		return map[string]interface{}{
+			"kind":                 "xnkExternal_GoTypeCase",
+			"extTypeCaseTypes":     nil,
+			"extTypeCaseBody": map[string]interface{}{
+				"kind":      "xnkBlockStmt",
+				"blockBody": body,
+			},
+			"extTypeCaseIsDefault": true,
+		}
+	}
+
+	return map[string]interface{}{
+		"kind":                 "xnkExternal_GoTypeCase",
+		"extTypeCaseTypes":     types,
+		"extTypeCaseBody": map[string]interface{}{
+			"kind":      "xnkBlockStmt",
+			"blockBody": body,
+		},
+		"extTypeCaseIsDefault": false,
 	}
 }
 

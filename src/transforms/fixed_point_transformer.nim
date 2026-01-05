@@ -10,6 +10,7 @@
 ## 4. Repeat until no more transformations occur (fixed point)
 
 import core/xlangtypes
+import core/xlang_printer
 import types
 import transform_context
 import error_collector
@@ -249,6 +250,12 @@ proc run*(pm: FixedPointTransformer, root: var XLangNode, verbose: bool = false,
     # Flush any pending fields that transforms queued
     if pm.transformContext != nil:
       pm.transformContext.flushPendingFields()
+
+    # Print XLang AST after each iteration if verbose and changes were made
+    if verbose and counter > 0:
+      echo "\n=== After transform iteration ", iterations, " (", counter, " changes) ==="
+      echo printXlang(root)
+      echo "=== End iteration ", iterations, " ===\n"
 
     # Cycle detection
     if shouldWarnAboutCycle(iterations, reintroducedKinds, cycleWarningShown):
