@@ -927,6 +927,97 @@ proc convertType(node: JsonNode): JsonNode =
       "typeName": if node.hasKey("typeName"): node["typeName"] else: "any"
     }
 
+proc convertConstructorDecl(node: JsonNode): JsonNode =
+  ## Convert TypeScript constructor to XLang xnkConstructorDecl
+  result = %* {
+    "kind": "xnkConstructorDecl",
+    "constructorParams": [],
+    "constructorInitializers": [],
+    "constructorBody": %* {"kind": "xnkBlockStmt", "blockBody": []}
+  }
+
+  if node.hasKey("parameters") and node["parameters"].kind == JArray:
+    for param in node["parameters"]:
+      result["constructorParams"].add(convertParameter(param))
+
+  if node.hasKey("body") and not node["body"].isNil:
+    result["constructorBody"] = convertNode(node["body"])
+
+proc convertAssignment(node: JsonNode): JsonNode =
+  ## Convert assignment to XLang xnkAsgn
+  result = %* {
+    "kind": "xnkAsgn",
+    "asgnLeft": %* {"kind": "xnkIdentifier", "identName": ""},
+    "asgnRight": %* {"kind": "xnkNoneLit"}
+  }
+
+  if node.hasKey("left"):
+    result["asgnLeft"] = convertNode(node["left"])
+
+  if node.hasKey("right"):
+    result["asgnRight"] = convertNode(node["right"])
+
+proc convertLabeledStmt(node: JsonNode): JsonNode =
+  ## Convert labeled statement
+  result = %* {
+    "kind": "xnkLabeledStmt",
+    "label": "",
+    "statement": %* {"kind": "xnkEmptyStmt"}
+  }
+
+  if node.hasKey("label"):
+    result["label"] = node["label"]
+
+  if node.hasKey("statement"):
+    result["statement"] = convertNode(node["statement"])
+
+proc convertYieldExpression(node: JsonNode): JsonNode =
+  ## Convert yield expression to XLang xnkIteratorYield
+  result = %* {
+    "kind": "xnkIteratorYield",
+    "iteratorYieldValue": nil
+  }
+
+  if node.hasKey("value") and not node["value"].isNil:
+    result["iteratorYieldValue"] = convertNode(node["value"])
+
+  # Check for yield* (delegate)
+  if node.hasKey("isDelegate") and node["isDelegate"].getBool:
+    result["kind"] = "xnkIteratorDelegate"
+    if not result["iteratorYieldValue"].isNil:
+      result["iteratorDelegateExpr"] = result["iteratorYieldValue"]
+    result.delete("iteratorYieldValue")
+
+proc convertDestructureObj(node: JsonNode): JsonNode =
+  ## Convert object destructuring pattern
+  result = %* {
+    "kind": "xnkDestructureObj",
+    "destructObjFields": [],
+    "destructObjSource": %* {"kind": "xnkNoneLit"}
+  }
+
+  if node.hasKey("fields") and node["fields"].kind == JArray:
+    for field in node["fields"]:
+      if field.kind == JString:
+        result["destructObjFields"].add(field)
+
+proc convertDestructureArray(node: JsonNode): JsonNode =
+  ## Convert array destructuring pattern
+  result = %* {
+    "kind": "xnkDestructureArray",
+    "destructArrayVars": [],
+    "destructArrayRest": nil,
+    "destructArraySource": %* {"kind": "xnkNoneLit"}
+  }
+
+  if node.hasKey("vars") and node["vars"].kind == JArray:
+    for v in node["vars"]:
+      if v.kind == JString:
+        result["destructArrayVars"].add(v)
+
+  if node.hasKey("rest") and not node["rest"].isNil:
+    result["destructArrayRest"] = node["rest"]
+
 proc convertNode(node: JsonNode): JsonNode =
   if node.isNil or node.kind == JNull:
     return newJNull()
@@ -951,6 +1042,8 @@ proc convertNode(node: JsonNode): JsonNode =
     result = convertFuncDecl(node)
   of "xnkMethodDecl":
     result = convertMethodDecl(node)
+  of "xnkConstructorDecl":
+    result = convertConstructorDecl(node)
   of "xnkFieldDecl":
     result = convertFieldDecl(node)
   of "xnkVarDecl", "xnkLetDecl", "xnkConstDecl":
@@ -963,6 +1056,8 @@ proc convertNode(node: JsonNode): JsonNode =
     result = convertImportDecl(node)
   of "xnkExport", "ExportDeclaration":
     result = convertExportDecl(node)
+  of "xnkAsgn":
+    result = convertAssignment(node)
   of "xnkBlockStmt", "Block":
     result = convertBlockStmt(node)
   of "xnkIfStmt", "IfStatement":
@@ -987,6 +1082,10 @@ proc convertNode(node: JsonNode): JsonNode =
     result = convertBreakStmt(node)
   of "xnkContinueStmt", "ContinueStatement":
     result = convertContinueStmt(node)
+  of "xnkEmptyStmt":
+    result = %* {"kind": "xnkEmptyStmt"}
+  of "xnkLabeledStmt":
+    result = convertLabeledStmt(node)
   of "xnkBinaryExpr", "BinaryExpression":
     result = convertBinaryExpr(node)
   of "xnkUnaryExpr", "PrefixUnaryExpression", "PostfixUnaryExpression":
@@ -999,27 +1098,39 @@ proc convertNode(node: JsonNode): JsonNode =
     result = convertPropertyAccessExpr(node)
   of "xnkIndexExpr", "ElementAccessExpression":
     result = convertElementAccessExpr(node)
-  of "xnkLambdaExpr", "ArrowFunction":
+  of "xnkLambdaExpr", "ArrowFunction", "FunctionExpression":
     result = convertArrowFunction(node)
-  of "ArrayLiteralExpression":
+  of "xnkArrayLiteral", "ArrayLiteralExpression":
     result = convertArrayLiteralExpr(node)
-  of "ObjectLiteralExpression":
+  of "xnkMapLiteral", "ObjectLiteralExpression":
     result = convertObjectLiteralExpr(node)
+  of "xnkDictEntry":
+    result = node  # Pass through
   of "TemplateExpression":
     result = convertTemplateExpression(node)
-  of "AsExpression":
+  of "xnkTypeAssertion", "AsExpression", "TypeAssertionExpression":
     result = convertAsExpression(node)
-  of "TypeOfExpression":
+  of "xnkTypeOfExpr", "TypeOfExpression":
     result = convertTypeOfExpression(node)
   of "xnkAwaitExpr", "AwaitExpression":
     result = convertAwaitExpression(node)
+  of "xnkIteratorYield", "YieldExpression":
+    result = convertYieldExpression(node)
+  of "xnkThisExpr":
+    result = %* {"kind": "xnkThisExpr"}
+  of "xnkBaseExpr":
+    result = %* {"kind": "xnkBaseExpr"}
+  of "xnkDestructureObj":
+    result = convertDestructureObj(node)
+  of "xnkDestructureArray":
+    result = convertDestructureArray(node)
   of "xnkIdentifier", "Identifier":
     result = convertIdentifier(node)
-  of "xnkIntLit", "NumericLiteral":
+  of "xnkIntLit", "NumericLiteral", "BigIntLiteral":
     result = convertLiteral(node, "xnkIntLit")
   of "xnkFloatLit":
     result = convertLiteral(node, "xnkFloatLit")
-  of "xnkStringLit", "StringLiteral":
+  of "xnkStringLit", "StringLiteral", "RegularExpressionLiteral", "NoSubstitutionTemplateLiteral":
     result = convertLiteral(node, "xnkStringLit")
   of "xnkBoolLit", "TrueKeyword", "FalseKeyword":
     result = convertLiteral(node, "xnkBoolLit")
