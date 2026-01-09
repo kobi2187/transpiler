@@ -1070,7 +1070,7 @@ proc binaryOpToNim(op: BinaryOp): string =
   of opBitAnd: "bitand"
   of opBitOr: "bitor"
   of opBitXor: "bitxor"
-  of opBitAndNot: ""  # Handled specially in conv_xnkBinaryExpr
+  of opBitAndNot: "bitandnot"  # Go bit clear, define as Nim proc later
   of opShiftLeft: "shl"
   of opShiftRight: "shr"
   of opShiftRightUnsigned: "shr"  # Nim doesn't distinguish signed/unsigned shift
@@ -1131,22 +1131,11 @@ proc unaryOpToNim(op: UnaryOp): string =
   of opChannelReceive: "recv" # Go channel receive, needs lowering to channel lib
 
 proc conv_xnkBinaryExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
-  # Special case for Go's bit clear operator: a &^ b = a & ~b
-  if node.binaryOp == opBitAndNot:
-    # Generate: bitand(a, bitnot(b))
-    result = newNimNode(nnkCall)
-    result.add(newIdentNode("bitand"))
-    result.add(convertToNimAST(node.binaryLeft, ctx))
-    let bitnotCall = newNimNode(nnkCall)
-    bitnotCall.add(newIdentNode("bitnot"))
-    bitnotCall.add(convertToNimAST(node.binaryRight, ctx))
-    result.add(bitnotCall)
-  else:
-    result = newNimNode(nnkInfix)
-    # nnkInfix structure: [operator, left, right]
-    result.add(newIdentNode(binaryOpToNim(node.binaryOp)))
-    result.add(convertToNimAST(node.binaryLeft, ctx))
-    result.add(convertToNimAST(node.binaryRight, ctx))
+  result = newNimNode(nnkInfix)
+  # nnkInfix structure: [operator, left, right]
+  result.add(newIdentNode(binaryOpToNim(node.binaryOp)))
+  result.add(convertToNimAST(node.binaryLeft, ctx))
+  result.add(convertToNimAST(node.binaryRight, ctx))
 
 proc conv_xnkUnaryExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   # Handle increment/decrement specially as they need statement conversion

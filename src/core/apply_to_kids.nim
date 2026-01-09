@@ -86,6 +86,9 @@ proc visit*(node: var XLangNode, p: proc (x: var XLangNode)) =
   of xnkIfStmt:
     visit node.ifCondition, p
     visit node.ifBody, p
+    for elifBranch in node.elifBranches.mitems:
+      visit elifBranch.condition, p
+      visit elifBranch.body, p
     if node.elseBody.isSome(): visit node.elseBody.get, p
   of xnkSwitchStmt:
     visit node.switchExpr, p
@@ -455,6 +458,31 @@ proc visit*(node: var XLangNode, p: proc (x: var XLangNode)) =
     discard
   of xnkGenericName:
     for item in node.genericNameArgs.mitems: visit item, p
+
+  # Go-specific nodes
+  of xnkExternal_GoDefer:
+    visit node.extGoDeferCall, p
+  of xnkExternal_GoSelect:
+    for item in node.extSelectCases.mitems: visit item, p
+    if node.extSelectDefault.isSome(): visit node.extSelectDefault.get, p
+  of xnkExternal_GoCommClause:
+    visit node.extCommOp, p
+    visit node.extCommBody, p
+  of xnkExternal_GoChannelSend:
+    visit node.extSendChannel, p
+    visit node.extSendValue, p
+  of xnkExternal_GoChanType:
+    visit node.extChanElemType, p
+  of xnkExternal_GoTypeSwitch:
+    visit node.extGoTypeSwitchExpr, p
+    for item in node.extGoTypeSwitchCases.mitems: visit item, p
+  of xnkExternal_GoTypeCase:
+    for item in node.extTypeCaseTypes.mitems: visit item, p
+    visit node.extTypeCaseBody, p
+  of xnkExternal_GoTaglessSwitch:
+    for item in node.extGoTaglessSwitchCases.mitems: visit item, p
+  of xnkExternal_GoVariadic:
+    visit node.extVariadicElemType, p
 
   of xnkUnknown:
     discard

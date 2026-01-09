@@ -38,31 +38,35 @@ proc lowerGoTaglessSwitch*(node: XLangNode, ctx: TransformContext): XLangNode =
       # Convert case to if/elif branch
       # For tagless switch, caseValues contains the condition(s)
       let condition = if caseNode.caseValues.len == 1:
-        caseNode.caseValues[0]
+        # Recursively transform the condition
+        lowerGoTaglessSwitch(caseNode.caseValues[0], ctx)
       elif caseNode.caseValues.len > 1:
         # Multiple conditions: combine with OR
         var orNode = XLangNode(kind: xnkBinaryExpr)
         orNode.binaryOp = opLogicalOr
-        orNode.binaryLeft = caseNode.caseValues[0]
-        orNode.binaryRight = caseNode.caseValues[1]
+        orNode.binaryLeft = lowerGoTaglessSwitch(caseNode.caseValues[0], ctx)
+        orNode.binaryRight = lowerGoTaglessSwitch(caseNode.caseValues[1], ctx)
         # TODO: handle more than 2 conditions by chaining ORs
         orNode
       else:
         # No condition? Shouldn't happen, but create a true literal
         XLangNode(kind: xnkBoolLit, boolValue: true)
 
+      # Recursively transform the body
+      let body = lowerGoTaglessSwitch(caseNode.caseBody, ctx)
+
       if not hasIf:
         # First case becomes the main if
         ifStmt.ifCondition = condition
-        ifStmt.ifBody = caseNode.caseBody
+        ifStmt.ifBody = body
         hasIf = true
       else:
         # Subsequent cases become elif branches
-        ifStmt.elifBranches.add((condition: condition, body: caseNode.caseBody))
+        ifStmt.elifBranches.add((condition: condition, body: body))
 
     elif caseNode.kind == xnkDefaultClause:
-      # Default case becomes else
-      defaultBody = some(caseNode.defaultBody)
+      # Default case becomes else - recursively transform it
+      defaultBody = some(lowerGoTaglessSwitch(caseNode.defaultBody, ctx))
 
   if hasIf:
     ifStmt.elseBody = defaultBody
