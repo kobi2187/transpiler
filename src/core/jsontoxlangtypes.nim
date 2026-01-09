@@ -63,6 +63,17 @@ proc parseXLangJson*(filePath: string): XLangNode =
             j["extPropHasGetter"] = %false
           if not j.hasKey("extPropHasSetter"):
             j["extPropHasSetter"] = %false
+
+        # Add method-specific fields for xnkMethodDecl
+        if kindStr == "xnkMethodDecl":
+          if not j.hasKey("receiver"):
+            j["receiver"] = newJNull()
+
+        # Fix Go type case default - extTypeCaseTypes can be null for default case
+        if kindStr == "xnkExternal_GoTypeCase":
+          if j.hasKey("extTypeCaseTypes") and j["extTypeCaseTypes"].kind == JNull:
+            j["extTypeCaseTypes"] = newJArray()
+
       for key, val in j.mpairs:
         addDefaultsToJson(val)
     elif j.kind == JArray:

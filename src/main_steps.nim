@@ -146,7 +146,7 @@ proc recordInfiniteLoop(infiniteLoopFiles: var seq[tuple[file: string, iteration
 proc stepTransformPasses*(xlangAst: var XLangNode, semanticInfo: SemanticInfo, passManager: FixedPointTransformer,
                         inputFile: string, targetLang: string,
                         infiniteLoopFiles: var seq[tuple[file: string, iterations: int, kinds: seq[XLangNodeKind]]],
-                        verbose: bool) =
+                        verbose: bool, xlangOutput:bool) =
   ## Step 2: Apply transformation passes
   logTransformStart(verbose)
   
@@ -156,7 +156,7 @@ proc stepTransformPasses*(xlangAst: var XLangNode, semanticInfo: SemanticInfo, p
   # Build node index for parent navigation (needed by property transforms)
   ctx.buildNodeIndex(xlangAst)
   
-  xlangAst = passManager.run(xlangAst, verbose, ctx)
+  xlangAst = passManager.run(xlangAst, verbose, xlangOutput, ctx)
 
   if passManager.result.maxIterationsReached:
     recordInfiniteLoop(infiniteLoopFiles, inputFile, passManager.result)

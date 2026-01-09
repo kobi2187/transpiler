@@ -28,6 +28,7 @@ type
     outputJson*: bool
     useStdout*: bool
     sameDir*: bool
+    xlangOutput*: bool
 
   PipelineResult* = object
     ## Result of running the pipeline
@@ -116,7 +117,7 @@ proc run*(pipeline: TranspilationPipeline): PipelineResult =
   if not pipeline.config.skipTransforms:
     try:
       stepTransformPasses(xlangAst, semanticInfo, pipeline.transformManager,
-                         inputFile, "nim", pipeline.infiniteLoopFiles, verbose)
+                         inputFile, "nim", pipeline.infiniteLoopFiles, verbose, pipeline.config.xlangOutput)
     except Exception as e:
       result.errors.add("Transformation pipeline failed: " & e.msg)
       return
@@ -147,15 +148,15 @@ proc run*(pipeline: TranspilationPipeline): PipelineResult =
     return
 
   # Step 2.8: Generate XLang text file for debugging
-  try:
-    let xlangTextPath = inputFile.changeFileExt("xlang")
-    let xlangText = printXlang(xlangAst)
-    writeFile(xlangTextPath, xlangText)
-    if verbose:
+  # Only output xlang text file if both verbose and xlangOutput are enabled
+  if verbose and pipeline.config.xlangOutput:
+    try:
+      let xlangTextPath = inputFile.changeFileExt("xlang")
+      let xlangText = printXlang(xlangAst)
+      writeFile(xlangTextPath, xlangText)
       echo "✓ Generated XLang text: ", xlangTextPath
-  except Exception as e:
-    # Non-fatal - just warn and continue
-    if verbose:
+    except Exception as e:
+      # Non-fatal - just warn and continue
       echo "WARNING: Failed to write .xlang file: ", e.msg
 
   # Step 3: Convert XLang AST to Nim AST and generate code

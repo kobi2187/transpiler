@@ -217,7 +217,7 @@ proc reportMaxIterationsError(pm: FixedPointTransformer, kinds: HashSet[XLangNod
 # Main Run Loop
 # =============================================================================
 
-proc run*(pm: FixedPointTransformer, root: var XLangNode, verbose: bool = false,
+proc run*(pm: FixedPointTransformer, root: var XLangNode, verbose: bool = false, xlangOutput: bool = false,
           ctx: TransformContext): XLangNode =
   ## Run transforms until fixed point is reached
   pm.transformContext = ctx
@@ -254,7 +254,9 @@ proc run*(pm: FixedPointTransformer, root: var XLangNode, verbose: bool = false,
     # Print XLang AST after each iteration if verbose and changes were made
     if verbose and counter > 0:
       echo "\n=== After transform iteration ", iterations, " (", counter, " changes) ==="
-      echo printXlang(root)
+      
+      if xlangOutput:
+        echo printXlang(root)
       echo "=== End iteration ", iterations, " ===\n"
 
     # Cycle detection

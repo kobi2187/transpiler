@@ -109,6 +109,9 @@ type
     opAddressOf = "addrof"     # & (address-of)
     opDereference = "deref"    # * (dereference)
 
+    # Go channel operations
+    opChannelReceive = "chanrecv"  # <- (channel receive, Go)
+
     # Async
     opAwait = "await"          # await (async/await)
 

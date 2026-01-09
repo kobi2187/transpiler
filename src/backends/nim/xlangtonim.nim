@@ -296,6 +296,12 @@ proc conv_xnkFile(node: XLangNode, ctx: TransformContext): MyNimNode =
       importStmt.add(newIdentNode(modulePath))
       result.add(importStmt)
 
+  elif ctx.sourceLang == "go":
+    # Go: add gocompat import for channel/select support
+    let gocompatImport = newNimNode(nnkImportStmt)
+    gocompatImport.add(newIdentNode("gocompat"))
+    result.add(gocompatImport)
+
   elif ctx.sourceLang != "" and ctx.sourceLang != "unknown" and ctx.sourceLang != "nim":
     # Fallback for non-C# languages: add blanket compat import
     let compatImport = newNimNode(nnkImportStmt)
@@ -410,6 +416,45 @@ proc conv_xnkFuncDecl_instanceMethod(node: XLangNode, ctx: TransformContext): My
   # 6: body
   result.add(convertToNimAST(node.body, ctx))
   if node.isAsync:
+    setPragma(result, newPragma(newIdentNode("async")))
+
+proc conv_xnkMethodDecl(node: XLangNode, ctx: TransformContext): MyNimNode =
+  ## Convert xnkMethodDecl (used in interfaces and for Go methods with receiver)
+  ## For interface methods (mbody is nil), just generate signature
+  result = newNimNode(nnkProcDef)
+
+  # 0: name
+  let procName = memberNameToNim(node.methodName)
+  result.add(newIdentNode(procName))
+  # 1: pattern/term rewriting placeholder
+  result.add(newEmptyNode())
+  # 2: generic params placeholder
+  result.add(newEmptyNode())
+  # 3: formal params
+  let formalParams = newNimNode(nnkFormalParams)
+  if node.mreturnType.isSome():
+    formalParams.add(convertToNimAST(node.mreturnType.get, ctx))
+  else:
+    formalParams.add(newEmptyNode())
+
+  # Add receiver as first parameter if present (Go methods)
+  if node.receiver.isSome():
+    formalParams.add(convertToNimAST(node.receiver.get, ctx))
+
+  # Add method parameters
+  for param in node.mparams:
+    formalParams.add(convertToNimAST(param, ctx))
+  result.add(formalParams)
+  # 4: pragmas
+  result.add(newEmptyNode())
+  # 5: reserved
+  result.add(newEmptyNode())
+  # 6: body (may be nil for interface methods)
+  if not node.mbody.isNil:
+    result.add(convertToNimAST(node.mbody, ctx))
+  else:
+    result.add(newEmptyNode())
+  if node.methodIsAsync:
     setPragma(result, newPragma(newIdentNode("async")))
 
 proc conv_xnkClassDecl_structDecl(node: XLangNode, ctx: TransformContext): MyNimNode =
@@ -802,7 +847,33 @@ proc conv_xnkNumberLit(node: XLangNode, ctx: TransformContext): MyNimNode =
 
 proc conv_xnkIntLit(node: XLangNode, ctx: TransformContext): MyNimNode =
   # Parse integer literal value and create integer literal node
-  result = newIntLitNode(parseInt(node.literalValue))
+  # Handle hex (0x...), octal (0o...), binary (0b...) and decimal
+  let literal = node.literalValue
+  try:
+    var value: BiggestInt
+    if literal.len > 2:
+      if literal[0..1] == "0x" or literal[0..1] == "0X":
+        value = parseHexInt(literal)
+      elif literal[0..1] == "0o" or literal[0..1] == "0O":
+        value = parseOctInt(literal)
+      elif literal[0..1] == "0b" or literal[0..1] == "0B":
+        value = parseBinInt(literal)
+      else:
+        value = parseInt(literal)
+    else:
+      value = parseInt(literal)
+    result = newIntLitNode(value)
+  except RangeDefect, ValueError:
+    # Value too large for int64, emit as uint64 literal with 'u64 suffix
+    result = newNimNode(nnkUInt64Lit)
+    # Try parsing as unsigned
+    try:
+      result.intVal = cast[BiggestInt](parseUInt(literal))
+    except:
+      # Fallback: emit as raw literal string with suffix
+      result = newNimNode(nnkCall)
+      result.add(newIdentNode("uint64"))
+      result.add(newStrLitNode(literal))
 
 proc conv_xnkFloatLit(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newFloatLitNode(parseFloat(node.literalValue))
@@ -1045,6 +1116,7 @@ proc unaryOpToNim(op: UnaryOp): string =
   of opAwait: "await"
   of opSpread: "..."         # May need lowering
   of opIndexFromEnd: "^"     # Nim uses same syntax for backIndex
+  of opChannelReceive: "recv" # Go channel receive, needs lowering to channel lib
 
 proc conv_xnkBinaryExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkInfix)
@@ -1062,6 +1134,13 @@ proc conv_xnkUnaryExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
     result = newNimNode(nnkCall)
     result.add(newIdentNode(unaryOpToNim(node.unaryOp)))
     result.add(convertToNimAST(node.unaryOperand, ctx))
+  of opChannelReceive:
+    # Go channel receive: <-ch → ch.goRecv()
+    result = newNimNode(nnkCall)
+    let dotExpr = newNimNode(nnkDotExpr)
+    dotExpr.add(convertToNimAST(node.unaryOperand, ctx))
+    dotExpr.add(newIdentNode("goRecv"))
+    result.add(dotExpr)
   else:
     result = newNimNode(nnkPrefix)
     result.add(newIdentNode(unaryOpToNim(node.unaryOp)))
@@ -2196,9 +2275,12 @@ proc getNodeDescription(node: XLangNode): string =
   of xnkModule:
     if node.moduleName.len > 0:
       result &= " (module: " & node.moduleName & ")"
-  of xnkFuncDecl, xnkMethodDecl:
+  of xnkFuncDecl:
     if node.funcName.len > 0:
       result &= " (name: " & node.funcName & ")"
+  of xnkMethodDecl:
+    if node.methodName.len > 0:
+      result &= " (name: " & node.methodName & ")"
   of xnkVarDecl, xnkLetDecl, xnkConstDecl:
     if node.declName.len > 0:
       result &= " (name: " & node.declName & ")"
@@ -2247,7 +2329,9 @@ proc modifyBeforeConversion(node: XLangNode, ctx: TransformContext): XLangNode =
     # Also check if any function/method declarations have isAsync=true
     var needsAsync = false
     traverseTree(mutableNode, proc(n: var XLangNode) =
-      if n.kind in {xnkFuncDecl, xnkMethodDecl} and n.isAsync:
+      if n.kind == xnkFuncDecl and n.isAsync:
+        needsAsync = true
+      elif n.kind == xnkMethodDecl and n.methodIsAsync:
         needsAsync = true
     )
     if needsAsync:
@@ -2294,7 +2378,7 @@ proc convertToNimAST(node: XLangNode, ctx: TransformContext = nil): MyNimNode =
       result = conv_xnkModule(node, context)
     of xnkNamespace:
       result = conv_xnkNamespace(node, context)
-    of xnkFuncDecl, xnkMethodDecl:
+    of xnkFuncDecl:
       # Choose converter based on whether we're in a class context and if it's static
       if context.isInClassScope() and not node.funcIsStatic:
         # Instance method - add self parameter
@@ -2302,6 +2386,8 @@ proc convertToNimAST(node: XLangNode, ctx: TransformContext = nil): MyNimNode =
       else:
         # Standalone function or static method
         result = conv_xnkFuncDecl_standalone(node, context)
+    of xnkMethodDecl:
+      result = conv_xnkMethodDecl(node, context)
     of xnkClassDecl, xnkStructDecl:
       result = conv_xnkClassDecl_structDecl(node, context)
     of xnkInterfaceDecl:
@@ -2660,6 +2746,120 @@ proc convertToNimAST(node: XLangNode, ctx: TransformContext = nil): MyNimNode =
     
     of xnkDictEntry:
       result = conv_xnkDictEntry(node, ctx)
+
+    # Go-specific external nodes - using gocompat abstraction layer
+    of xnkExternal_GoChanType:
+      # Go channel type: chan T, <-chan T, chan<- T → GoChan[T]
+      result = newNimNode(nnkBracketExpr)
+      result.add(newIdentNode("GoChan"))
+      if not node.extChanElemType.isNil:
+        result.add(convertToNimAST(node.extChanElemType, context))
+      else:
+        result.add(newIdentNode("void"))
+
+    of xnkExternal_GoVariadic:
+      # Go variadic: ...T → varargs[T]
+      result = newNimNode(nnkBracketExpr)
+      result.add(newIdentNode("varargs"))
+      if not node.extVariadicElemType.isNil:
+        result.add(convertToNimAST(node.extVariadicElemType, context))
+      else:
+        result.add(newIdentNode("auto"))
+
+    of xnkExternal_GoChannelSend:
+      # Go channel send: ch <- value → ch.goSend(value)
+      result = newNimNode(nnkCall)
+      let dotExpr = newNimNode(nnkDotExpr)
+      dotExpr.add(convertToNimAST(node.extSendChannel, context))
+      dotExpr.add(newIdentNode("goSend"))
+      result.add(dotExpr)
+      result.add(convertToNimAST(node.extSendValue, context))
+
+    of xnkExternal_GoSelect:
+      # Go select statement → goSelect: <cases>
+      result = newNimNode(nnkCall)
+      result.add(newIdentNode("goSelect"))
+      let stmtList = newNimNode(nnkStmtList)
+      for caseNode in node.extSelectCases:
+        stmtList.add(convertToNimAST(caseNode, context))
+      if node.extSelectDefault.isSome:
+        stmtList.add(convertToNimAST(node.extSelectDefault.get, context))
+      result.add(stmtList)
+
+    of xnkExternal_GoCommClause:
+      # Go select case → goCase or goDefault
+      if node.extCommIsDefault:
+        # Generate: goDefault: <body>
+        result = newNimNode(nnkCall)
+        result.add(newIdentNode("goDefault"))
+        if not node.extCommBody.isNil:
+          result.add(convertToNimAST(node.extCommBody, context))
+        else:
+          result.add(newNimNode(nnkStmtList))
+      else:
+        # Generate: goCase <op>: <body>
+        # Check if op is an assignment (variable binding from receive)
+        result = newNimNode(nnkCall)
+        result.add(newIdentNode("goCase"))
+        if not node.extCommOp.isNil:
+          let op = node.extCommOp
+          # Check for variable binding: msg := <-ch or msg, ok := <-ch
+          if op.kind == xnkAsgn and op.asgnRight.kind == xnkUnaryExpr and
+             op.asgnRight.unaryOp == opChannelReceive:
+            # Variable binding case: generate goCase(ch.goRecv(), varName, body)
+            let chanExpr = convertToNimAST(op.asgnRight.unaryOperand, context)
+            let recvCall = newNimNode(nnkCall)
+            let recvDot = newNimNode(nnkDotExpr)
+            recvDot.add(chanExpr)
+            recvDot.add(newIdentNode("goRecv"))
+            recvCall.add(recvDot)
+            result.add(recvCall)
+            # Add variable name as identifier
+            if op.asgnLeft.kind == xnkIdentifier:
+              result.add(newIdentNode(op.asgnLeft.identName))
+            else:
+              result.add(convertToNimAST(op.asgnLeft, context))
+          else:
+            # Non-binding case (send or plain receive)
+            result.add(convertToNimAST(op, context))
+        if not node.extCommBody.isNil:
+          result.add(convertToNimAST(node.extCommBody, context))
+        else:
+          result.add(newNimNode(nnkStmtList))
+
+    of xnkExternal_GoTypeSwitch:
+      # Go type switch → case/of with type checks
+      # switch v := x.(type) { case T1: ... case T2: ... }
+      # → case x.kind: of T1: let v = T1(x); ... of T2: ...
+      result = newNimNode(nnkCaseStmt)
+      # Use the expression
+      if not node.extGoTypeSwitchExpr.isNil:
+        result.add(convertToNimAST(node.extGoTypeSwitchExpr, context))
+      else:
+        result.add(newIdentNode("typeSwitchExpr"))
+      # Add each type case
+      for caseNode in node.extGoTypeSwitchCases:
+        result.add(convertToNimAST(caseNode, context))
+
+    of xnkExternal_GoTypeCase:
+      # Go type case clause
+      if node.extTypeCaseIsDefault:
+        result = newNimNode(nnkElse)
+        let body = newStmtList()
+        if not node.extTypeCaseBody.isNil:
+          body.add(convertToNimAST(node.extTypeCaseBody, context))
+        result.add(body)
+      else:
+        result = newNimNode(nnkOfBranch)
+        # Add type conditions
+        for typeNode in node.extTypeCaseTypes:
+          result.add(convertToNimAST(typeNode, context))
+        # Add body
+        let body = newStmtList()
+        if not node.extTypeCaseBody.isNil:
+          body.add(convertToNimAST(node.extTypeCaseBody, context))
+        result.add(body)
+
     else:
       raise newException(ValueError, "Unsupported or unlowered XLang node kind: " & $node.kind)
   except Exception as e:

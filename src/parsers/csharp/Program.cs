@@ -736,16 +736,27 @@ partial class Program
         }
         else
         {
-            xlangKind = literal.Kind() switch
+            var literalKind = literal.Kind();
+            xlangKind = literalKind switch
             {
                 Microsoft.CodeAnalysis.CSharp.SyntaxKind.StringLiteralExpression => "xnkStringLit",
+                Microsoft.CodeAnalysis.CSharp.SyntaxKind.Utf8StringLiteralExpression => "xnkStringLit",
                 Microsoft.CodeAnalysis.CSharp.SyntaxKind.CharacterLiteralExpression => "xnkCharLit",
                 Microsoft.CodeAnalysis.CSharp.SyntaxKind.TrueLiteralExpression => "xnkBoolLit",
                 Microsoft.CodeAnalysis.CSharp.SyntaxKind.FalseLiteralExpression => "xnkBoolLit",
                 Microsoft.CodeAnalysis.CSharp.SyntaxKind.NullLiteralExpression => "xnkNilLit",
                 Microsoft.CodeAnalysis.CSharp.SyntaxKind.DefaultLiteralExpression => "xnkNilLit",
-                _ => "xnkUnknownLit" // Default fallback
+                _ => HandleUnknownLiteral(literalKind, literal)
             };
+        }
+
+        string HandleUnknownLiteral(Microsoft.CodeAnalysis.CSharp.SyntaxKind kind, LiteralExpressionSyntax lit)
+        {
+            Console.WriteLine($"WARNING: Unhandled literal kind: {kind}");
+            Console.WriteLine($"  Token: {lit.Token.Text}");
+            Console.WriteLine($"  Value: {lit.Token.Value}");
+            Console.WriteLine($"  Location: {lit.GetLocation().GetLineSpan()}");
+            return "xnkUnknownLit";
         }
 
         var result = new JObject

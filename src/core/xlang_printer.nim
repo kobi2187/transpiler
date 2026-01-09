@@ -96,6 +96,7 @@ proc unaryOpStr(op: UnaryOp): string =
   of opAwait: "await"
   of opSpread: "..."
   of opIndexFromEnd: "^"
+  of opChannelReceive: "<-"
 
 # =============================================================================
 # Main Print Function

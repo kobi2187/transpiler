@@ -8,11 +8,90 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 )
 
 type Statistics struct {
-	Constructs map[string]int
+	Constructs   map[string]int
+	CurrentFile  string
+	contextStack []string
+}
+
+func (s *Statistics) pushContext(ctx string) {
+	s.contextStack = append(s.contextStack, ctx)
+}
+
+func (s *Statistics) popContext() {
+	if len(s.contextStack) > 0 {
+		s.contextStack = s.contextStack[:len(s.contextStack)-1]
+	}
+}
+
+func (s *Statistics) getContext() string {
+	if len(s.contextStack) == 0 {
+		return ""
+	}
+	return strings.Join(s.contextStack, " > ")
+}
+
+// Map Go operators to XLang semantic operator names
+var binaryOpMap = map[string]string{
+	"+":   "add",
+	"-":   "sub",
+	"*":   "mul",
+	"/":   "div",
+	"%":   "mod",
+	"&":   "bitand",
+	"|":   "bitor",
+	"^":   "bitxor",
+	"<<":  "shl",
+	">>":  "shr",
+	"&^":  "bitandnot", // Go-specific: bit clear
+	"==":  "eq",
+	"!=":  "neq",
+	"<":   "lt",
+	"<=":  "le",
+	">":   "gt",
+	">=":  "ge",
+	"&&":  "and",
+	"||":  "or",
+	"+=":  "adda",
+	"-=":  "suba",
+	"*=":  "mula",
+	"/=":  "diva",
+	"%=":  "moda",
+	"&=":  "bitanda",
+	"|=":  "bitora",
+	"^=":  "bitxora",
+	"<<=": "shla",
+	">>=": "shra",
+}
+
+var unaryOpMap = map[string]string{
+	"-":  "neg",
+	"+":  "pos",
+	"!":  "not",
+	"^":  "bitnot", // Go uses ^ for bitwise NOT (unlike C which uses ~)
+	"*":  "deref",
+	"&":  "ref",
+	"++": "postinc", // Go's ++ is always post-increment (statement, not expr)
+	"--": "postdec", // Go's -- is always post-decrement (statement, not expr)
+	"<-": "chanrecv", // Go channel receive operator
+}
+
+func normalizeBinaryOp(op string) string {
+	if mapped, ok := binaryOpMap[op]; ok {
+		return mapped
+	}
+	return op
+}
+
+func normalizeUnaryOp(op string) string {
+	if mapped, ok := unaryOpMap[op]; ok {
+		return mapped
+	}
+	return op
 }
 
 func main() {
@@ -55,10 +134,14 @@ func processPath(path string, stats *Statistics) error {
 }
 
 func processFile(filename string, stats *Statistics) error {
+	stats.CurrentFile = filename
+	stats.contextStack = []string{} // Reset context for new file
+
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, filename, nil, parser.ParseComments)
 	if err != nil {
-		return err
+		fmt.Printf("Parse error in %s: %v (skipping)\n", filename, err)
+		return nil // Continue processing other files
 	}
 
 	xlangAST := convertToXLang(node, stats)
@@ -84,6 +167,24 @@ func processFile(filename string, stats *Statistics) error {
 }
 
 func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
+	// Check for untyped nil
+	if node == nil {
+		// Expected nil for optional AST fields (e.g., else clause, type annotation, etc.)
+		return nil
+	}
+
+	// Check for typed nil (interface with type but nil value)
+	// This must be checked BEFORE the node == nil check would short-circuit
+	rv := reflect.ValueOf(node)
+	if rv.Kind() == reflect.Ptr && rv.IsNil() {
+		context := stats.getContext()
+		if context == "" {
+			context = "unknown"
+		}
+		fmt.Printf("WARNING: typed nil node in %s | context: %s | type: %T\n", stats.CurrentFile, context, node)
+		return nil
+	}
+
 	switch n := node.(type) {
 	// ========== File ==========
 	case *ast.File:
@@ -230,13 +331,13 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 			}
 		} else {
 			// C-style for loop
-			stats.Constructs["xnkForStmt"]++
+			stats.Constructs["xnkExternal_ForStmt"]++
 			return map[string]interface{}{
-				"kind":         "xnkForStmt",
-				"forInit":      convertToXLang(n.Init, stats),
-				"forCond":      convertToXLang(n.Cond, stats),
-				"forIncrement": convertToXLang(n.Post, stats),
-				"forBody":      convertToXLang(n.Body, stats),
+				"kind":            "xnkExternal_ForStmt",
+				"extForInit":      convertToXLang(n.Init, stats),
+				"extForCond":      convertToXLang(n.Cond, stats),
+				"extForIncrement": convertToXLang(n.Post, stats),
+				"extForBody":      convertToXLang(n.Body, stats),
 			}
 		}
 
@@ -351,11 +452,11 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 		}
 
 	case *ast.IncDecStmt:
-		// Convert to unary expression
+		// Convert to unary expression (Go's ++ and -- are statements, always post)
 		stats.Constructs["xnkUnaryExpr"]++
-		op := "++"
+		op := "postinc"
 		if n.Tok == token.DEC {
-			op = "--"
+			op = "postdec"
 		}
 		return map[string]interface{}{
 			"kind":         "xnkUnaryExpr",
@@ -405,7 +506,7 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 		return map[string]interface{}{
 			"kind":        "xnkBinaryExpr",
 			"binaryLeft":  convertToXLang(n.X, stats),
-			"binaryOp":    n.Op.String(),
+			"binaryOp":    normalizeBinaryOp(n.Op.String()),
 			"binaryRight": convertToXLang(n.Y, stats),
 		}
 
@@ -421,7 +522,7 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 		stats.Constructs["xnkUnaryExpr"]++
 		return map[string]interface{}{
 			"kind":         "xnkUnaryExpr",
-			"unaryOp":      n.Op.String(),
+			"unaryOp":      normalizeUnaryOp(n.Op.String()),
 			"unaryOperand": convertToXLang(n.X, stats),
 		}
 
@@ -518,7 +619,7 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 		stats.Constructs["xnkUnaryExpr(*)"]++
 		return map[string]interface{}{
 			"kind":         "xnkUnaryExpr",
-			"unaryOp":      "*",
+			"unaryOp":      normalizeUnaryOp("*"),
 			"unaryOperand": convertToXLang(n.X, stats),
 		}
 
@@ -720,21 +821,47 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 }
 
 func convertFunc(n *ast.FuncDecl, stats *Statistics) map[string]interface{} {
+	stats.pushContext(fmt.Sprintf("func %s", n.Name.Name))
+	defer stats.popContext()
+
+	// In Go, functions starting with uppercase are exported (public)
+	visibility := "private"
+	if len(n.Name.Name) > 0 && n.Name.Name[0] >= 'A' && n.Name.Name[0] <= 'Z' {
+		visibility = "public"
+	}
+
+	// Handle nil body (function declarations without implementation, like in builtin.go)
+	var body interface{} = nil
+	if n.Body != nil {
+		body = convertToXLang(n.Body, stats)
+	}
+
 	return map[string]interface{}{
-		"kind":       "xnkFuncDecl",
-		"funcName":   n.Name.Name,
-		"params":     convertParams(n.Type.Params, stats),
-		"returnType": convertReturnType(n.Type.Results, stats),
-		"body":       convertToXLang(n.Body, stats),
-		"isAsync":    false,
+		"kind":           "xnkFuncDecl",
+		"funcName":       n.Name.Name,
+		"params":         convertParams(n.Type.Params, stats),
+		"returnType":     convertReturnType(n.Type.Results, stats),
+		"body":           body,
+		"isAsync":        false,
+		"funcIsStatic":   true, // Go functions are always "static" (no implicit receiver)
+		"funcVisibility": visibility,
 	}
 }
 
 func convertMethod(n *ast.FuncDecl, stats *Statistics) map[string]interface{} {
+	stats.pushContext(fmt.Sprintf("method %s", n.Name.Name))
+	defer stats.popContext()
+
 	receiver := convertParams(n.Recv, stats)
 	var receiverNode interface{} = nil
 	if len(receiver) > 0 {
 		receiverNode = receiver[0]
+	}
+
+	// Handle nil body (method declarations without implementation)
+	var body interface{} = nil
+	if n.Body != nil {
+		body = convertToXLang(n.Body, stats)
 	}
 
 	return map[string]interface{}{
@@ -743,7 +870,7 @@ func convertMethod(n *ast.FuncDecl, stats *Statistics) map[string]interface{} {
 		"methodName":   n.Name.Name,
 		"mparams":      convertParams(n.Type.Params, stats),
 		"mreturnType":  convertReturnType(n.Type.Results, stats),
-		"mbody":        convertToXLang(n.Body, stats),
+		"mbody":        body,
 		"methodIsAsync": false,
 	}
 }

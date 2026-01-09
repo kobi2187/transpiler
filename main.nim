@@ -22,6 +22,7 @@ type
     outputJson*: bool
     useStdout*: bool
     sameDir*: bool
+    xlangOutput*: bool
 
 # =============================================================================
 # File Collection Helpers
@@ -78,7 +79,8 @@ proc initDefaultOptions(): CliOptions =
     skipTransforms: false,
     outputJson: false,
     useStdout: false,
-    sameDir: false
+    sameDir: false,
+    xlangOutput: false
   )
 
 proc applyArgument(opts: var CliOptions, arg: string) =
@@ -95,6 +97,7 @@ proc applyOption(opts: var CliOptions, key, val: string) =
   of "output-json", "j": opts.outputJson = true
   of "stdout", "s": opts.useStdout = true
   of "same-dir", "d": opts.sameDir = true
+  of "xlang": opts.xlangOutput = true
   else: discard
 
 proc parseCliOptions(): CliOptions =
@@ -215,7 +218,8 @@ proc buildPipelineConfig(opts: CliOptions): PipelineConfig =
     skipTransforms: opts.skipTransforms,
     outputJson: opts.outputJson,
     useStdout: opts.useStdout,
-    sameDir: opts.sameDir
+    sameDir: opts.sameDir,
+    xlangOutput: opts.xlangOutput
   )
 
 # =============================================================================
