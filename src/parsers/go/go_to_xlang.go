@@ -13,9 +13,11 @@ import (
 )
 
 type Statistics struct {
-	Constructs   map[string]int
-	CurrentFile  string
-	contextStack []string
+	Constructs      map[string]int
+	CurrentFile     string
+	contextStack    []string
+	UnhandledTypes  map[string]int  // Track types of unhandled nodes
+	UnhandledSamples []string        // Sample file locations
 }
 
 func (s *Statistics) pushContext(ctx string) {
@@ -101,7 +103,11 @@ func main() {
 	}
 
 	path := os.Args[1]
-	stats := &Statistics{Constructs: make(map[string]int)}
+	stats := &Statistics{
+		Constructs:      make(map[string]int),
+		UnhandledTypes:  make(map[string]int),
+		UnhandledSamples: []string{},
+	}
 
 	err := processPath(path, stats)
 	if err != nil {
@@ -485,6 +491,12 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 			"labeledStmt": convertToXLang(n.Stmt, stats),
 		}
 
+	case *ast.EmptyStmt:
+		stats.Constructs["xnkEmptyStmt"]++
+		return map[string]interface{}{
+			"kind": "xnkEmptyStmt",
+		}
+
 	case *ast.IncDecStmt:
 		// Convert to unary expression (Go's ++ and -- are statements, always post)
 		stats.Constructs["xnkUnaryExpr"]++
@@ -586,6 +598,19 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 			"kind":       "xnkIndexExpr",
 			"indexExpr":  convertToXLang(n.X, stats),
 			"indexArgs":  []interface{}{convertToXLang(n.Index, stats)},
+		}
+
+	case *ast.IndexListExpr:
+		// Multiple indices for generics: Map[K, V]
+		stats.Constructs["xnkIndexExpr"]++
+		indices := []interface{}{}
+		for _, idx := range n.Indices {
+			indices = append(indices, convertToXLang(idx, stats))
+		}
+		return map[string]interface{}{
+			"kind":       "xnkIndexExpr",
+			"indexExpr":  convertToXLang(n.X, stats),
+			"indexArgs":  indices,
 		}
 
 	case *ast.SliceExpr:
@@ -845,9 +870,14 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 
 	default:
 		stats.Constructs["Unhandled"]++
+		typeName := fmt.Sprintf("%T", n)
+		stats.UnhandledTypes[typeName]++
+		if len(stats.UnhandledSamples) < 10 {
+			stats.UnhandledSamples = append(stats.UnhandledSamples, fmt.Sprintf("%s: %s", stats.CurrentFile, typeName))
+		}
 		return map[string]interface{}{
 			"kind":       "xnkUnknown",
-			"syntaxKind": fmt.Sprintf("%T", n),
+			"syntaxKind": typeName,
 		}
 	}
 
@@ -1220,4 +1250,17 @@ func printStatistics(stats *Statistics) {
 		fmt.Printf("%-25s: %d\n", construct, count)
 	}
 	fmt.Printf("\nTotal XLang node types: %d\n", len(stats.Constructs))
+
+	// Print unhandled types breakdown
+	if len(stats.UnhandledTypes) > 0 {
+		fmt.Println("\nUnhandled AST Node Types:")
+		fmt.Println("=========================")
+		for typeName, count := range stats.UnhandledTypes {
+			fmt.Printf("%-40s: %d\n", typeName, count)
+		}
+		fmt.Println("\nSample locations:")
+		for _, sample := range stats.UnhandledSamples {
+			fmt.Printf("  %s\n", sample)
+		}
+	}
 }

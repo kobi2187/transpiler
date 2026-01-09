@@ -47,6 +47,7 @@ type
     opBitAnd = "bitand"        # & (bitwise AND)
     opBitOr = "bitor"          # | (bitwise OR)
     opBitXor = "bitxor"        # ^ (bitwise XOR)
+    opBitAndNot = "bitandnot"  # &^ (bit clear, Go: a & ~b)
     opShiftLeft = "shl"        # << (left shift)
     opShiftRight = "shr"       # >> (right shift)
     opShiftRightUnsigned = "shru"  # >>> (unsigned right shift, Java/JavaScript)

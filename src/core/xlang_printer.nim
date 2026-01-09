@@ -48,6 +48,7 @@ proc binaryOpStr(op: BinaryOp): string =
   of opBitAnd: "&"
   of opBitOr: "|"
   of opBitXor: "^"
+  of opBitAndNot: "&^"
   of opShiftLeft: "shl"
   of opShiftRight: "shr"
   of opShiftRightUnsigned: "shru"

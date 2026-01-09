@@ -1067,9 +1067,10 @@ proc binaryOpToNim(op: BinaryOp): string =
   of opIntDiv: "div"
 
   # Bitwise
-  of opBitAnd: "and"
-  of opBitOr: "or"
-  of opBitXor: "xor"
+  of opBitAnd: "bitand"
+  of opBitOr: "bitor"
+  of opBitXor: "bitxor"
+  of opBitAndNot: ""  # Handled specially in conv_xnkBinaryExpr
   of opShiftLeft: "shl"
   of opShiftRight: "shr"
   of opShiftRightUnsigned: "shr"  # Nim doesn't distinguish signed/unsigned shift
@@ -1130,11 +1131,22 @@ proc unaryOpToNim(op: UnaryOp): string =
   of opChannelReceive: "recv" # Go channel receive, needs lowering to channel lib
 
 proc conv_xnkBinaryExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
-  result = newNimNode(nnkInfix)
-  # nnkInfix structure: [operator, left, right]
-  result.add(newIdentNode(binaryOpToNim(node.binaryOp)))
-  result.add(convertToNimAST(node.binaryLeft, ctx))
-  result.add(convertToNimAST(node.binaryRight, ctx))
+  # Special case for Go's bit clear operator: a &^ b = a & ~b
+  if node.binaryOp == opBitAndNot:
+    # Generate: bitand(a, bitnot(b))
+    result = newNimNode(nnkCall)
+    result.add(newIdentNode("bitand"))
+    result.add(convertToNimAST(node.binaryLeft, ctx))
+    let bitnotCall = newNimNode(nnkCall)
+    bitnotCall.add(newIdentNode("bitnot"))
+    bitnotCall.add(convertToNimAST(node.binaryRight, ctx))
+    result.add(bitnotCall)
+  else:
+    result = newNimNode(nnkInfix)
+    # nnkInfix structure: [operator, left, right]
+    result.add(newIdentNode(binaryOpToNim(node.binaryOp)))
+    result.add(convertToNimAST(node.binaryLeft, ctx))
+    result.add(convertToNimAST(node.binaryRight, ctx))
 
 proc conv_xnkUnaryExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   # Handle increment/decrement specially as they need statement conversion
@@ -1943,6 +1955,11 @@ proc conv_xnkArrowFunc(node: XLangNode, ctx: TransformContext): MyNimNode =
 ## TypeScript: `x as string`
 ## Nim: `x`  (type assertion not needed at runtime)
 proc conv_xnkTypeAssertion(node: XLangNode, ctx: TransformContext): MyNimNode =
+  # Check if assertType is nil (malformed type assertion from error cases)
+  if node.assertType.isNil():
+    # Just return the expression without type assertion
+    return convertToNimAST(node.assertExpr, ctx)
+
   # Check if this is a null check: `x is null`
   if node.assertType.kind == xnkNamedType and node.assertType.typeName == "null":
     # Convert to: x == nil

@@ -980,14 +980,39 @@ partial class Program
 
     static JObject ConvertIf(IfStatementSyntax ifStmt)
     {
+        // Collect elif branches
+        var elifBranches = new JArray();
+        JToken elseBody = JValue.CreateNull();
+
+        // Walk the else chain to collect elif branches
+        var current = ifStmt.Else;
+        while (current != null)
+        {
+            if (current.Statement is IfStatementSyntax elseIfStmt)
+            {
+                // This is an elif branch
+                elifBranches.Add(new JObject
+                {
+                    ["condition"] = ConvertExpression(elseIfStmt.Condition),
+                    ["body"] = ConvertStatement(elseIfStmt.Statement)
+                });
+                current = elseIfStmt.Else;
+            }
+            else
+            {
+                // This is the final else block
+                elseBody = ConvertStatement(current.Statement);
+                break;
+            }
+        }
+
         return new JObject
         {
             ["kind"] = "xnkIfStmt",
             ["ifCondition"] = ConvertExpression(ifStmt.Condition),
             ["ifBody"] = ConvertStatement(ifStmt.Statement),
-            ["elseBody"] = ifStmt.Else != null
-                ? ConvertStatement(ifStmt.Else.Statement)
-                : JValue.CreateNull()
+            ["elifBranches"] = elifBranches,
+            ["elseBody"] = elseBody
         };
     }
 
