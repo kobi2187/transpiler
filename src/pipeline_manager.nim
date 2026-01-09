@@ -149,15 +149,15 @@ proc run*(pipeline: TranspilationPipeline): PipelineResult =
 
   # Step 2.8: Generate XLang text file for debugging
   # Only output xlang text file if both verbose and xlangOutput are enabled
-  if verbose and pipeline.config.xlangOutput:
-    try:
-      let xlangTextPath = inputFile.changeFileExt("xlang")
-      let xlangText = printXlang(xlangAst)
-      writeFile(xlangTextPath, xlangText)
-      echo "✓ Generated XLang text: ", xlangTextPath
-    except Exception as e:
-      # Non-fatal - just warn and continue
-      echo "WARNING: Failed to write .xlang file: ", e.msg
+  # if verbose and pipeline.config.xlangOutput:
+  try:
+    let xlangTextPath = inputFile.changeFileExt("xlang")
+    let xlangText = printXlang(xlangAst)
+    writeFile(xlangTextPath, xlangText)
+    echo "✓ Generated XLang text: ", xlangTextPath
+  except Exception as e:
+    # Non-fatal - just warn and continue
+    echo "WARNING: Failed to write .xlang file: ", e.msg
 
   # Step 3: Convert XLang AST to Nim AST and generate code
   var code: string

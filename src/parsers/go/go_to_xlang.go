@@ -13,11 +13,11 @@ import (
 )
 
 type Statistics struct {
-	Constructs      map[string]int
-	CurrentFile     string
-	contextStack    []string
-	UnhandledTypes  map[string]int  // Track types of unhandled nodes
-	UnhandledSamples []string        // Sample file locations
+	Constructs       map[string]int
+	CurrentFile      string
+	contextStack     []string
+	UnhandledTypes   map[string]int // Track types of unhandled nodes
+	UnhandledSamples []string       // Sample file locations
 }
 
 func (s *Statistics) pushContext(ctx string) {
@@ -77,8 +77,8 @@ var unaryOpMap = map[string]string{
 	"^":  "bitnot", // Go uses ^ for bitwise NOT (unlike C which uses ~)
 	"*":  "deref",
 	"&":  "ref",
-	"++": "postinc", // Go's ++ is always post-increment (statement, not expr)
-	"--": "postdec", // Go's -- is always post-decrement (statement, not expr)
+	"++": "postinc",  // Go's ++ is always post-increment (statement, not expr)
+	"--": "postdec",  // Go's -- is always post-decrement (statement, not expr)
 	"<-": "chanrecv", // Go channel receive operator
 }
 
@@ -104,8 +104,8 @@ func main() {
 
 	path := os.Args[1]
 	stats := &Statistics{
-		Constructs:      make(map[string]int),
-		UnhandledTypes:  make(map[string]int),
+		Constructs:       make(map[string]int),
+		UnhandledTypes:   make(map[string]int),
 		UnhandledSamples: []string{},
 	}
 
@@ -298,9 +298,9 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 		// Regular assignment
 		if len(n.Lhs) > 0 && len(n.Rhs) > 0 {
 			return map[string]interface{}{
-				"kind":       "xnkAsgn",
-				"asgnLeft":   convertToXLang(n.Lhs[0], stats),
-				"asgnRight":  convertToXLang(n.Rhs[0], stats),
+				"kind":      "xnkAsgn",
+				"asgnLeft":  convertToXLang(n.Lhs[0], stats),
+				"asgnRight": convertToXLang(n.Rhs[0], stats),
 			}
 		}
 		return nil
@@ -595,9 +595,9 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 	case *ast.IndexExpr:
 		stats.Constructs["xnkIndexExpr"]++
 		return map[string]interface{}{
-			"kind":       "xnkIndexExpr",
-			"indexExpr":  convertToXLang(n.X, stats),
-			"indexArgs":  []interface{}{convertToXLang(n.Index, stats)},
+			"kind":      "xnkIndexExpr",
+			"indexExpr": convertToXLang(n.X, stats),
+			"indexArgs": []interface{}{convertToXLang(n.Index, stats)},
 		}
 
 	case *ast.IndexListExpr:
@@ -608,9 +608,9 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 			indices = append(indices, convertToXLang(idx, stats))
 		}
 		return map[string]interface{}{
-			"kind":       "xnkIndexExpr",
-			"indexExpr":  convertToXLang(n.X, stats),
-			"indexArgs":  indices,
+			"kind":      "xnkIndexExpr",
+			"indexExpr": convertToXLang(n.X, stats),
+			"indexArgs": indices,
 		}
 
 	case *ast.SliceExpr:
@@ -659,10 +659,10 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 	case *ast.FuncLit:
 		stats.Constructs["xnkLambdaExpr"]++
 		return map[string]interface{}{
-			"kind":       "xnkLambdaExpr",
-			"lambdaParams": convertParams(n.Type.Params, stats),
+			"kind":             "xnkLambdaExpr",
+			"lambdaParams":     convertParams(n.Type.Params, stats),
 			"lambdaReturnType": convertReturnType(n.Type.Results, stats),
-			"lambdaBody": convertToXLang(n.Body, stats),
+			"lambdaBody":       convertToXLang(n.Body, stats),
 		}
 
 	case *ast.TypeAssertExpr:
@@ -755,9 +755,9 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 			}
 		}
 		return map[string]interface{}{
-			"kind":                  "xnkExternal_GoTypeSwitch",
-			"extGoTypeSwitchExpr":   switchExpr,
-			"extGoTypeSwitchCases":  cases,
+			"kind":                 "xnkExternal_GoTypeSwitch",
+			"extGoTypeSwitchExpr":  switchExpr,
+			"extGoTypeSwitchCases": cases,
 		}
 
 	case *ast.ChanType:
@@ -779,7 +779,7 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 		// Variadic ... in function params or slice expansion
 		stats.Constructs["xnkExternal_GoVariadic"]++
 		return map[string]interface{}{
-			"kind":               "xnkExternal_GoVariadic",
+			"kind":                "xnkExternal_GoVariadic",
 			"extVariadicElemType": convertType(n.Elt, stats),
 		}
 
@@ -794,7 +794,6 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 
 	case *ast.InterfaceType:
 		// Interface type (used inline, not as declaration)
-		stats.Constructs["xnkInterfaceType"]++
 		members := []interface{}{}
 		if n.Methods != nil {
 			for _, method := range n.Methods.List {
@@ -811,14 +810,23 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 				}
 			}
 		}
-		return map[string]interface{}{
-			"kind":    "xnkInterfaceType",
-			"members": members,
+
+		// Check if this is an empty interface (interface{})
+		if len(members) == 0 {
+			stats.Constructs["xnkExternal_GoEmptyInterfaceType"]++
+			return map[string]interface{}{
+				"kind": "xnkExternal_GoEmptyInterfaceType",
+			}
+		} else {
+			stats.Constructs["xnkInterfaceType"]++
+			return map[string]interface{}{
+				"kind":    "xnkInterfaceType",
+				"members": members,
+			}
 		}
 
 	case *ast.StructType:
 		// Struct type (used inline, not as declaration)
-		stats.Constructs["xnkStructType"]++
 		members := []interface{}{}
 		if n.Fields != nil {
 			for _, field := range n.Fields.List {
@@ -842,9 +850,19 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 				}
 			}
 		}
-		return map[string]interface{}{
-			"kind":    "xnkStructType",
-			"members": members,
+
+		// Check if this is an empty struct (struct{})
+		if len(members) == 0 {
+			stats.Constructs["xnkExternal_GoEmptyStructType"]++
+			return map[string]interface{}{
+				"kind": "xnkExternal_GoEmptyStructType",
+			}
+		} else {
+			stats.Constructs["xnkStructType"]++
+			return map[string]interface{}{
+				"kind":    "xnkStructType",
+				"members": members,
+			}
 		}
 
 	case *ast.ArrayType:
@@ -929,12 +947,12 @@ func convertMethod(n *ast.FuncDecl, stats *Statistics) map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"kind":         "xnkMethodDecl",
-		"receiver":     receiverNode,
-		"methodName":   n.Name.Name,
-		"mparams":      convertParams(n.Type.Params, stats),
-		"mreturnType":  convertReturnType(n.Type.Results, stats),
-		"mbody":        body,
+		"kind":          "xnkMethodDecl",
+		"receiver":      receiverNode,
+		"methodName":    n.Name.Name,
+		"mparams":       convertParams(n.Type.Params, stats),
+		"mreturnType":   convertReturnType(n.Type.Results, stats),
+		"mbody":         body,
 		"methodIsAsync": false,
 	}
 }
@@ -1148,7 +1166,7 @@ func convertCaseClause(clause *ast.CaseClause, stats *Statistics) map[string]int
 	// If no values, it's the default case
 	if len(values) == 0 {
 		return map[string]interface{}{
-			"kind":        "xnkDefaultClause",
+			"kind": "xnkDefaultClause",
 			"defaultBody": map[string]interface{}{
 				"kind":      "xnkBlockStmt",
 				"blockBody": body,
@@ -1182,8 +1200,8 @@ func convertCommClause(clause *ast.CommClause, stats *Statistics) map[string]int
 	// Default case in select
 	if clause.Comm == nil {
 		return map[string]interface{}{
-			"kind":             "xnkExternal_GoCommClause",
-			"extCommOp":        nil,
+			"kind":      "xnkExternal_GoCommClause",
+			"extCommOp": nil,
 			"extCommBody": map[string]interface{}{
 				"kind":      "xnkBlockStmt",
 				"blockBody": body,
@@ -1193,8 +1211,8 @@ func convertCommClause(clause *ast.CommClause, stats *Statistics) map[string]int
 	}
 
 	return map[string]interface{}{
-		"kind":             "xnkExternal_GoCommClause",
-		"extCommOp":        convertToXLang(clause.Comm, stats),
+		"kind":      "xnkExternal_GoCommClause",
+		"extCommOp": convertToXLang(clause.Comm, stats),
 		"extCommBody": map[string]interface{}{
 			"kind":      "xnkBlockStmt",
 			"blockBody": body,
@@ -1222,8 +1240,8 @@ func convertTypeSwitchCase(clause *ast.CaseClause, stats *Statistics) map[string
 	// Default case
 	if len(types) == 0 {
 		return map[string]interface{}{
-			"kind":                 "xnkExternal_GoTypeCase",
-			"extTypeCaseTypes":     nil,
+			"kind":             "xnkExternal_GoTypeCase",
+			"extTypeCaseTypes": nil,
 			"extTypeCaseBody": map[string]interface{}{
 				"kind":      "xnkBlockStmt",
 				"blockBody": body,
@@ -1233,8 +1251,8 @@ func convertTypeSwitchCase(clause *ast.CaseClause, stats *Statistics) map[string
 	}
 
 	return map[string]interface{}{
-		"kind":                 "xnkExternal_GoTypeCase",
-		"extTypeCaseTypes":     types,
+		"kind":             "xnkExternal_GoTypeCase",
+		"extTypeCaseTypes": types,
 		"extTypeCaseBody": map[string]interface{}{
 			"kind":      "xnkBlockStmt",
 			"blockBody": body,

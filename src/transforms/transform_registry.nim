@@ -67,6 +67,7 @@ import passes/from_python/python_type_hints
 import passes/from_go/go_panic_recover
 import passes/from_go/go_type_assertions
 import passes/from_go/go_implicit_interfaces
+import passes/from_go/go_empty_types
 import passes/from_python/python_multiple_inheritance
 
 # Helper template to convert transform functions to closures
@@ -153,6 +154,8 @@ proc loadGoTransforms*() =
   globalTransformRegistry[tpGoConcurrency] = newTransformPass(tpGoConcurrency, toClosure(transformGoStatement), @[])
   globalTransformRegistry[tpGoTypeAssertions] = newTransformPass(tpGoTypeAssertions, toClosure(transformGoTypeAssertions), @[])
   globalTransformRegistry[tpGoImplicitInterfaces] = newTransformPass(tpGoImplicitInterfaces, toClosure(transformGoImplicitInterfaces), @[])
+  globalTransformRegistry[tpGoEmptyInterfaceType] = newTransformPass(tpGoEmptyInterfaceType, toClosure(transformGoEmptyTypes), @[xnkExternal_GoEmptyInterfaceType])
+  globalTransformRegistry[tpGoEmptyStructType] = newTransformPass(tpGoEmptyStructType, toClosure(transformGoEmptyTypes), @[xnkExternal_GoEmptyStructType])
   globalTransformRegistry[tpGoPanicRecover] = newTransformPass(tpGoPanicRecover, toClosure(transformGoPanicRecover), @[])
 
 proc loadPythonTransforms*() =

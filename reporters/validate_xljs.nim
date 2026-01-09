@@ -1,6 +1,6 @@
 import os, tables, strutils, sequtils, algorithm, times
-import xlangtypes
-import jsontoxlangtypes
+import core/xlangtypes
+import core/jsontoxlangtypes
 
 type
   ValidationError* = object

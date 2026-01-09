@@ -250,6 +250,8 @@ type
     xnkExternal_GoTypeCase        # Go type case clause in type switch
     xnkExternal_GoTaglessSwitch   # Go tagless switch: switch { case cond: ... }
     xnkExternal_GoVariadic        # Go variadic parameter type: ...T
+    xnkExternal_GoEmptyInterfaceType  # Go empty interface{} type literal → lowered to object (Nim) or object (C#)
+    xnkExternal_GoEmptyStructType     # Go empty struct{} type literal → lowered to void (Nim) or EmptyStruct (C#)
 
     # C# 9+ Features
     xnkExternal_Record          # C# record type → lowered to struct/class with value equality
@@ -512,6 +514,7 @@ type
       discard
     of xnkNamedType:
       typeName*: string
+      isEmptyMarkerType*: Option[bool]  # Some(true) for Go empty interface{}/struct{} markers
     of xnkArrayType:
       elementType*: XLangNode
       arraySize*: Option[XLangNode]
@@ -1025,6 +1028,12 @@ type
     of xnkExternal_GoVariadic:
       extVariadicElemType*: XLangNode    # element type of the variadic
 
+    # Go empty type literals
+    of xnkExternal_GoEmptyInterfaceType:  # Go interface{} type literal
+      discard
+    of xnkExternal_GoEmptyStructType:     # Go struct{} type literal
+      discard
+
     # C# record
     of xnkExternal_Record:
       extRecordName*: string
@@ -1255,8 +1264,8 @@ proc `$`*(node: XLangNode): string =
      xnkExternal_FallthroughCase, xnkExternal_Unless, xnkExternal_Until,
      xnkExternal_Pass, xnkExternal_Goroutine, xnkExternal_GoDefer,
      xnkExternal_GoSelect, xnkExternal_GoCommClause, xnkExternal_GoChannelSend,
-     xnkExternal_GoChanType, xnkExternal_GoTypeSwitch, xnkExternal_GoTypeCase,
-     xnkExternal_GoVariadic:
+      xnkExternal_GoChanType, xnkExternal_GoTypeSwitch, xnkExternal_GoTypeCase,
+      xnkExternal_GoVariadic, xnkExternal_GoEmptyInterfaceType, xnkExternal_GoEmptyStructType:
     discard
     
 
