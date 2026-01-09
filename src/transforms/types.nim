@@ -14,6 +14,7 @@ type TransformPassID* = enum
     tpForToWhile = "for-to-while"
     tpDoWhileToWhile = "dowhile-to-while"
     tpTernaryToIf = "ternary-to-if"
+    tpGoTaglessSwitchToIf = "go-tagless-switch-to-if"
     tpNimInterfaceToConcept = "nim-interface-to-concept"
     tpPropertyToProcs = "property-to-procs"
     tpSwitchFallthrough = "switch-fallthrough"

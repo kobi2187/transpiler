@@ -549,10 +549,21 @@ proc conv_xnkVarLetConst(node: XLangNode, ctx: TransformContext): MyNimNode =
 
 proc conv_xnkIfStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkIfStmt)
+
+  # Main if branch
   let branchNode = newNimNode(nnkElifBranch)
   branchNode.add(convertToNimAST(node.ifCondition, ctx))
   branchNode.add(convertToNimAST(node.ifBody, ctx))
   result.add(branchNode)
+
+  # Elif branches
+  for elifBranch in node.elifBranches:
+    let elifNode = newNimNode(nnkElifBranch)
+    elifNode.add(convertToNimAST(elifBranch.condition, ctx))
+    elifNode.add(convertToNimAST(elifBranch.body, ctx))
+    result.add(elifNode)
+
+  # Else branch
   if node.elseBody.isSome():
     let elseNode = newNimNode(nnkElse)
     elseNode.add(convertToNimAST(node.elseBody.get, ctx))
@@ -2356,7 +2367,17 @@ proc convertToNimAST(node: XLangNode, ctx: TransformContext = nil): MyNimNode =
   # Check for nil node
   if node.isNil:
     let fileInfo = if not ctx.isNil and ctx.currentFile != "": " in " & ctx.currentFile else: ""
-    echo "WARNING: convertToNimAST called with nil node", fileInfo
+
+    # Print context stack to understand where the nil came from
+    if not ctx.isNil and ctx.conversion.nodeStack.len > 0:
+      echo "WARNING: convertToNimAST called with nil node", fileInfo
+      echo "  Context stack (parent nodes):"
+      for i in countdown(ctx.conversion.nodeStack.len - 1, max(0, ctx.conversion.nodeStack.len - 3)):
+        let parentNode = ctx.conversion.nodeStack[i]
+        echo "    [", i, "] kind=", parentNode.kind, " (checking which field had nil...)"
+    else:
+      echo "WARNING: convertToNimAST called with nil node", fileInfo, " (no context available)"
+
     return newNimNode(nnkDiscardStmt)
 
   # Create temporary context if none provided (for backward compatibility)

@@ -61,6 +61,7 @@ import passes/pattern_matching
 import passes/from_go/go_error_handling
 import passes/from_go/go_defer
 import passes/from_go/go_concurrency
+import passes/from_go/go_tagless_switch
 import passes/from_python/python_generators
 import passes/from_python/python_type_hints
 import passes/from_go/go_panic_recover
@@ -91,6 +92,7 @@ proc loadExternalTransforms*() =
   globalTransformRegistry[tpTernaryToIf] = newTransformPass(tpTernaryToIf, toClosure(transformTernaryToIf), @[xnkExternal_Ternary])
   globalTransformRegistry[tpSwitchExprToCase] = newTransformPass(tpSwitchExprToCase, toClosure(transformSwitchExprToCase), @[xnkExternal_SwitchExpr])
   globalTransformRegistry[tpSwitchFallthrough] = newTransformPass(tpSwitchFallthrough, toClosure(transformSwitchFallthrough), @[])
+  globalTransformRegistry[tpGoTaglessSwitchToIf] = newTransformPass(tpGoTaglessSwitchToIf, toClosure(transformGoTaglessSwitch), @[xnkExternal_GoTaglessSwitch])
 
   # OOP feature lowering
   globalTransformRegistry[tpNimInterfaceToConcept] = newTransformPass(tpNimInterfaceToConcept, toClosure(transformInterfaceToConcept), @[xnkExternal_Interface])

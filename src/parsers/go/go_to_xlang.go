@@ -301,16 +301,39 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 
 	case *ast.IfStmt:
 		stats.Constructs["xnkIfStmt"]++
-		result := map[string]interface{}{
-			"kind":        "xnkIfStmt",
-			"ifCondition": convertToXLang(n.Cond, stats),
-			"ifBody":      convertToXLang(n.Body, stats),
-			"elseBody":    nil,
+
+		// Collect elif branches
+		elifBranches := []interface{}{}
+		var elseBody interface{} = nil
+
+		// Walk the else chain to collect elif branches
+		current := n.Else
+		for current != nil {
+			if elseIf, ok := current.(*ast.IfStmt); ok {
+				// This is an elif branch
+				elifBranches = append(elifBranches, map[string]interface{}{
+					"condition": convertToXLang(elseIf.Cond, stats),
+					"body":      convertToXLang(elseIf.Body, stats),
+				})
+				current = elseIf.Else
+			} else if blockStmt, ok := current.(*ast.BlockStmt); ok {
+				// This is the final else block
+				elseBody = convertToXLang(blockStmt, stats)
+				break
+			} else {
+				// Shouldn't happen, but handle it
+				elseBody = convertToXLang(current, stats)
+				break
+			}
 		}
-		if n.Else != nil {
-			result["elseBody"] = convertToXLang(n.Else, stats)
+
+		return map[string]interface{}{
+			"kind":         "xnkIfStmt",
+			"ifCondition":  convertToXLang(n.Cond, stats),
+			"ifBody":       convertToXLang(n.Body, stats),
+			"elifBranches": elifBranches,
+			"elseBody":     elseBody,
 		}
-		return result
 
 	case *ast.ForStmt:
 		if n.Init == nil && n.Post == nil {
@@ -381,7 +404,6 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 		}
 
 	case *ast.SwitchStmt:
-		stats.Constructs["xnkSwitchStmt"]++
 		cases := []interface{}{}
 		if n.Body != nil {
 			for _, stmt := range n.Body.List {
@@ -390,6 +412,18 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 				}
 			}
 		}
+
+		// Check if this is a tagless switch (switch without expression)
+		if n.Tag == nil {
+			stats.Constructs["xnkExternal_GoTaglessSwitch"]++
+			return map[string]interface{}{
+				"kind":                    "xnkExternal_GoTaglessSwitch",
+				"extGoTaglessSwitchCases": cases,
+			}
+		}
+
+		// Regular switch with expression
+		stats.Constructs["xnkSwitchStmt"]++
 		return map[string]interface{}{
 			"kind":        "xnkSwitchStmt",
 			"switchExpr":  convertToXLang(n.Tag, stats),

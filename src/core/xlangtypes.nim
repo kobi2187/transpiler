@@ -245,9 +245,10 @@ type
     xnkExternal_GoCommClause    # Go select case (communication clause)
     xnkExternal_GoChannelSend   # Go channel send: ch <- value
     xnkExternal_GoChanType      # Go channel type: chan T, <-chan T, chan<- T
-    xnkExternal_GoTypeSwitch    # Go type switch: switch x.(type) { }
-    xnkExternal_GoTypeCase      # Go type case clause in type switch
-    xnkExternal_GoVariadic      # Go variadic parameter type: ...T
+    xnkExternal_GoTypeSwitch      # Go type switch: switch x.(type) { }
+    xnkExternal_GoTypeCase        # Go type case clause in type switch
+    xnkExternal_GoTaglessSwitch   # Go tagless switch: switch { case cond: ... }
+    xnkExternal_GoVariadic        # Go variadic parameter type: ...T
 
     # C# 9+ Features
     xnkExternal_Record          # C# record type → lowered to struct/class with value equality
@@ -333,6 +334,7 @@ type
     of xnkIfStmt:
       ifCondition*: XLangNode
       ifBody*: XLangNode
+      elifBranches*: seq[tuple[condition: XLangNode, body: XLangNode]]
       elseBody*: Option[XLangNode]
     of xnkSwitchStmt:
       switchExpr*: XLangNode
@@ -1014,6 +1016,10 @@ type
       extTypeCaseBody*: XLangNode        # body of the case
       extTypeCaseIsDefault*: bool        # true if this is the default case
 
+    # Go tagless switch: switch { case cond: ... }
+    of xnkExternal_GoTaglessSwitch:
+      extGoTaglessSwitchCases*: seq[XLangNode]  # case clauses (xnkCaseClause/xnkDefaultClause)
+
     # Go variadic parameter type: ...T
     of xnkExternal_GoVariadic:
       extVariadicElemType*: XLangNode    # element type of the variadic
@@ -1212,6 +1218,8 @@ proc `$`*(node: XLangNode): string =
     result &= "(" & node.extExtMethodName & ")"
   of xnkExternal_Channel:
     result &= "(" & (if node.extChannelBuffered: "buffered" else: "unbuffered") & ")"
+  of xnkExternal_GoTaglessSwitch:
+    result &= "(" & $node.extGoTaglessSwitchCases.len & " cases)"
 
   # Statements and expressions with no meaningful string fields to display
   of xnkConstructorDecl, xnkDestructorDecl, xnkAsgn, xnkBlockStmt, xnkIfStmt,
@@ -1281,6 +1289,7 @@ const externalKinds*: set[XLangNodeKind] = {
   xnkExternal_GoChanType,       # Go channel type
   xnkExternal_GoTypeSwitch,     # Go type switch
   xnkExternal_GoTypeCase,       # Go type case
+  xnkExternal_GoTaglessSwitch,  # Go tagless switch
   xnkExternal_GoVariadic        # Go variadic type
 }
 

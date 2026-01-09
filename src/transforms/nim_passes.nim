@@ -23,6 +23,7 @@ const nimDefaultPassIDs* = @[
   tpTernaryToIf,
   tpSwitchExprToCase,
   tpSwitchFallthrough,
+  tpGoTaglessSwitchToIf,
 
   # OOP feature lowering
   tpNimInterfaceToConcept,

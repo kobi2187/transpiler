@@ -1208,6 +1208,11 @@ proc printNode(node: XLangNode, indent: int): string =
       result = i & "| " & seqNodes(node.extTypeCaseTypes, 0, ", ") & ":\n"
     result &= printNode(node.extTypeCaseBody, indent + 2)
 
+  of xnkExternal_GoTaglessSwitch:
+    result = i & "switch (tagless)\n"
+    for c in node.extGoTaglessSwitchCases:
+      result &= printNode(c, indent)
+
   of xnkExternal_GoVariadic:
     result = "..." & printNode(node.extVariadicElemType, 0)
 
