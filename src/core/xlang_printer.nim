@@ -1217,12 +1217,6 @@ proc printNode(node: XLangNode, indent: int): string =
   of xnkExternal_GoVariadic:
     result = "..." & printNode(node.extVariadicElemType, 0)
 
-  of xnkExternal_GoEmptyInterfaceType:
-    result = i & "interface{}"
-
-  of xnkExternal_GoEmptyStructType:
-    result = i & "struct{}"
-
   of xnkExternal_Record:
     result = i & "record " & node.extRecordName & "\n"
     result &= i & "| kind: record\n"
@@ -1239,6 +1233,18 @@ proc printNode(node: XLangNode, indent: int): string =
   of xnkExternal_RecordWith:
     result = printNode(node.extWithExpression, 0) & " with\n"
     result &= printNode(node.extWithInitializer, indent)
+
+  of xnkExternal_GoEmptyInterfaceType:
+    result = i & "interface{}"
+
+  of xnkExternal_GoEmptyStructType:
+    result = i & "struct{}"
+
+  of xnkInlineStruct:
+    result = i & "inline struct(" & $node.inlineMembers.len & " members)"
+
+  of xnkInlineInterface:
+    result = i & "inline interface(" & $node.inlineMembers.len & " methods)"
 
   of xnkUnknown:
     result = i & "# unknown: " & node.unknownData

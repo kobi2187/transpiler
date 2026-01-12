@@ -13,11 +13,12 @@ import (
 )
 
 type Statistics struct {
-	Constructs       map[string]int
-	CurrentFile      string
-	contextStack     []string
-	UnhandledTypes   map[string]int // Track types of unhandled nodes
-	UnhandledSamples []string       // Sample file locations
+	Constructs           map[string]int
+	CurrentFile          string
+	contextStack         []string
+	UnhandledTypes       map[string]int // Track types of unhandled nodes
+	UnhandledSamples     []string       // Sample file locations
+	AnonymousTypeCounter int            // Counter for generating unique names for anonymous types
 }
 
 func (s *Statistics) pushContext(ctx string) {
@@ -104,9 +105,10 @@ func main() {
 
 	path := os.Args[1]
 	stats := &Statistics{
-		Constructs:       make(map[string]int),
-		UnhandledTypes:   make(map[string]int),
-		UnhandledSamples: []string{},
+		Constructs:           make(map[string]int),
+		UnhandledTypes:       make(map[string]int),
+		UnhandledSamples:     []string{},
+		AnonymousTypeCounter: 0,
 	}
 
 	err := processPath(path, stats)
@@ -818,9 +820,11 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 				"kind": "xnkExternal_GoEmptyInterfaceType",
 			}
 		} else {
-			stats.Constructs["xnkInterfaceType"]++
+			// Non-empty inline interface: generate an inline interface type
+			// This represents an anonymous interface type used inline
+			stats.Constructs["xnkInlineInterface"]++
 			return map[string]interface{}{
-				"kind":    "xnkInterfaceType",
+				"kind":    "xnkInlineInterface",
 				"members": members,
 			}
 		}
@@ -858,9 +862,11 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 				"kind": "xnkExternal_GoEmptyStructType",
 			}
 		} else {
-			stats.Constructs["xnkStructType"]++
+			// Non-empty inline struct: generate an inline struct type
+			// This represents an anonymous struct type used inline
+			stats.Constructs["xnkInlineStruct"]++
 			return map[string]interface{}{
-				"kind":    "xnkStructType",
+				"kind":    "xnkInlineStruct",
 				"members": members,
 			}
 		}

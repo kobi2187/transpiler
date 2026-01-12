@@ -154,8 +154,7 @@ proc loadGoTransforms*() =
   globalTransformRegistry[tpGoConcurrency] = newTransformPass(tpGoConcurrency, toClosure(transformGoStatement), @[])
   globalTransformRegistry[tpGoTypeAssertions] = newTransformPass(tpGoTypeAssertions, toClosure(transformGoTypeAssertions), @[])
   globalTransformRegistry[tpGoImplicitInterfaces] = newTransformPass(tpGoImplicitInterfaces, toClosure(transformGoImplicitInterfaces), @[])
-  globalTransformRegistry[tpGoEmptyInterfaceType] = newTransformPass(tpGoEmptyInterfaceType, toClosure(transformGoEmptyTypes), @[xnkExternal_GoEmptyInterfaceType])
-  globalTransformRegistry[tpGoEmptyStructType] = newTransformPass(tpGoEmptyStructType, toClosure(transformGoEmptyTypes), @[xnkExternal_GoEmptyStructType])
+  globalTransformRegistry[tpGoEmptyInterfaceType] = newTransformPass(tpGoEmptyInterfaceType, toClosure(transformGoEmptyTypes), @[xnkExternal_GoEmptyInterfaceType, xnkExternal_GoEmptyStructType, xnkInlineStruct, xnkInlineInterface])
   globalTransformRegistry[tpGoPanicRecover] = newTransformPass(tpGoPanicRecover, toClosure(transformGoPanicRecover), @[])
 
 proc loadPythonTransforms*() =

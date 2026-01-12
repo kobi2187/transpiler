@@ -160,6 +160,7 @@ type
     # Types
     xnkNamedType, xnkArrayType, xnkMapType, xnkFuncType, xnkPointerType
     xnkReferenceType, xnkGenericType, xnkUnionType, xnkIntersectionType, xnkDistinctType, xnkTupleType
+    xnkInlineStruct, xnkInlineInterface
 
     # Other
     xnkIdentifier, xnkComment, xnkImport, xnkExport, xnkAttribute
@@ -300,6 +301,8 @@ type
       typeNameDecl*: string
       baseTypes*: seq[XLangNode]
       members*: seq[XLangNode]
+    of xnkInlineStruct, xnkInlineInterface:
+      inlineMembers*: seq[XLangNode]
     of xnkEnumDecl:
       enumName*: string
       enumMembers*: seq[XLangNode]
@@ -1265,7 +1268,8 @@ proc `$`*(node: XLangNode): string =
      xnkExternal_Pass, xnkExternal_Goroutine, xnkExternal_GoDefer,
      xnkExternal_GoSelect, xnkExternal_GoCommClause, xnkExternal_GoChannelSend,
       xnkExternal_GoChanType, xnkExternal_GoTypeSwitch, xnkExternal_GoTypeCase,
-      xnkExternal_GoVariadic, xnkExternal_GoEmptyInterfaceType, xnkExternal_GoEmptyStructType:
+      xnkExternal_GoVariadic, xnkExternal_GoEmptyInterfaceType, xnkExternal_GoEmptyStructType,
+      xnkInlineStruct, xnkInlineInterface:
     discard
     
 
