@@ -1,0 +1,93 @@
+module sample.app
+| source: csharp
+| body:
+  import System
+  import System.Collections.Generic
+
+  class Calculator
+    | kind: class
+    | members:
+      value: int = 0
+
+      ctor
+        | params:
+          initialValue: int
+        | body:
+          self.value = initialValue
+
+      func add
+        | params:
+          a: int
+          b: int
+        | returns: int
+        | body:
+          return a + b
+
+      func multiply
+        | params:
+          x: int
+          y: int
+        | returns: int
+        | body:
+          return x * y
+
+      static func factorial
+        | params:
+          n: int
+        | returns: int
+        | body:
+          if n <= 1:
+            return 1
+          else:
+            return n * factorial(n - 1)
+
+  interface Printable
+    | kind: interface
+    | methods:
+      func toString
+        | returns: string
+
+  enum Color
+    | values:
+      Red = 0
+      Green = 1
+      Blue = 2
+
+  func main
+    | returns: int
+    | body:
+      var calc = Calculator(10)
+      let result = calc.add(5, 3)
+
+      if result > 5:
+        echo("Large result")
+      elif result == 5:
+        echo("Exactly 5")
+      else:
+        echo("Small result")
+
+      foreach i in range(0, 10):
+        echo(i)
+
+      match result
+        | 1:
+          echo("one")
+        | 2, 3:
+          echo("two or three")
+        | _:
+          echo("other")
+
+      try:
+        riskyOperation()
+      catch e: Exception:
+        echo("Error: " + e.message)
+      finally:
+        cleanup()
+
+      var numbers: List<int> = [1, 2, 3, 4, 5]
+      var mapping: Map<string, int> = {"a": 1, "b": 2}
+
+      lambda(x: int) -> int:
+        return x * 2
+
+      return 0
