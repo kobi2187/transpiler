@@ -292,6 +292,12 @@ type
       mreturnType*: Option[XLangNode]
       mbody*: XLangNode
       methodIsAsync*: bool
+      methodIsStatic*: bool
+      methodIsAbstract*: bool
+      methodIsFinal*: bool
+      methodIsPrivate*: bool
+      methodIsProtected*: bool
+      methodIsPublic*: bool
     of xnkIteratorDecl:
       iteratorName*: string
       iteratorParams*: seq[XLangNode]
@@ -301,11 +307,20 @@ type
       typeNameDecl*: string
       baseTypes*: seq[XLangNode]
       members*: seq[XLangNode]
+      typeIsStatic*: bool
+      typeIsFinal*: bool
+      typeIsAbstract*: bool
+      typeIsPrivate*: bool
+      typeIsProtected*: bool
+      typeIsPublic*: bool
     of xnkInlineStruct, xnkInlineInterface:
       inlineMembers*: seq[XLangNode]
     of xnkEnumDecl:
       enumName*: string
       enumMembers*: seq[XLangNode]
+      enumIsPrivate*: bool
+      enumIsProtected*: bool
+      enumIsPublic*: bool
     of xnkVarDecl, xnkLetDecl, xnkConstDecl:
       declName*: string
       declType*: Option[XLangNode]
@@ -322,10 +337,20 @@ type
       fieldName*: string
       fieldType*: XLangNode
       fieldInitializer*: Option[XLangNode]
+      fieldIsStatic*: bool
+      fieldIsFinal*: bool
+      fieldIsVolatile*: bool
+      fieldIsTransient*: bool
+      fieldIsPrivate*: bool
+      fieldIsProtected*: bool
+      fieldIsPublic*: bool
     of xnkConstructorDecl:
       constructorParams*: seq[XLangNode]
       constructorInitializers*: seq[XLangNode]
       constructorBody*: XLangNode
+      constructorIsPrivate*: bool
+      constructorIsProtected*: bool
+      constructorIsPublic*: bool
     of xnkDestructorDecl:
       destructorBody*: Option[XLangNode]
     # of xnkDelegateDecl:

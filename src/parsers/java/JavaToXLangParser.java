@@ -202,25 +202,29 @@ public class JavaToXLangParser {
         root.put("fileName", new File(filePath).getName());
         root.put("sourceLang", "java");
 
-        // Handle package declaration
+        ArrayNode declarations = mapper.createArrayNode();
+
+        // Add package declaration to moduleDecls (as first element if present)
         cu.getPackageDeclaration().ifPresent(pkg -> {
             incrementStat("PackageDeclaration");
-            root.set("packageDecl", convertPackageDeclaration(pkg));
+            declarations.add(convertPackageDeclaration(pkg));
         });
 
-        // Handle imports
+        // Add imports to moduleDecls
         if (cu.getImports().isNonEmpty()) {
-            root.set("imports", convertImports(cu.getImports()));
+            ArrayNode imports = convertImports(cu.getImports());
+            imports.forEach(declarations::add);
         }
 
         // Handle module declaration (Java 9+)
         cu.getModule().ifPresent(module -> {
             incrementStat("ModuleDeclaration");
-            root.set("moduleDecl", convertModuleDeclaration(module));
+            declarations.add(convertModuleDeclaration(module));
         });
 
-        ArrayNode declarations = mapper.createArrayNode();
+        // Add type declarations
         cu.getTypes().forEach(type -> declarations.add(convertTypeDeclaration(type)));
+
         root.set("moduleDecls", declarations);
 
         return root;
@@ -230,6 +234,9 @@ public class JavaToXLangParser {
         ObjectNode node = mapper.createObjectNode();
         node.put("kind", "xnkNamespace");
         node.put("namespaceName", pkg.getNameAsString());
+        // Java package declarations don't have a body - they're just labels
+        // But xlangtypes expects namespaceBody field, so provide empty array
+        node.set("namespaceBody", mapper.createArrayNode());
         return node;
     }
 
@@ -332,29 +339,22 @@ public class JavaToXLangParser {
                 // Sealed classes not supported in this JavaParser version
             }
 
-            // Base types (extends/implements) - always include even if empty
             ArrayNode baseTypes = mapper.createArrayNode();
             coid.getExtendedTypes().forEach(t -> baseTypes.add(convertType(t)));
             coid.getImplementedTypes().forEach(t -> baseTypes.add(convertType(t)));
             node.set("baseTypes", baseTypes);
 
-            // Members
             ArrayNode members = mapper.createArrayNode();
             coid.getMembers().forEach(member -> members.add(convertClassMember(member)));
             node.set("members", members);
 
-            // Generic type parameters
-            if (coid.getTypeParameters().isNonEmpty()) {
-                node.set("typeParameters", convertTypeParameters(coid.getTypeParameters()));
-            }
-
-            // Annotations
-            if (coid.getAnnotations().isNonEmpty()) {
-                node.set("decorators", convertAnnotations(coid.getAnnotations()));
-            }
-
-            // Modifiers
-            node.set("modifiers", convertModifiers(coid.getModifiers()));
+            // Inline modifier fields
+            node.put("typeIsStatic", coid.isStatic());
+            node.put("typeIsFinal", coid.isFinal());
+            node.put("typeIsAbstract", coid.isAbstract());
+            node.put("typeIsPrivate", coid.isPrivate());
+            node.put("typeIsProtected", coid.isProtected());
+            node.put("typeIsPublic", coid.isPublic());
 
         } else if (type instanceof EnumDeclaration) {
             incrementStat("EnumDeclaration");
@@ -362,41 +362,20 @@ public class JavaToXLangParser {
             node.put("kind", "xnkEnumDecl");
             node.put("enumName", enumDecl.getNameAsString());
 
-            // Enum constants
             ArrayNode enumMembers = mapper.createArrayNode();
             enumDecl.getEntries().forEach(entry -> {
                 incrementStat("EnumConstantDeclaration");
                 ObjectNode memberNode = mapper.createObjectNode();
                 memberNode.put("kind", "xnkEnumMember");
                 memberNode.put("enumMemberName", entry.getNameAsString());
-                if (entry.getArguments().isNonEmpty()) {
-                    ArrayNode args = mapper.createArrayNode();
-                    entry.getArguments().forEach(arg -> args.add(convertExpression(arg)));
-                    memberNode.set("arguments", args);
-                }
-                if (entry.getClassBody().isNonEmpty()) {
-                    ArrayNode body = mapper.createArrayNode();
-                    entry.getClassBody().forEach(member ->
-                        body.add(convertClassMember(member)));
-                    memberNode.set("classBody", body);
-                }
                 enumMembers.add(memberNode);
             });
             node.set("enumMembers", enumMembers);
 
-            // Implemented interfaces
-            if (enumDecl.getImplementedTypes().isNonEmpty()) {
-                ArrayNode interfaces = mapper.createArrayNode();
-                enumDecl.getImplementedTypes().forEach(t -> interfaces.add(convertType(t)));
-                node.set("implementedTypes", interfaces);
-            }
-
-            // Enum methods and fields
-            ArrayNode members = mapper.createArrayNode();
-            enumDecl.getMembers().forEach(member -> members.add(convertClassMember(member)));
-            if (members.size() > 0) {
-                node.set("members", members);
-            }
+            // Inline visibility fields
+            node.put("enumIsPrivate", enumDecl.isPrivate());
+            node.put("enumIsProtected", enumDecl.isProtected());
+            node.put("enumIsPublic", enumDecl.isPublic());
 
         } else if (type instanceof AnnotationDeclaration) {
             incrementStat("AnnotationDeclaration");
@@ -441,6 +420,9 @@ public class JavaToXLangParser {
         if (member instanceof MethodDeclaration) {
             return convertMethodDeclaration((MethodDeclaration) member);
         } else if (member instanceof FieldDeclaration) {
+            // Note: convertFieldDeclaration now returns only the first variable declarator
+            // To handle multiple declarators, we would need to return an array
+            // For now, keeping it simple with first declarator only
             return convertFieldDeclaration((FieldDeclaration) member);
         } else if (member instanceof ConstructorDeclaration) {
             return convertConstructorDeclaration((ConstructorDeclaration) member);
@@ -454,6 +436,29 @@ public class JavaToXLangParser {
             return convertTypeDeclaration((EnumDeclaration) member);
         }
         return mapper.createObjectNode().put("kind", "xnkUnknown");
+    }
+
+    /**
+     * Convert a field declaration, expanding multiple variable declarators into separate field declarations.
+     * Returns an array node containing one xnkFieldDecl per variable.
+     */
+    private static ArrayNode convertFieldDeclarationExpanded(FieldDeclaration field) {
+        ArrayNode fields = mapper.createArrayNode();
+
+        field.getVariables().forEach(var -> {
+            incrementStat("FieldDeclaration");
+            ObjectNode node = mapper.createObjectNode();
+            node.put("kind", "xnkFieldDecl");
+
+            node.put("fieldName", var.getNameAsString());
+            var.getInitializer().ifPresent(init ->
+                node.set("fieldInitializer", convertExpression(init)));
+
+            node.set("fieldType", convertType(var.getType()));
+            fields.add(node);
+        });
+
+        return fields;
     }
 
     private static ObjectNode convertMethodDeclaration(MethodDeclaration method) {
@@ -474,49 +479,48 @@ public class JavaToXLangParser {
             emptyBlock.set("blockBody", mapper.createArrayNode());
             node.set("mbody", emptyBlock);
         }
+
+        // Inline modifier fields
         node.put("methodIsAsync", false); // Java doesn't have async methods
-
-        if (method.getTypeParameters().isNonEmpty()) {
-            node.set("typeParameters", convertTypeParameters(method.getTypeParameters()));
-        }
-
-        if (method.getAnnotations().isNonEmpty()) {
-            node.set("decorators", convertAnnotations(method.getAnnotations()));
-        }
-
-        node.set("modifiers", convertModifiers(method.getModifiers()));
-
-        if (method.getThrownExceptions().isNonEmpty()) {
-            ArrayNode exceptions = mapper.createArrayNode();
-            method.getThrownExceptions().forEach(ex -> exceptions.add(convertType(ex)));
-            node.set("throwsTypes", exceptions);
-        }
+        node.put("methodIsStatic", method.isStatic());
+        node.put("methodIsAbstract", method.isAbstract());
+        node.put("methodIsFinal", method.isFinal());
+        node.put("methodIsPrivate", method.isPrivate());
+        node.put("methodIsProtected", method.isProtected());
+        node.put("methodIsPublic", method.isPublic());
 
         return node;
     }
 
     private static ObjectNode convertFieldDeclaration(FieldDeclaration field) {
         incrementStat("FieldDeclaration");
+
+        // Handle case where there are multiple variable declarators
+        if (field.getVariables().size() > 1) {
+            System.err.println("WARNING: Field has multiple declarators, only first will be captured: " +
+                              field.getVariables().stream()
+                                  .map(v -> v.getNameAsString())
+                                  .reduce((a, b) -> a + ", " + b).orElse(""));
+        }
+
         ObjectNode node = mapper.createObjectNode();
         node.put("kind", "xnkFieldDecl");
 
-        // xlangtypes expects: fieldName, fieldType, fieldInitializer (optional)
-        // Java can have multiple vars per field, but xlang expects one per node
-        // For now, take the first variable (most common case)
-        if (field.getVariables().isNonEmpty()) {
-            VariableDeclarator firstVar = field.getVariables().get(0);
-            node.put("fieldName", firstVar.getNameAsString());
-            firstVar.getInitializer().ifPresent(init ->
-                node.set("fieldInitializer", convertExpression(init)));
-        }
+        // Field data
+        VariableDeclarator firstVar = field.getVariables().get(0);
+        node.put("fieldName", firstVar.getNameAsString());
+        node.set("fieldType", convertType(firstVar.getType()));
+        firstVar.getInitializer().ifPresent(init ->
+            node.set("fieldInitializer", convertExpression(init)));
 
-        node.set("fieldType", convertType(field.getElementType()));
-
-        if (field.getAnnotations().isNonEmpty()) {
-            node.set("decorators", convertAnnotations(field.getAnnotations()));
-        }
-
-        node.set("modifiers", convertModifiers(field.getModifiers()));
+        // Inline modifier fields
+        node.put("fieldIsStatic", field.isStatic());
+        node.put("fieldIsFinal", field.isFinal());
+        node.put("fieldIsVolatile", field.isVolatile());
+        node.put("fieldIsTransient", field.isTransient());
+        node.put("fieldIsPrivate", field.isPrivate());
+        node.put("fieldIsProtected", field.isProtected());
+        node.put("fieldIsPublic", field.isPublic());
 
         return node;
     }
@@ -526,26 +530,14 @@ public class JavaToXLangParser {
         ObjectNode node = mapper.createObjectNode();
         node.put("kind", "xnkConstructorDecl");
 
-        // xlangtypes expects: constructorParams, constructorInitializers, constructorBody
         node.set("constructorParams", convertParameters(constructor.getParameters()));
         node.set("constructorInitializers", mapper.createArrayNode()); // Java doesn't have C#-style field initializers
         node.set("constructorBody", convertBlockStmt(constructor.getBody()));
 
-        if (constructor.getTypeParameters().isNonEmpty()) {
-            node.set("typeParameters", convertTypeParameters(constructor.getTypeParameters()));
-        }
-
-        if (constructor.getAnnotations().isNonEmpty()) {
-            node.set("decorators", convertAnnotations(constructor.getAnnotations()));
-        }
-
-        node.set("modifiers", convertModifiers(constructor.getModifiers()));
-
-        if (constructor.getThrownExceptions().isNonEmpty()) {
-            ArrayNode exceptions = mapper.createArrayNode();
-            constructor.getThrownExceptions().forEach(ex -> exceptions.add(convertType(ex)));
-            node.set("throwsTypes", exceptions);
-        }
+        // Inline visibility fields
+        node.put("constructorIsPrivate", constructor.isPrivate());
+        node.put("constructorIsProtected", constructor.isProtected());
+        node.put("constructorIsPublic", constructor.isPublic());
 
         return node;
     }
@@ -569,12 +561,13 @@ public class JavaToXLangParser {
             node.put("kind", "xnkMethodDecl");
             node.put("methodName", amd.getNameAsString());
             node.set("mreturnType", convertType(amd.getType()));
-            amd.getDefaultValue().ifPresent(defaultValue ->
-                node.set("defaultValue", convertExpression(defaultValue)));
-            node.set("modifiers", convertModifiers(amd.getModifiers()));
-            if (amd.getAnnotations().isNonEmpty()) {
-                node.set("decorators", convertAnnotations(amd.getAnnotations()));
-            }
+            // Annotation members don't have params or body, but xlangtypes requires mbody
+            node.set("mparams", mapper.createArrayNode());
+            ObjectNode emptyBlock = mapper.createObjectNode();
+            emptyBlock.put("kind", "xnkBlockStmt");
+            emptyBlock.set("blockBody", mapper.createArrayNode());
+            node.set("mbody", emptyBlock);
+            node.put("methodIsAsync", false);
             return node;
         }
         return mapper.createObjectNode().put("kind", "xnkUnknown");
@@ -1298,12 +1291,7 @@ public class JavaToXLangParser {
                 node.set("initializer", convertExpression(init)));
         }
 
-        if (expr.getAnnotations().isNonEmpty()) {
-            node.set("decorators", convertAnnotations(expr.getAnnotations()));
-        }
-
-        node.set("modifiers", convertModifiers(expr.getModifiers()));
-
+        // Note: decorators and modifiers not in xlangtypes for xnkVarDecl
         return node;
     }
 
@@ -1428,27 +1416,4 @@ public class JavaToXLangParser {
         return annotationNodes;
     }
 
-    private static ObjectNode convertModifiers(NodeList<Modifier> modifiers) {
-        ObjectNode mods = mapper.createObjectNode();
-        mods.put("isPublic", modifiers.contains(Modifier.publicModifier()));
-        mods.put("isPrivate", modifiers.contains(Modifier.privateModifier()));
-        mods.put("isProtected", modifiers.contains(Modifier.protectedModifier()));
-        mods.put("isStatic", modifiers.contains(Modifier.staticModifier()));
-        mods.put("isFinal", modifiers.contains(Modifier.finalModifier()));
-        mods.put("isAbstract", modifiers.contains(Modifier.abstractModifier()));
-        mods.put("isSynchronized", modifiers.contains(Modifier.synchronizedModifier()));
-        mods.put("isNative", modifiers.contains(Modifier.nativeModifier()));
-        mods.put("isStrictfp", modifiers.contains(Modifier.strictfpModifier()));
-        mods.put("isTransient", modifiers.contains(Modifier.transientModifier()));
-        mods.put("isVolatile", modifiers.contains(Modifier.volatileModifier()));
-        // Check if defaultModifier exists in this version
-        try {
-            java.lang.reflect.Method defaultModifierMethod = Modifier.class.getMethod("defaultModifier");
-            Modifier defaultMod = (Modifier) defaultModifierMethod.invoke(null);
-            mods.put("isDefault", modifiers.contains(defaultMod));
-        } catch (Exception e) {
-            mods.put("isDefault", false);
-        }
-        return mods;
-    }
 }

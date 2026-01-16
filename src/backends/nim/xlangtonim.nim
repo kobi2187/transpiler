@@ -29,12 +29,14 @@ proc getClassName*(ctx: TransformContext): string =
     result = ""
 
 proc isClassField*(ctx: TransformContext, name: string): bool =
-  ## Check if a name is a field of the current class
+  ## Check if a name is a non-static field of the current class
+  ## Returns false for static fields (they don't need self. prefix)
   if ctx.conversion.currentClass.isSome():
     let classNode = ctx.conversion.currentClass.get()
     for member in classNode.members:
       if member.kind == xnkFieldDecl and member.fieldName == name:
-        return true
+        # Only non-static fields need self. prefix
+        return not member.fieldIsStatic
   return false
 
 proc classHasBaseTypes*(ctx: TransformContext): bool =
