@@ -431,7 +431,14 @@ partial class Program
                     ["typeName"] = t.Type.ToString()
                 }))
                 : new JArray(),
-            ["members"] = members
+            ["members"] = members,
+            // Inline modifier fields
+            ["typeIsStatic"] = cls.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.StaticKeyword)),
+            ["typeIsFinal"] = cls.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.SealedKeyword)),
+            ["typeIsAbstract"] = cls.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.AbstractKeyword)),
+            ["typeIsPrivate"] = cls.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.PrivateKeyword)),
+            ["typeIsProtected"] = cls.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.ProtectedKeyword)),
+            ["typeIsPublic"] = cls.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.PublicKeyword))
         };
     }
 
@@ -1173,7 +1180,7 @@ partial class Program
         }
         else
         {
-            // Regular instance field
+            // Regular instance field - add inline modifier fields
             return new JObject
             {
                 ["kind"] = "xnkFieldDecl",
@@ -1181,7 +1188,14 @@ partial class Program
                 ["fieldType"] = ConvertType(field.Declaration.Type),
                 ["fieldInitializer"] = firstVar.Initializer != null
                     ? ConvertExpression(firstVar.Initializer.Value)
-                    : JValue.CreateNull()
+                    : JValue.CreateNull(),
+                ["fieldIsStatic"] = false,  // Instance fields are never static
+                ["fieldIsFinal"] = isReadonly,
+                ["fieldIsVolatile"] = field.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.VolatileKeyword)),
+                ["fieldIsTransient"] = false,  // C# doesn't have transient
+                ["fieldIsPrivate"] = field.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.PrivateKeyword)),
+                ["fieldIsProtected"] = field.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.ProtectedKeyword)),
+                ["fieldIsPublic"] = field.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.PublicKeyword))
             };
         }
     }
@@ -1344,7 +1358,11 @@ partial class Program
                     ["arguments"] = new JArray(constructor.Initializer.ArgumentList.Arguments.Select(arg => ConvertExpression(arg.Expression)))
                 })
                 : new JArray(),
-            ["constructorBody"] = bodyToken
+            ["constructorBody"] = bodyToken,
+            // Inline modifier fields
+            ["constructorIsPrivate"] = constructor.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.PrivateKeyword)),
+            ["constructorIsProtected"] = constructor.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.ProtectedKeyword)),
+            ["constructorIsPublic"] = constructor.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.PublicKeyword))
         };
     }
 }

@@ -1079,7 +1079,11 @@ partial class Program
                 ["kind"] = "xnkEnumMember",
                 ["enumMemberName"] = m.Identifier.Text,
                 ["enumMemberValue"] = m.EqualsValue != null ? ConvertExpression(m.EqualsValue.Value) : JValue.CreateNull()
-            }))
+            })),
+            // Inline modifier fields
+            ["enumIsPrivate"] = enumDecl.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.PrivateKeyword)),
+            ["enumIsProtected"] = enumDecl.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.ProtectedKeyword)),
+            ["enumIsPublic"] = enumDecl.Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.PublicKeyword))
         };
     }
     static JObject ConvertInterface(InterfaceDeclarationSyntax interfaceDecl)
