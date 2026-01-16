@@ -4,7 +4,7 @@
 ## The parser reads the human-readable xlang format (as output by xlang_printer)
 ## and produces XLangNode objects that can be used directly or serialized to JSON.
 
-import std/[options, strutils, tables, json]
+import std/[options, strutils, json, sequtils]
 import xlang_lexer
 import ../../core/xlangtypes
 
@@ -156,6 +156,7 @@ proc parseStatement(p: Parser): XLangNode
 proc parseDeclaration(p: Parser): XLangNode
 proc parseType(p: Parser): XLangNode
 proc parseBlock(p: Parser): XLangNode
+proc parseParameter(p: Parser): XLangNode
 
 # =============================================================================
 # Type Parsing
@@ -612,7 +613,20 @@ proc parseExpression(p: Parser): XLangNode =
 # =============================================================================
 
 proc parseParameter(p: Parser): XLangNode =
-  let name = p.expect(tkIdent, "Expected parameter name").value
+  # Accept identifiers and common keywords used as parameter names (self, base)
+  var name: string
+  if p.check(tkIdent):
+    name = p.advance().value
+  elif p.check(tkSelf):
+    discard p.advance()
+    name = "self"
+  elif p.check(tkBase):
+    discard p.advance()
+    name = "base"
+  else:
+    discard p.expect(tkIdent, "Expected parameter name")
+    name = "error"
+
   var typ: Option[XLangNode] = none(XLangNode)
   var default: Option[XLangNode] = none(XLangNode)
 
@@ -655,10 +669,30 @@ proc parseBlock(p: Parser): XLangNode =
 
 proc parseFieldLabel(p: Parser): tuple[label: string, hasValue: bool] =
   ## Parse `| label:` field annotation
+  ## Labels can be identifiers or keywords (e.g., | base:, | type:)
   if not p.check(tkPipe):
     return ("", false)
   discard p.advance()  # |
-  let label = p.expect(tkIdent, "Expected field label after '|'").value
+  # Accept identifier or keywords as field labels
+  var label: string
+  if p.check(tkIdent):
+    label = p.advance().value
+  elif p.check(tkBase):
+    discard p.advance()
+    label = "base"
+  elif p.check(tkType):
+    discard p.advance()
+    label = "type"
+  elif p.check(tkIn):
+    discard p.advance()
+    label = "in"
+  else:
+    # Try to get any token as the label - many keywords can be field names
+    let tok = p.advance()
+    label = tok.value
+    if label.len == 0:
+      p.errors.add("Expected field label after '|'")
+      return ("", false)
   discard p.expect(tkColon, "Expected ':' after field label")
   return (label, true)
 
@@ -698,7 +732,9 @@ proc parseWhileStmt(p: Parser): XLangNode =
 
 proc parseForeachStmt(p: Parser): XLangNode =
   discard p.advance()  # foreach
-  let varExpr = p.parseExpression()
+  # Parse variable name (identifier only, not full expression to avoid consuming 'in')
+  let varName = p.expect(tkIdent, "Expected variable name after foreach").value
+  let varExpr = XLangNode(kind: xnkIdentifier, identName: varName)
   discard p.expect(tkIn, "Expected 'in' after foreach variable")
   let iterExpr = p.parseExpression()
   discard p.expect(tkColon, "Expected ':' after foreach iterable")
@@ -908,11 +944,13 @@ proc parseStatement(p: Parser): XLangNode =
     if p.check(tkEqSign):
       discard p.advance()
       init = some(p.parseExpression())
-    let nodeKind = case kind
-                   of tkVar: xnkVarDecl
-                   of tkLet: xnkLetDecl
-                   else: xnkConstDecl
-    return XLangNode(kind: nodeKind, declName: name, declType: typ, initializer: init)
+    case kind
+    of tkVar:
+      return XLangNode(kind: xnkVarDecl, declName: name, declType: typ, initializer: init)
+    of tkLet:
+      return XLangNode(kind: xnkLetDecl, declName: name, declType: typ, initializer: init)
+    else:
+      return XLangNode(kind: xnkConstDecl, declName: name, declType: typ, initializer: init)
 
   # Labeled statement
   of tkCaret:
@@ -1070,7 +1108,8 @@ proc parseClassDecl(p: Parser): XLangNode =
 
     case label
     of "kind":
-      discard p.expect(tkIdent)  # class/struct/interface
+      # Accept any keyword (class, struct, interface) or identifier
+      discard p.advance()
       p.skipNewlines()
 
     of "base", "extends", "implements":
@@ -1118,7 +1157,8 @@ proc parseStructDecl(p: Parser): XLangNode =
 
     case label
     of "kind":
-      discard p.expect(tkIdent)
+      # Accept any keyword (struct, etc) or identifier
+      discard p.advance()
       p.skipNewlines()
     of "implements":
       baseTypes.add(p.parseType())
@@ -1162,7 +1202,8 @@ proc parseInterfaceDecl(p: Parser): XLangNode =
 
     case label
     of "kind":
-      discard p.expect(tkIdent)
+      # Accept any keyword (interface, etc) or identifier
+      discard p.advance()
       p.skipNewlines()
     of "extends":
       baseTypes.add(p.parseType())
@@ -1455,8 +1496,287 @@ proc validate*(source: string): tuple[valid: bool, errors: seq[string]] =
 
 proc toJson*(node: XLangNode): JsonNode =
   ## Convert XLangNode to JSON (xljs format)
-  ## Uses the standard library's serialization
-  %node
+  ## Custom implementation to handle tuple fields properly
+  if node.isNil:
+    return newJNull()
+
+  result = newJObject()
+  result["kind"] = %($node.kind)
+
+  # Add UUID fields if present
+  if node.id.isSome:
+    result["id"] = %($node.id.get)
+  if node.parentId.isSome:
+    result["parentId"] = %($node.parentId.get)
+
+  # Add variant-specific fields
+  case node.kind
+  of xnkFile:
+    result["fileName"] = %node.fileName
+    result["sourceLang"] = %node.sourceLang
+    result["moduleDecls"] = %node.moduleDecls.mapIt(it.toJson())
+  of xnkModule:
+    result["moduleName"] = %node.moduleName
+    result["moduleBody"] = %node.moduleBody.mapIt(it.toJson())
+  of xnkNamespace:
+    result["namespaceName"] = %node.namespaceName
+    result["namespaceBody"] = %node.namespaceBody.mapIt(it.toJson())
+  of xnkFuncDecl:
+    result["funcName"] = %node.funcName
+    result["params"] = %node.params.mapIt(it.toJson())
+    if node.returnType.isSome:
+      result["returnType"] = node.returnType.get.toJson()
+    if node.body != nil:
+      result["body"] = node.body.toJson()
+    result["isAsync"] = %node.isAsync
+    result["funcIsStatic"] = %node.funcIsStatic
+    result["funcVisibility"] = %node.funcVisibility
+  of xnkMethodDecl:
+    result["methodName"] = %node.methodName
+    if node.receiver.isSome:
+      result["receiver"] = node.receiver.get.toJson()
+    result["mparams"] = %node.mparams.mapIt(it.toJson())
+    if node.mreturnType.isSome:
+      result["mreturnType"] = node.mreturnType.get.toJson()
+    if node.mbody != nil:
+      result["mbody"] = node.mbody.toJson()
+    result["methodIsAsync"] = %node.methodIsAsync
+  of xnkIteratorDecl:
+    result["iteratorName"] = %node.iteratorName
+    result["iteratorParams"] = %node.iteratorParams.mapIt(it.toJson())
+    if node.iteratorReturnType.isSome:
+      result["iteratorReturnType"] = node.iteratorReturnType.get.toJson()
+    if node.iteratorBody != nil:
+      result["iteratorBody"] = node.iteratorBody.toJson()
+  of xnkClassDecl, xnkStructDecl, xnkInterfaceDecl:
+    result["typeNameDecl"] = %node.typeNameDecl
+    result["baseTypes"] = %node.baseTypes.mapIt(it.toJson())
+    result["members"] = %node.members.mapIt(it.toJson())
+  of xnkEnumDecl:
+    result["enumName"] = %node.enumName
+    result["enumMembers"] = %node.enumMembers.mapIt(it.toJson())
+  of xnkVarDecl, xnkLetDecl, xnkConstDecl:
+    result["declName"] = %node.declName
+    if node.declType.isSome:
+      result["declType"] = node.declType.get.toJson()
+    if node.initializer.isSome:
+      result["initializer"] = node.initializer.get.toJson()
+  of xnkTypeDecl:
+    result["typeDefName"] = %node.typeDefName
+    if node.typeDefBody != nil:
+      result["typeDefBody"] = node.typeDefBody.toJson()
+  of xnkFieldDecl:
+    result["fieldName"] = %node.fieldName
+    result["fieldType"] = node.fieldType.toJson()
+    if node.fieldInitializer.isSome:
+      result["fieldInitializer"] = node.fieldInitializer.get.toJson()
+  of xnkConstructorDecl:
+    result["constructorParams"] = %node.constructorParams.mapIt(it.toJson())
+    result["constructorInitializers"] = %node.constructorInitializers.mapIt(it.toJson())
+    if node.constructorBody != nil:
+      result["constructorBody"] = node.constructorBody.toJson()
+  of xnkDestructorDecl:
+    if node.destructorBody.isSome:
+      result["destructorBody"] = node.destructorBody.get.toJson()
+  of xnkAsgn:
+    result["asgnLeft"] = node.asgnLeft.toJson()
+    result["asgnRight"] = node.asgnRight.toJson()
+  of xnkBlockStmt:
+    result["blockBody"] = %node.blockBody.mapIt(it.toJson())
+  of xnkIfStmt:
+    result["ifCondition"] = node.ifCondition.toJson()
+    result["ifBody"] = node.ifBody.toJson()
+    # Handle tuple seq specially
+    var elifArr = newJArray()
+    for branch in node.elifBranches:
+      var branchObj = newJObject()
+      branchObj["condition"] = branch.condition.toJson()
+      branchObj["body"] = branch.body.toJson()
+      elifArr.add(branchObj)
+    result["elifBranches"] = elifArr
+    if node.elseBody.isSome:
+      result["elseBody"] = node.elseBody.get.toJson()
+  of xnkSwitchStmt:
+    result["switchExpr"] = node.switchExpr.toJson()
+    result["switchCases"] = %node.switchCases.mapIt(it.toJson())
+  of xnkCaseClause:
+    result["caseValues"] = %node.caseValues.mapIt(it.toJson())
+    result["caseBody"] = node.caseBody.toJson()
+    result["caseFallthrough"] = %node.caseFallthrough
+  of xnkDefaultClause:
+    result["defaultBody"] = node.defaultBody.toJson()
+  of xnkWhileStmt, xnkDoWhileStmt:
+    result["whileCondition"] = node.whileCondition.toJson()
+    result["whileBody"] = node.whileBody.toJson()
+  of xnkForeachStmt:
+    result["foreachVar"] = node.foreachVar.toJson()
+    result["foreachIter"] = node.foreachIter.toJson()
+    result["foreachBody"] = node.foreachBody.toJson()
+  of xnkTryStmt:
+    result["tryBody"] = node.tryBody.toJson()
+    result["catchClauses"] = %node.catchClauses.mapIt(it.toJson())
+    if node.finallyClause.isSome:
+      result["finallyClause"] = node.finallyClause.get.toJson()
+  of xnkCatchStmt:
+    if node.catchType.isSome:
+      result["catchType"] = node.catchType.get.toJson()
+    if node.catchVar.isSome:
+      result["catchVar"] = %node.catchVar.get
+    result["catchBody"] = node.catchBody.toJson()
+  of xnkFinallyStmt:
+    result["finallyBody"] = node.finallyBody.toJson()
+  of xnkReturnStmt:
+    if node.returnExpr.isSome:
+      result["returnExpr"] = node.returnExpr.get.toJson()
+  of xnkIteratorYield:
+    if node.iteratorYieldValue.isSome:
+      result["iteratorYieldValue"] = node.iteratorYieldValue.get.toJson()
+  of xnkIteratorDelegate:
+    result["iteratorDelegateExpr"] = node.iteratorDelegateExpr.toJson()
+  of xnkBreakStmt, xnkContinueStmt:
+    if node.label.isSome:
+      result["label"] = %node.label.get
+  of xnkThrowStmt:
+    result["throwExpr"] = node.throwExpr.toJson()
+  of xnkAssertStmt:
+    result["assertCond"] = node.assertCond.toJson()
+    if node.assertMsg.isSome:
+      result["assertMsg"] = node.assertMsg.get.toJson()
+  of xnkPassStmt, xnkEmptyStmt, xnkThisExpr, xnkBaseExpr, xnkNilLit, xnkNoneLit:
+    discard  # No additional fields
+  of xnkBinaryExpr:
+    result["binaryLeft"] = node.binaryLeft.toJson()
+    result["binaryOp"] = %($node.binaryOp)
+    result["binaryRight"] = node.binaryRight.toJson()
+  of xnkUnaryExpr:
+    result["unaryOp"] = %($node.unaryOp)
+    result["unaryOperand"] = node.unaryOperand.toJson()
+  of xnkCallExpr:
+    result["callee"] = node.callee.toJson()
+    result["args"] = %node.args.mapIt(it.toJson())
+  of xnkIndexExpr:
+    result["indexExpr"] = node.indexExpr.toJson()
+    result["indexArgs"] = %node.indexArgs.mapIt(it.toJson())
+  of xnkSliceExpr:
+    result["sliceExpr"] = node.sliceExpr.toJson()
+    if node.sliceStart.isSome:
+      result["sliceStart"] = node.sliceStart.get.toJson()
+    if node.sliceEnd.isSome:
+      result["sliceEnd"] = node.sliceEnd.get.toJson()
+    if node.sliceStep.isSome:
+      result["sliceStep"] = node.sliceStep.get.toJson()
+  of xnkMemberAccessExpr:
+    result["memberExpr"] = node.memberExpr.toJson()
+    result["memberName"] = %node.memberName
+    result["isEnumAccess"] = %node.isEnumAccess
+    result["enumTypeName"] = %node.enumTypeName
+    result["enumFullName"] = %node.enumFullName
+  of xnkLambdaExpr:
+    result["lambdaParams"] = %node.lambdaParams.mapIt(it.toJson())
+    if node.lambdaReturnType.isSome:
+      result["lambdaReturnType"] = node.lambdaReturnType.get.toJson()
+    result["lambdaBody"] = node.lambdaBody.toJson()
+  of xnkCastExpr:
+    result["castExpr"] = node.castExpr.toJson()
+    result["castType"] = node.castType.toJson()
+  of xnkIntLit, xnkFloatLit, xnkStringLit, xnkCharLit:
+    result["literalValue"] = %node.literalValue
+  of xnkBoolLit:
+    result["boolValue"] = %node.boolValue
+  of xnkNamedType:
+    result["typeName"] = %node.typeName
+    if node.isEmptyMarkerType.isSome:
+      result["isEmptyMarkerType"] = %node.isEmptyMarkerType.get
+  of xnkArrayType:
+    result["elementType"] = node.elementType.toJson()
+    if node.arraySize.isSome:
+      result["arraySize"] = node.arraySize.get.toJson()
+  of xnkMapType:
+    result["keyType"] = node.keyType.toJson()
+    result["valueType"] = node.valueType.toJson()
+  of xnkFuncType:
+    result["funcParams"] = %node.funcParams.mapIt(it.toJson())
+    if node.funcReturnType.isSome:
+      result["funcReturnType"] = node.funcReturnType.get.toJson()
+  of xnkPointerType, xnkReferenceType:
+    result["referentType"] = node.referentType.toJson()
+  of xnkGenericType:
+    result["genericTypeName"] = %node.genericTypeName
+    if node.genericBase.isSome:
+      result["genericBase"] = node.genericBase.get.toJson()
+    result["genericArgs"] = %node.genericArgs.mapIt(it.toJson())
+  of xnkUnionType:
+    result["unionTypes"] = %node.unionTypes.mapIt(it.toJson())
+  of xnkTupleType:
+    result["tupleTypeElements"] = %node.tupleTypeElements.mapIt(it.toJson())
+  of xnkDistinctType:
+    result["distinctBaseType"] = node.distinctBaseType.toJson()
+  of xnkIdentifier:
+    result["identName"] = %node.identName
+  of xnkParameter:
+    result["paramName"] = %node.paramName
+    if node.paramType.isSome:
+      result["paramType"] = node.paramType.get.toJson()
+    if node.defaultValue.isSome:
+      result["defaultValue"] = node.defaultValue.get.toJson()
+  of xnkArgument:
+    if node.argName.isSome:
+      result["argName"] = %node.argName.get
+    result["argValue"] = node.argValue.toJson()
+  of xnkEnumMember:
+    result["enumMemberName"] = %node.enumMemberName
+    if node.enumMemberValue.isSome:
+      result["enumMemberValue"] = node.enumMemberValue.get.toJson()
+  of xnkSequenceLiteral, xnkSetLiteral, xnkArrayLiteral, xnkTupleExpr:
+    result["elements"] = %node.elements.mapIt(it.toJson())
+  of xnkMapLiteral:
+    result["entries"] = %node.entries.mapIt(it.toJson())
+  of xnkDictEntry:
+    result["key"] = node.key.toJson()
+    result["value"] = node.value.toJson()
+  of xnkComment:
+    result["commentText"] = %node.commentText
+    result["isDocComment"] = %node.isDocComment
+  of xnkImport:
+    result["importPath"] = %node.importPath
+    if node.importAlias.isSome:
+      result["importAlias"] = %node.importAlias.get
+  of xnkRaiseStmt:
+    if node.raiseExpr.isSome:
+      result["raiseExpr"] = node.raiseExpr.get.toJson()
+  of xnkDiscardStmt:
+    if node.discardExpr.isSome:
+      result["discardExpr"] = node.discardExpr.get.toJson()
+  of xnkLabeledStmt:
+    result["labelName"] = %node.labelName
+    result["labeledStmt"] = node.labeledStmt.toJson()
+  of xnkGotoStmt:
+    result["gotoLabel"] = %node.gotoLabel
+  of xnkDeferStmt, xnkStaticStmt:
+    result["staticBody"] = node.staticBody.toJson()
+  of xnkInstanceVar, xnkClassVar, xnkGlobalVar:
+    result["varName"] = %node.varName
+  of xnkDefaultExpr:
+    if node.defaultType.isSome:
+      result["defaultType"] = node.defaultType.get.toJson()
+  of xnkTypeOfExpr:
+    result["typeOfType"] = node.typeOfType.toJson()
+  of xnkSizeOfExpr:
+    result["sizeOfType"] = node.sizeOfType.toJson()
+  of xnkMethodReference:
+    result["refObject"] = node.refObject.toJson()
+    result["refMethod"] = %node.refMethod
+  of xnkExternal_SafeNavigation:
+    result["extSafeNavObject"] = node.extSafeNavObject.toJson()
+    result["extSafeNavMember"] = %node.extSafeNavMember
+  of xnkExternal_GoChanType:
+    result["extChanElemType"] = node.extChanElemType.toJson()
+    result["extChanDir"] = %node.extChanDir
+  of xnkUnknown:
+    result["unknownData"] = %node.unknownData
+  else:
+    # For any unhandled kinds, just output the kind
+    discard
 
 proc toJsonString*(node: XLangNode, pretty: bool = true): string =
   ## Convert XLangNode to JSON string

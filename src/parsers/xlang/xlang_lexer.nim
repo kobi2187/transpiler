@@ -1,8 +1,8 @@
 ## XLang Lexer
 ## Tokenizes xlang source text into tokens for the parser.
-## Uses std/pegs for pattern matching.
+## Handles indentation-based syntax similar to Python.
 
-import std/[pegs, strutils, options]
+import std/[strutils, tables]
 
 type
   TokenKind* = enum
@@ -358,16 +358,16 @@ proc nextToken*(lex: Lexer): Token =
   # Handle indentation at line start
   if lex.atLineStart:
     lex.atLineStart = false
-    let indent = lex.measureIndent()
+    var indent = lex.measureIndent()
 
-    # Skip blank lines
+    # Skip blank lines - they shouldn't affect indentation
     var tempPos = lex.pos + indent
     while tempPos < lex.source.len and lex.source[tempPos] in {'\n', '\r'}:
       lex.pos = tempPos
       discard lex.advance()  # consume newline
       lex.atLineStart = false
-      let newIndent = lex.measureIndent()
-      tempPos = lex.pos + newIndent
+      indent = lex.measureIndent()  # Re-measure for the new line
+      tempPos = lex.pos + indent
 
     # Skip comment-only lines for indent calculation
     if lex.pos + indent < lex.source.len and lex.source[lex.pos + indent] == '#':
