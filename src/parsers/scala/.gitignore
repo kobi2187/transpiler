@@ -1,0 +1,42 @@
+# sbt specific
+.cache
+.history
+.lib/
+dist/*
+target/
+lib_managed/
+src_managed/
+project/boot/
+project/plugins/project/
+
+# Scala-IDE specific
+.scala_dependencies
+.worksheet
+
+# ENSIME specific
+.ensime
+.ensime_cache/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# Eclipse
+.project
+.classpath
+.settings/
+bin/
+
+# Mac
+.DS_Store
+
+# XLang output files
+*.xljs
+
+# Metals
+.metals/
+.bloop/
+metals.sbt
