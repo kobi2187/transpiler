@@ -1,0 +1,13 @@
+# Gradle
+.gradle/
+build/
+gradle/
+gradlew
+gradlew.bat
+
+# IDE
+.idea/
+*.iml
+
+# Output
+*.xljs
