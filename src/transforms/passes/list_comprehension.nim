@@ -16,7 +16,7 @@
 import core/xlangtypes
 import transforms/transform_context
 import options
-import strutils
+# import strutils
 
 var comprehensionCounter {.compileTime.}: int = 0
 

@@ -8,11 +8,93 @@ import (
 	"go/token"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 )
 
 type Statistics struct {
-	Constructs map[string]int
+	Constructs           map[string]int
+	CurrentFile          string
+	contextStack         []string
+	UnhandledTypes       map[string]int // Track types of unhandled nodes
+	UnhandledSamples     []string       // Sample file locations
+	AnonymousTypeCounter int            // Counter for generating unique names for anonymous types
+}
+
+func (s *Statistics) pushContext(ctx string) {
+	s.contextStack = append(s.contextStack, ctx)
+}
+
+func (s *Statistics) popContext() {
+	if len(s.contextStack) > 0 {
+		s.contextStack = s.contextStack[:len(s.contextStack)-1]
+	}
+}
+
+func (s *Statistics) getContext() string {
+	if len(s.contextStack) == 0 {
+		return ""
+	}
+	return strings.Join(s.contextStack, " > ")
+}
+
+// Map Go operators to XLang semantic operator names
+var binaryOpMap = map[string]string{
+	"+":   "add",
+	"-":   "sub",
+	"*":   "mul",
+	"/":   "div",
+	"%":   "mod",
+	"&":   "bitand",
+	"|":   "bitor",
+	"^":   "bitxor",
+	"<<":  "shl",
+	">>":  "shr",
+	"&^":  "bitandnot", // Go-specific: bit clear
+	"==":  "eq",
+	"!=":  "neq",
+	"<":   "lt",
+	"<=":  "le",
+	">":   "gt",
+	">=":  "ge",
+	"&&":  "and",
+	"||":  "or",
+	"+=":  "adda",
+	"-=":  "suba",
+	"*=":  "mula",
+	"/=":  "diva",
+	"%=":  "moda",
+	"&=":  "bitanda",
+	"|=":  "bitora",
+	"^=":  "bitxora",
+	"<<=": "shla",
+	">>=": "shra",
+}
+
+var unaryOpMap = map[string]string{
+	"-":  "neg",
+	"+":  "pos",
+	"!":  "not",
+	"^":  "bitnot", // Go uses ^ for bitwise NOT (unlike C which uses ~)
+	"*":  "deref",
+	"&":  "ref",
+	"++": "postinc",  // Go's ++ is always post-increment (statement, not expr)
+	"--": "postdec",  // Go's -- is always post-decrement (statement, not expr)
+	"<-": "chanrecv", // Go channel receive operator
+}
+
+func normalizeBinaryOp(op string) string {
+	if mapped, ok := binaryOpMap[op]; ok {
+		return mapped
+	}
+	return op
+}
+
+func normalizeUnaryOp(op string) string {
+	if mapped, ok := unaryOpMap[op]; ok {
+		return mapped
+	}
+	return op
 }
 
 func main() {
@@ -22,7 +104,12 @@ func main() {
 	}
 
 	path := os.Args[1]
-	stats := &Statistics{Constructs: make(map[string]int)}
+	stats := &Statistics{
+		Constructs:           make(map[string]int),
+		UnhandledTypes:       make(map[string]int),
+		UnhandledSamples:     []string{},
+		AnonymousTypeCounter: 0,
+	}
 
 	err := processPath(path, stats)
 	if err != nil {
@@ -55,21 +142,30 @@ func processPath(path string, stats *Statistics) error {
 }
 
 func processFile(filename string, stats *Statistics) error {
+	stats.CurrentFile = filename
+	stats.contextStack = []string{} // Reset context for new file
+
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, filename, nil, parser.ParseComments)
 	if err != nil {
-		return err
+		fmt.Printf("Parse error in %s: %v (skipping)\n", filename, err)
+		return nil // Continue processing other files
 	}
 
 	xlangAST := convertToXLang(node, stats)
 
-	jsonData, err := json.MarshalIndent(xlangAST, "", "  ")
+	// Use encoder with SetEscapeHTML(false) to prevent escaping <, >, &
+	var buf strings.Builder
+	encoder := json.NewEncoder(&buf)
+	encoder.SetEscapeHTML(false)
+	encoder.SetIndent("", "  ")
+	err = encoder.Encode(xlangAST)
 	if err != nil {
 		return err
 	}
 
-	outputFilename := strings.TrimSuffix(filename, ".go") + ".xlang.json"
-	err = os.WriteFile(outputFilename, jsonData, 0644)
+	outputFilename := strings.TrimSuffix(filename, ".go") + ".xljs"
+	err = os.WriteFile(outputFilename, []byte(buf.String()), 0644)
 	if err != nil {
 		return err
 	}
@@ -79,6 +175,24 @@ func processFile(filename string, stats *Statistics) error {
 }
 
 func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
+	// Check for untyped nil
+	if node == nil {
+		// Expected nil for optional AST fields (e.g., else clause, type annotation, etc.)
+		return nil
+	}
+
+	// Check for typed nil (interface with type but nil value)
+	// This must be checked BEFORE the node == nil check would short-circuit
+	rv := reflect.ValueOf(node)
+	if rv.Kind() == reflect.Ptr && rv.IsNil() {
+		context := stats.getContext()
+		if context == "" {
+			context = "unknown"
+		}
+		fmt.Printf("WARNING: typed nil node in %s | context: %s | type: %T\n", stats.CurrentFile, context, node)
+		return nil
+	}
+
 	switch n := node.(type) {
 	// ========== File ==========
 	case *ast.File:
@@ -101,6 +215,7 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 		return map[string]interface{}{
 			"kind":        "xnkFile",
 			"fileName":    filepath.Base(n.Name.Name + ".go"),
+			"sourceLang":  "go",
 			"moduleDecls": decls,
 		}
 
@@ -185,25 +300,48 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 		// Regular assignment
 		if len(n.Lhs) > 0 && len(n.Rhs) > 0 {
 			return map[string]interface{}{
-				"kind":       "xnkAsgn",
-				"asgnLeft":   convertToXLang(n.Lhs[0], stats),
-				"asgnRight":  convertToXLang(n.Rhs[0], stats),
+				"kind":      "xnkAsgn",
+				"asgnLeft":  convertToXLang(n.Lhs[0], stats),
+				"asgnRight": convertToXLang(n.Rhs[0], stats),
 			}
 		}
 		return nil
 
 	case *ast.IfStmt:
 		stats.Constructs["xnkIfStmt"]++
-		result := map[string]interface{}{
-			"kind":        "xnkIfStmt",
-			"ifCondition": convertToXLang(n.Cond, stats),
-			"ifBody":      convertToXLang(n.Body, stats),
-			"elseBody":    nil,
+
+		// Collect elif branches
+		elifBranches := []interface{}{}
+		var elseBody interface{} = nil
+
+		// Walk the else chain to collect elif branches
+		current := n.Else
+		for current != nil {
+			if elseIf, ok := current.(*ast.IfStmt); ok {
+				// This is an elif branch
+				elifBranches = append(elifBranches, map[string]interface{}{
+					"condition": convertToXLang(elseIf.Cond, stats),
+					"body":      convertToXLang(elseIf.Body, stats),
+				})
+				current = elseIf.Else
+			} else if blockStmt, ok := current.(*ast.BlockStmt); ok {
+				// This is the final else block
+				elseBody = convertToXLang(blockStmt, stats)
+				break
+			} else {
+				// Shouldn't happen, but handle it
+				elseBody = convertToXLang(current, stats)
+				break
+			}
 		}
-		if n.Else != nil {
-			result["elseBody"] = convertToXLang(n.Else, stats)
+
+		return map[string]interface{}{
+			"kind":         "xnkIfStmt",
+			"ifCondition":  convertToXLang(n.Cond, stats),
+			"ifBody":       convertToXLang(n.Body, stats),
+			"elifBranches": elifBranches,
+			"elseBody":     elseBody,
 		}
-		return result
 
 	case *ast.ForStmt:
 		if n.Init == nil && n.Post == nil {
@@ -224,13 +362,13 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 			}
 		} else {
 			// C-style for loop
-			stats.Constructs["xnkForStmt"]++
+			stats.Constructs["xnkExternal_ForStmt"]++
 			return map[string]interface{}{
-				"kind":         "xnkForStmt",
-				"forInit":      convertToXLang(n.Init, stats),
-				"forCond":      convertToXLang(n.Cond, stats),
-				"forIncrement": convertToXLang(n.Post, stats),
-				"forBody":      convertToXLang(n.Body, stats),
+				"kind":            "xnkExternal_ForStmt",
+				"extForInit":      convertToXLang(n.Init, stats),
+				"extForCond":      convertToXLang(n.Cond, stats),
+				"extForIncrement": convertToXLang(n.Post, stats),
+				"extForBody":      convertToXLang(n.Body, stats),
 			}
 		}
 
@@ -274,7 +412,6 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 		}
 
 	case *ast.SwitchStmt:
-		stats.Constructs["xnkSwitchStmt"]++
 		cases := []interface{}{}
 		if n.Body != nil {
 			for _, stmt := range n.Body.List {
@@ -283,6 +420,18 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 				}
 			}
 		}
+
+		// Check if this is a tagless switch (switch without expression)
+		if n.Tag == nil {
+			stats.Constructs["xnkExternal_GoTaglessSwitch"]++
+			return map[string]interface{}{
+				"kind":                    "xnkExternal_GoTaglessSwitch",
+				"extGoTaglessSwitchCases": cases,
+			}
+		}
+
+		// Regular switch with expression
+		stats.Constructs["xnkSwitchStmt"]++
 		return map[string]interface{}{
 			"kind":        "xnkSwitchStmt",
 			"switchExpr":  convertToXLang(n.Tag, stats),
@@ -344,12 +493,18 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 			"labeledStmt": convertToXLang(n.Stmt, stats),
 		}
 
+	case *ast.EmptyStmt:
+		stats.Constructs["xnkEmptyStmt"]++
+		return map[string]interface{}{
+			"kind": "xnkEmptyStmt",
+		}
+
 	case *ast.IncDecStmt:
-		// Convert to unary expression
+		// Convert to unary expression (Go's ++ and -- are statements, always post)
 		stats.Constructs["xnkUnaryExpr"]++
-		op := "++"
+		op := "postinc"
 		if n.Tok == token.DEC {
-			op = "--"
+			op = "postdec"
 		}
 		return map[string]interface{}{
 			"kind":         "xnkUnaryExpr",
@@ -399,7 +554,7 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 		return map[string]interface{}{
 			"kind":        "xnkBinaryExpr",
 			"binaryLeft":  convertToXLang(n.X, stats),
-			"binaryOp":    n.Op.String(),
+			"binaryOp":    normalizeBinaryOp(n.Op.String()),
 			"binaryRight": convertToXLang(n.Y, stats),
 		}
 
@@ -415,7 +570,7 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 		stats.Constructs["xnkUnaryExpr"]++
 		return map[string]interface{}{
 			"kind":         "xnkUnaryExpr",
-			"unaryOp":      n.Op.String(),
+			"unaryOp":      normalizeUnaryOp(n.Op.String()),
 			"unaryOperand": convertToXLang(n.X, stats),
 		}
 
@@ -442,9 +597,22 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 	case *ast.IndexExpr:
 		stats.Constructs["xnkIndexExpr"]++
 		return map[string]interface{}{
-			"kind":       "xnkIndexExpr",
-			"indexExpr":  convertToXLang(n.X, stats),
-			"indexArgs":  []interface{}{convertToXLang(n.Index, stats)},
+			"kind":      "xnkIndexExpr",
+			"indexExpr": convertToXLang(n.X, stats),
+			"indexArgs": []interface{}{convertToXLang(n.Index, stats)},
+		}
+
+	case *ast.IndexListExpr:
+		// Multiple indices for generics: Map[K, V]
+		stats.Constructs["xnkIndexExpr"]++
+		indices := []interface{}{}
+		for _, idx := range n.Indices {
+			indices = append(indices, convertToXLang(idx, stats))
+		}
+		return map[string]interface{}{
+			"kind":      "xnkIndexExpr",
+			"indexExpr": convertToXLang(n.X, stats),
+			"indexArgs": indices,
 		}
 
 	case *ast.SliceExpr:
@@ -493,10 +661,10 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 	case *ast.FuncLit:
 		stats.Constructs["xnkLambdaExpr"]++
 		return map[string]interface{}{
-			"kind":       "xnkLambdaExpr",
-			"lambdaParams": convertParams(n.Type.Params, stats),
+			"kind":             "xnkLambdaExpr",
+			"lambdaParams":     convertParams(n.Type.Params, stats),
 			"lambdaReturnType": convertReturnType(n.Type.Results, stats),
-			"lambdaBody": convertToXLang(n.Body, stats),
+			"lambdaBody":       convertToXLang(n.Body, stats),
 		}
 
 	case *ast.TypeAssertExpr:
@@ -512,7 +680,7 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 		stats.Constructs["xnkUnaryExpr(*)"]++
 		return map[string]interface{}{
 			"kind":         "xnkUnaryExpr",
-			"unaryOp":      "*",
+			"unaryOp":      normalizeUnaryOp("*"),
 			"unaryOperand": convertToXLang(n.X, stats),
 		}
 
@@ -520,14 +688,220 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 		// Transparent - just return inner expression
 		return convertToXLang(n.X, stats)
 
+	case *ast.KeyValueExpr:
+		// Struct field initializer: key: value
+		stats.Constructs["xnkAsgn"]++
+		return map[string]interface{}{
+			"kind":      "xnkAsgn",
+			"asgnLeft":  convertToXLang(n.Key, stats),
+			"asgnRight": convertToXLang(n.Value, stats),
+		}
+
+	case *ast.DeclStmt:
+		// Declaration statement inside function (var x = ...)
+		return convertToXLang(n.Decl, stats)
+
+	case *ast.SelectStmt:
+		// Channel select statement
+		stats.Constructs["xnkExternal_GoSelect"]++
+		cases := []interface{}{}
+		if n.Body != nil {
+			for _, stmt := range n.Body.List {
+				if commClause, ok := stmt.(*ast.CommClause); ok {
+					cases = append(cases, convertCommClause(commClause, stats))
+				}
+			}
+		}
+		return map[string]interface{}{
+			"kind":           "xnkExternal_GoSelect",
+			"extSelectCases": cases,
+		}
+
+	case *ast.CommClause:
+		// Communication clause in select (handled by convertCommClause)
+		return convertCommClause(n, stats)
+
+	case *ast.SendStmt:
+		// Channel send: ch <- value
+		stats.Constructs["xnkExternal_GoChannelSend"]++
+		return map[string]interface{}{
+			"kind":           "xnkExternal_GoChannelSend",
+			"extSendChannel": convertToXLang(n.Chan, stats),
+			"extSendValue":   convertToXLang(n.Value, stats),
+		}
+
+	case *ast.TypeSwitchStmt:
+		// Type switch: switch x.(type) { }
+		stats.Constructs["xnkExternal_GoTypeSwitch"]++
+		cases := []interface{}{}
+		if n.Body != nil {
+			for _, stmt := range n.Body.List {
+				if caseClause, ok := stmt.(*ast.CaseClause); ok {
+					cases = append(cases, convertTypeSwitchCase(caseClause, stats))
+				}
+			}
+		}
+		// Extract the expression being switched on
+		var switchExpr interface{} = nil
+		if n.Assign != nil {
+			if exprStmt, ok := n.Assign.(*ast.ExprStmt); ok {
+				if typeAssert, ok := exprStmt.X.(*ast.TypeAssertExpr); ok {
+					switchExpr = convertToXLang(typeAssert.X, stats)
+				}
+			} else if assignStmt, ok := n.Assign.(*ast.AssignStmt); ok {
+				if len(assignStmt.Rhs) > 0 {
+					if typeAssert, ok := assignStmt.Rhs[0].(*ast.TypeAssertExpr); ok {
+						switchExpr = convertToXLang(typeAssert.X, stats)
+					}
+				}
+			}
+		}
+		return map[string]interface{}{
+			"kind":                 "xnkExternal_GoTypeSwitch",
+			"extGoTypeSwitchExpr":  switchExpr,
+			"extGoTypeSwitchCases": cases,
+		}
+
+	case *ast.ChanType:
+		// Channel type: chan T, <-chan T, chan<- T
+		stats.Constructs["xnkExternal_GoChanType"]++
+		dir := "both"
+		if n.Dir == ast.RECV {
+			dir = "recv"
+		} else if n.Dir == ast.SEND {
+			dir = "send"
+		}
+		return map[string]interface{}{
+			"kind":            "xnkExternal_GoChanType",
+			"extChanElemType": convertType(n.Value, stats),
+			"extChanDir":      dir,
+		}
+
+	case *ast.Ellipsis:
+		// Variadic ... in function params or slice expansion
+		stats.Constructs["xnkExternal_GoVariadic"]++
+		return map[string]interface{}{
+			"kind":                "xnkExternal_GoVariadic",
+			"extVariadicElemType": convertType(n.Elt, stats),
+		}
+
+	case *ast.FuncType:
+		// Function type (used as type, not declaration)
+		stats.Constructs["xnkFuncType"]++
+		return map[string]interface{}{
+			"kind":       "xnkFuncType",
+			"funcParams": convertParams(n.Params, stats),
+			"funcReturn": convertReturnType(n.Results, stats),
+		}
+
+	case *ast.InterfaceType:
+		// Interface type (used inline, not as declaration)
+		members := []interface{}{}
+		if n.Methods != nil {
+			for _, method := range n.Methods.List {
+				if len(method.Names) > 0 {
+					if funcType, ok := method.Type.(*ast.FuncType); ok {
+						members = append(members, map[string]interface{}{
+							"kind":        "xnkMethodDecl",
+							"methodName":  method.Names[0].Name,
+							"mparams":     convertParams(funcType.Params, stats),
+							"mreturnType": convertReturnType(funcType.Results, stats),
+							"mbody":       nil,
+						})
+					}
+				}
+			}
+		}
+
+		// Check if this is an empty interface (interface{})
+		if len(members) == 0 {
+			stats.Constructs["xnkExternal_GoEmptyInterfaceType"]++
+			return map[string]interface{}{
+				"kind": "xnkExternal_GoEmptyInterfaceType",
+			}
+		} else {
+			// Non-empty inline interface: generate an inline interface type
+			// This represents an anonymous interface type used inline
+			stats.Constructs["xnkInlineInterface"]++
+			return map[string]interface{}{
+				"kind":    "xnkInlineInterface",
+				"members": members,
+			}
+		}
+
+	case *ast.StructType:
+		// Struct type (used inline, not as declaration)
+		members := []interface{}{}
+		if n.Fields != nil {
+			for _, field := range n.Fields.List {
+				fieldType := convertType(field.Type, stats)
+				if len(field.Names) == 0 {
+					members = append(members, map[string]interface{}{
+						"kind":             "xnkFieldDecl",
+						"fieldName":        "",
+						"fieldType":        fieldType,
+						"fieldInitializer": nil,
+					})
+				} else {
+					for _, name := range field.Names {
+						members = append(members, map[string]interface{}{
+							"kind":             "xnkFieldDecl",
+							"fieldName":        name.Name,
+							"fieldType":        fieldType,
+							"fieldInitializer": nil,
+						})
+					}
+				}
+			}
+		}
+
+		// Check if this is an empty struct (struct{})
+		if len(members) == 0 {
+			stats.Constructs["xnkExternal_GoEmptyStructType"]++
+			return map[string]interface{}{
+				"kind": "xnkExternal_GoEmptyStructType",
+			}
+		} else {
+			// Non-empty inline struct: generate an inline struct type
+			// This represents an anonymous struct type used inline
+			stats.Constructs["xnkInlineStruct"]++
+			return map[string]interface{}{
+				"kind":    "xnkInlineStruct",
+				"members": members,
+			}
+		}
+
+	case *ast.ArrayType:
+		// Array/slice type in expression context (e.g., []byte("hello"))
+		stats.Constructs["xnkArrayType"]++
+		return map[string]interface{}{
+			"kind":        "xnkArrayType",
+			"elementType": convertType(n.Elt, stats),
+			"arraySize":   convertToXLang(n.Len, stats),
+		}
+
+	case *ast.MapType:
+		// Map type in expression context
+		stats.Constructs["xnkMapType"]++
+		return map[string]interface{}{
+			"kind":      "xnkMapType",
+			"keyType":   convertType(n.Key, stats),
+			"valueType": convertType(n.Value, stats),
+		}
+
 	case nil:
 		return nil
 
 	default:
 		stats.Constructs["Unhandled"]++
+		typeName := fmt.Sprintf("%T", n)
+		stats.UnhandledTypes[typeName]++
+		if len(stats.UnhandledSamples) < 10 {
+			stats.UnhandledSamples = append(stats.UnhandledSamples, fmt.Sprintf("%s: %s", stats.CurrentFile, typeName))
+		}
 		return map[string]interface{}{
 			"kind":       "xnkUnknown",
-			"syntaxKind": fmt.Sprintf("%T", n),
+			"syntaxKind": typeName,
 		}
 	}
 
@@ -535,30 +909,56 @@ func convertToXLang(node ast.Node, stats *Statistics) map[string]interface{} {
 }
 
 func convertFunc(n *ast.FuncDecl, stats *Statistics) map[string]interface{} {
+	stats.pushContext(fmt.Sprintf("func %s", n.Name.Name))
+	defer stats.popContext()
+
+	// In Go, functions starting with uppercase are exported (public)
+	visibility := "private"
+	if len(n.Name.Name) > 0 && n.Name.Name[0] >= 'A' && n.Name.Name[0] <= 'Z' {
+		visibility = "public"
+	}
+
+	// Handle nil body (function declarations without implementation, like in builtin.go)
+	var body interface{} = nil
+	if n.Body != nil {
+		body = convertToXLang(n.Body, stats)
+	}
+
 	return map[string]interface{}{
-		"kind":       "xnkFuncDecl",
-		"funcName":   n.Name.Name,
-		"params":     convertParams(n.Type.Params, stats),
-		"returnType": convertReturnType(n.Type.Results, stats),
-		"body":       convertToXLang(n.Body, stats),
-		"isAsync":    false,
+		"kind":           "xnkFuncDecl",
+		"funcName":       n.Name.Name,
+		"params":         convertParams(n.Type.Params, stats),
+		"returnType":     convertReturnType(n.Type.Results, stats),
+		"body":           body,
+		"isAsync":        false,
+		"funcIsStatic":   true, // Go functions are always "static" (no implicit receiver)
+		"funcVisibility": visibility,
 	}
 }
 
 func convertMethod(n *ast.FuncDecl, stats *Statistics) map[string]interface{} {
+	stats.pushContext(fmt.Sprintf("method %s", n.Name.Name))
+	defer stats.popContext()
+
 	receiver := convertParams(n.Recv, stats)
 	var receiverNode interface{} = nil
 	if len(receiver) > 0 {
 		receiverNode = receiver[0]
 	}
 
+	// Handle nil body (method declarations without implementation)
+	var body interface{} = nil
+	if n.Body != nil {
+		body = convertToXLang(n.Body, stats)
+	}
+
 	return map[string]interface{}{
-		"kind":         "xnkMethodDecl",
-		"receiver":     receiverNode,
-		"methodName":   n.Name.Name,
-		"mparams":      convertParams(n.Type.Params, stats),
-		"mreturnType":  convertReturnType(n.Type.Results, stats),
-		"mbody":        convertToXLang(n.Body, stats),
+		"kind":          "xnkMethodDecl",
+		"receiver":      receiverNode,
+		"methodName":    n.Name.Name,
+		"mparams":       convertParams(n.Type.Params, stats),
+		"mreturnType":   convertReturnType(n.Type.Results, stats),
+		"mbody":         body,
 		"methodIsAsync": false,
 	}
 }
@@ -772,7 +1172,7 @@ func convertCaseClause(clause *ast.CaseClause, stats *Statistics) map[string]int
 	// If no values, it's the default case
 	if len(values) == 0 {
 		return map[string]interface{}{
-			"kind":        "xnkDefaultClause",
+			"kind": "xnkDefaultClause",
 			"defaultBody": map[string]interface{}{
 				"kind":      "xnkBlockStmt",
 				"blockBody": body,
@@ -791,6 +1191,82 @@ func convertCaseClause(clause *ast.CaseClause, stats *Statistics) map[string]int
 	}
 }
 
+func convertCommClause(clause *ast.CommClause, stats *Statistics) map[string]interface{} {
+	// Communication clause in select statement
+	stats.Constructs["xnkExternal_GoCommClause"]++
+
+	body := []interface{}{}
+	for _, stmt := range clause.Body {
+		converted := convertToXLang(stmt, stats)
+		if converted != nil {
+			body = append(body, converted)
+		}
+	}
+
+	// Default case in select
+	if clause.Comm == nil {
+		return map[string]interface{}{
+			"kind":      "xnkExternal_GoCommClause",
+			"extCommOp": nil,
+			"extCommBody": map[string]interface{}{
+				"kind":      "xnkBlockStmt",
+				"blockBody": body,
+			},
+			"extCommIsDefault": true,
+		}
+	}
+
+	return map[string]interface{}{
+		"kind":      "xnkExternal_GoCommClause",
+		"extCommOp": convertToXLang(clause.Comm, stats),
+		"extCommBody": map[string]interface{}{
+			"kind":      "xnkBlockStmt",
+			"blockBody": body,
+		},
+		"extCommIsDefault": false,
+	}
+}
+
+func convertTypeSwitchCase(clause *ast.CaseClause, stats *Statistics) map[string]interface{} {
+	// Type case in type switch
+	stats.Constructs["xnkExternal_GoTypeCase"]++
+	types := []interface{}{}
+	for _, expr := range clause.List {
+		types = append(types, convertType(expr, stats))
+	}
+
+	body := []interface{}{}
+	for _, stmt := range clause.Body {
+		converted := convertToXLang(stmt, stats)
+		if converted != nil {
+			body = append(body, converted)
+		}
+	}
+
+	// Default case
+	if len(types) == 0 {
+		return map[string]interface{}{
+			"kind":             "xnkExternal_GoTypeCase",
+			"extTypeCaseTypes": nil,
+			"extTypeCaseBody": map[string]interface{}{
+				"kind":      "xnkBlockStmt",
+				"blockBody": body,
+			},
+			"extTypeCaseIsDefault": true,
+		}
+	}
+
+	return map[string]interface{}{
+		"kind":             "xnkExternal_GoTypeCase",
+		"extTypeCaseTypes": types,
+		"extTypeCaseBody": map[string]interface{}{
+			"kind":      "xnkBlockStmt",
+			"blockBody": body,
+		},
+		"extTypeCaseIsDefault": false,
+	}
+}
+
 func printStatistics(stats *Statistics) {
 	fmt.Println("\nXLang Node Statistics:")
 	fmt.Println("======================")
@@ -798,4 +1274,17 @@ func printStatistics(stats *Statistics) {
 		fmt.Printf("%-25s: %d\n", construct, count)
 	}
 	fmt.Printf("\nTotal XLang node types: %d\n", len(stats.Constructs))
+
+	// Print unhandled types breakdown
+	if len(stats.UnhandledTypes) > 0 {
+		fmt.Println("\nUnhandled AST Node Types:")
+		fmt.Println("=========================")
+		for typeName, count := range stats.UnhandledTypes {
+			fmt.Printf("%-40s: %d\n", typeName, count)
+		}
+		fmt.Println("\nSample locations:")
+		for _, sample := range stats.UnhandledSamples {
+			fmt.Printf("  %s\n", sample)
+		}
+	}
 }

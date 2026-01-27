@@ -1,12 +1,12 @@
-import os
-import std/json
+# import os
+# import std/json
 import std/tables
 import core/xlangtypes
 import core/jsontoxlangtypes
-import backends/nim/xlangtonim
+# import backends/nim/xlangtonim
 import backends/nim/my_nim_node
-import backends/nim/astprinter
-import backends/nim/naming_conventions
+# import backends/nim/astprinter
+# import backends/nim/naming_conventions
 import backends/nim/nim_constants
 import transforms/fixed_point_transformer
 import transforms/transform_context
@@ -17,198 +17,205 @@ import passes/primitive_type_mapping
 import passes/fix_generic_type_syntax
 import semantic/semantic_analysis
 
-proc stepParseXLang*(inputFile: string, errorCollector: ErrorCollector, verbose: bool): XLangNode =
-  ## Step 1: Parse JSON to XLang AST
+# =============================================================================
+# Parse Step Helpers
+# =============================================================================
+
+proc logParseStart(verbose: bool) =
   if verbose:
     echo "DEBUG: About to parse xljs file..."
-  result = parseXLangJson(inputFile)
+
+proc logParseResult(ast: XLangNode, verbose: bool) =
   if verbose:
-    echo "DEBUG: XLang AST kind: ", result.kind
-    echo "DEBUG: XLang AST has ", (if result.kind == xnkFile: $result.moduleDecls.len else: "N/A"), " module declarations"
+    echo "DEBUG: XLang AST kind: ", ast.kind
+    let declCount = if ast.kind == xnkFile: $ast.moduleDecls.len else: "N/A"
+    echo "DEBUG: XLang AST has ", declCount, " module declarations"
     echo "✓ XLang AST created successfully"
+
+proc stepParseXLang*(inputFile: string, errorCollector: ErrorCollector, verbose: bool): XLangNode =
+  ## Step 1: Parse JSON to XLang AST
+  logParseStart(verbose)
+  result = parseXLangJson(inputFile)
+  logParseResult(result, verbose)
+
+# =============================================================================
+# Semantic Analysis Step Helpers
+# =============================================================================
+
+proc logSemanticStart(verbose: bool) =
+  if verbose:
+    echo "DEBUG: Running semantic analysis..."
+
+proc logSemanticResult(info: SemanticInfo, verbose: bool) =
+  if verbose:
+    echo "✓ Semantic analysis complete"
+    echo "  - Symbols: ", info.allSymbols.len
+    echo "  - Scopes: ", info.allScopes.len
+    echo "  - Renames: ", info.renames.len
+    if info.warnings.len > 0:
+      echo "  - Warnings: ", info.warnings.len
 
 proc stepSemanticAnalysis*(xlangAst: XLangNode, verbose: bool): SemanticInfo =
   ## Step 1.5: Run semantic analysis
-  if verbose:
-    echo "DEBUG: Running semantic analysis..."
+  logSemanticStart(verbose)
   result = analyzeProgram(xlangAst, NimKeywords)
-  if verbose:
-    echo "✓ Semantic analysis complete"
-    echo "  - Symbols: ", result.allSymbols.len
-    echo "  - Scopes: ", result.allScopes.len
-    echo "  - Renames: ", result.renames.len
-    if result.warnings.len > 0:
-      echo "  - Warnings: ", result.warnings.len
+  logSemanticResult(result, verbose)
 
-proc stepEnumNormalization*(xlangAst: var XLangNode, verbose: bool, semanticInfo: SemanticInfo, errorCollector: ErrorCollector) =
-  ## Step 1.7: Normalize enum member access
+# =============================================================================
+# Enum Normalization Step Helpers
+# =============================================================================
+
+proc logEnumStart(verbose: bool) =
   if verbose:
     echo "DEBUG: Running enum normalization..."
 
-  # Create a minimal transform context for enum normalization
-  var sourceLang = ""
-  if xlangAst.kind == xnkFile and xlangAst.sourceLang != "":
-    sourceLang = xlangAst.sourceLang
+proc logEnumComplete(verbose: bool) =
+  if verbose:
+    echo "✓ Enum normalization complete"
 
-  let ctx = newTransformContext(
+proc extractSourceLang(ast: XLangNode): string =
+  ## Extract source language from AST if available
+  if ast.kind == xnkFile and ast.sourceLang != "":
+    ast.sourceLang
+  else:
+    ""
+
+proc createEnumContext(semanticInfo: SemanticInfo, errorCollector: ErrorCollector, sourceLang: string, verbose: bool): TransformContext =
+  ## Create transform context for enum normalization
+  newTransformContext(
     semanticInfo = semanticInfo,
     errorCollector = errorCollector,
-    targetLang = "",  # Not needed for enum normalization
+    targetLang = "",
     sourceLang = sourceLang,
     currentFile = "",
     verbose = verbose
   )
 
+proc stepEnumNormalization*(xlangAst: var XLangNode, verbose: bool, semanticInfo: SemanticInfo, errorCollector: ErrorCollector) =
+  ## Step 1.7: Normalize enum member access
+  logEnumStart(verbose)
+  let sourceLang = extractSourceLang(xlangAst)
+  let ctx = createEnumContext(semanticInfo, errorCollector, sourceLang, verbose)
   xlangAst = transformEnumNormalization(xlangAst, ctx)
-  if verbose:
-    echo "✓ Enum normalization complete"
+  logEnumComplete(verbose)
 
-proc stepTransformPasses*(xlangAst: var XLangNode, semanticInfo: SemanticInfo, passManager: FixedPointTransformer,
-                        inputFile: string, targetLang: string, infiniteLoopFiles: var seq[tuple[file: string, iterations: int, kinds: seq[XLangNodeKind]]],
-                        verbose: bool) =
-  ## Step 2: Apply transformation passes
+# =============================================================================
+# Transform Passes Step Helpers
+# =============================================================================
+
+proc logTransformStart(verbose: bool) =
   if verbose:
     echo "DEBUG: Running transformation passes..."
     echo "DEBUG: About to run passes on AST..."
 
-  # Create transform context with all services
-  var sourceLang = ""
-  if xlangAst.kind == xnkFile and xlangAst.sourceLang != "":
-    sourceLang = xlangAst.sourceLang
+proc logTransformResult(ast: XLangNode, verbose: bool) =
+  if verbose:
+    echo "DEBUG: After transformations, AST kind: ", ast.kind
+    echo "✓ Transformations applied successfully"
 
-  let ctx = newTransformContext(
+proc logTransformAuditLog(ctx: TransformContext, verbose: bool) =
+  ## Display the transform audit log if there are entries and verbose mode
+  let log = ctx.getTransformLog()
+  if log.len > 0 and verbose:
+    echo ctx.formatTransformLog()
+
+proc logTransformWarning(iterations: int, verbose: bool) =
+  if verbose:
+    echo "WARNING: Potential infinite loop detected (", iterations, " iterations)"
+
+proc createTransformContext(semanticInfo: SemanticInfo, errorCollector: ErrorCollector, targetLang, sourceLang, inputFile: string, verbose: bool): TransformContext =
+  ## Create transform context for transform passes
+  newTransformContext(
     semanticInfo = semanticInfo,
-    errorCollector = passManager.errorCollector,
+    errorCollector = errorCollector,
     targetLang = targetLang,
     sourceLang = sourceLang,
     currentFile = inputFile,
     verbose = verbose
   )
 
+proc recordInfiniteLoop(infiniteLoopFiles: var seq[tuple[file: string, iterations: int, kinds: seq[XLangNodeKind]]], inputFile: string, result: FixedPointResult) =
+  ## Record an infinite loop occurrence
+  infiniteLoopFiles.add((
+    file: inputFile,
+    iterations: result.iterations,
+    kinds: result.loopKinds
+  ))
+  echo "WARNING: Max iterations reached for: ", inputFile
+
+proc stepTransformPasses*(xlangAst: var XLangNode, semanticInfo: SemanticInfo, passManager: FixedPointTransformer,
+                        inputFile: string, targetLang: string,
+                        infiniteLoopFiles: var seq[tuple[file: string, iterations: int, kinds: seq[XLangNodeKind]]],
+                        verbose: bool, xlangOutput:bool) =
+  ## Step 2: Apply transformation passes
+  logTransformStart(verbose)
+  
+  let sourceLang = extractSourceLang(xlangAst)
+  let ctx = createTransformContext(semanticInfo, passManager.errorCollector, targetLang, sourceLang, inputFile, verbose)
+  
   # Build node index for parent navigation (needed by property transforms)
   ctx.buildNodeIndex(xlangAst)
+  
+  xlangAst = passManager.run(xlangAst, verbose, xlangOutput, ctx)
 
-  xlangAst = passManager.run(xlangAst, verbose, ctx)
   if passManager.result.maxIterationsReached:
-    infiniteLoopFiles.add((
-      file: inputFile,
-      iterations: passManager.result.iterations,
-      kinds: passManager.result.loopKinds
-    ))
-    echo "WARNING: Max iterations reached for: ", inputFile
-  elif passManager.result.loopWarning and verbose:
-    echo "WARNING: Potential infinite loop detected (", passManager.result.iterations, " iterations)"
-  if verbose:
-    echo "DEBUG: After transformations, AST kind: ", xlangAst.kind
-    echo "✓ Transformations applied successfully"
+    recordInfiniteLoop(infiniteLoopFiles, inputFile, passManager.result)
+  elif passManager.result.loopWarning:
+    logTransformWarning(passManager.result.iterations, verbose)
 
-proc stepSanitizeIdentifiers*(xlangAst: var XLangNode, verbose: bool) =
-  ## Step 2.5: Apply identifier sanitization
+  logTransformResult(xlangAst, verbose)
+  logTransformAuditLog(ctx, verbose)
+
+# =============================================================================
+# Sanitization Step Helpers
+# =============================================================================
+
+proc logSanitizeStart(verbose: bool) =
   if verbose:
     echo "DEBUG: Applying Nim identifier sanitization..."
-  xlangAst = applyNimIdentifierSanitization(xlangAst)
+
+proc logSanitizeComplete(verbose: bool) =
   if verbose:
     echo "✓ Identifier sanitization applied"
 
-proc stepFixGenericTypes*(xlangAst: var XLangNode, verbose: bool) =
-  ## Step 2.6: Fix generic type syntax
+proc stepSanitizeIdentifiers*(xlangAst: var XLangNode, verbose: bool) =
+  ## Step 2.5: Apply identifier sanitization
+  logSanitizeStart(verbose)
+  xlangAst = applyNimIdentifierSanitization(xlangAst)
+  logSanitizeComplete(verbose)
+
+# =============================================================================
+# Generic Type Fix Step Helpers
+# =============================================================================
+
+proc logGenericFixStart(verbose: bool) =
   if verbose:
     echo "DEBUG: Fixing generic type syntax..."
-  xlangAst = applyGenericTypeFix(xlangAst)
+
+proc logGenericFixComplete(verbose: bool) =
   if verbose:
     echo "✓ Generic type syntax fixed"
 
-proc stepMapPrimitiveTypes*(xlangAst: var XLangNode, verbose: bool) =
-  ## Step 2.7: Apply primitive type mapping
+proc stepFixGenericTypes*(xlangAst: var XLangNode, verbose: bool) =
+  ## Step 2.6: Fix generic type syntax
+  logGenericFixStart(verbose)
+  xlangAst = applyGenericTypeFix(xlangAst)
+  logGenericFixComplete(verbose)
+
+# =============================================================================
+# Primitive Type Mapping Step Helpers
+# =============================================================================
+
+proc logPrimitiveMapStart(verbose: bool) =
   if verbose:
     echo "DEBUG: Applying primitive type mapping..."
-  xlangAst = applyPrimitiveTypeMapping(xlangAst)
+
+proc logPrimitiveMapComplete(verbose: bool) =
   if verbose:
     echo "✓ Primitive type mapping applied"
 
-
-# # moved to nim_backend.nim
-
-
-# proc stepConvertToNim*(xlangAst: XLangNode, semanticInfo: SemanticInfo, inputFile: string, verbose: bool): MyNimNode =
-#   ## Step 3: Convert XLang AST to Nim AST
-#   if verbose:
-#     echo "DEBUG: About to convert XLang AST to Nim AST..."
-
-#   # Count classes from semantic info to determine if we need prefixes
-#   var classCount = 0
-#   for sym in semanticInfo.allSymbols:
-#     if sym.kind == skType and not sym.declNode.isNil and sym.declNode.kind == xnkClassDecl:
-#       inc classCount
-
-#   if verbose and classCount > 1:
-#     echo "DEBUG: Found ", classCount, " classes - will use prefixes for static methods"
-
-#   let ctx = newContext()
-#   ctx.currentFile = inputFile
-#   ctx.semanticInfo = semanticInfo
-#   ctx.classCount = classCount
-#   if xlangAst.kind == xnkFile and xlangAst.sourceLang != "":
-#     ctx.inputLang = xlangAst.sourceLang
-#     if verbose:
-#       echo "DEBUG: Source language: ", ctx.inputLang
-#   result = xlangToNimAST(xlangAst, ctx)
-#   if verbose:
-#     echo "DEBUG: Nim AST root kind: ", result.kind
-#     echo "DEBUG: Nim AST has ", result.sons.len, " sons"
-#     echo "✓ Nim AST created successfully"
-
-# proc stepGenerateCode*(nimAst: MyNimNode, verbose: bool): string =
-#   ## Step 4: Generate Nim code from AST
-#   if verbose:
-#     echo "DEBUG: About to generate Nim code from AST..."
-#   result = nimAst.toNimCode()
-#   if verbose:
-#     echo "DEBUG: Generated Nim code length: ", result.len, " characters"
-#     echo "✓ Nim code generated successfully"
-
-
-
-# proc stepWriteOutputs*(nimCode: string, nimAst: MyNimNode, xlangAst: XLangNode, inputFile, outputDir, inputRoot: string,
-#                      useStdout, outputJson, sameDir, verbose: bool) =
-#   ## Step 5: Write outputs
-#   if useStdout:
-#     stdout.write(nimCode)
-#   else:
-#     let nimOutputFile = if sameDir:
-#       # Write to same directory as input file, converting filename to snake_case
-#       let inputDir = inputFile.parentDir()
-#       let inputBaseName = inputFile.splitFile().name
-#       let snakeBaseName = pascalToSnake(inputBaseName)
-#       inputDir / (snakeBaseName & ".nim")
-#     else:
-#       # Write to transpiler_output with proper structure
-#       let relativeOutputPath = getOutputFileName(xlangAst, inputFile, ".nim", inputRoot)
-#       outputDir / relativeOutputPath
-
-#     let parentDir = nimOutputFile.parentDir()
-#     if parentDir != "" and not dirExists(parentDir):
-#       createDir(parentDir)
-#       if verbose:
-#         echo "DEBUG: Created directory: ", parentDir
-#     if verbose:
-#       echo "DEBUG: About to write .nim file to: ", nimOutputFile
-#     writeFile(nimOutputFile, nimCode)
-#     if verbose:
-#       echo "✓ Nim code written to: ", nimOutputFile
-
-#   if outputJson:
-#     let nimJsonFile = inputFile.changeFileExt(".nimjs")
-#     if verbose:
-#       echo "DEBUG: About to serialize Nim AST to JSON using %* operator..."
-#     let jsonNode = %nimAst
-#     if verbose:
-#       echo "DEBUG: JSON node created, about to pretty-print..."
-#     let jsonContent = pretty(jsonNode)
-#     if verbose:
-#       echo "DEBUG: JSON content length: ", jsonContent.len, " characters"
-#       echo "DEBUG: About to write .nimjs file to: ", nimJsonFile
-#     writeFile(nimJsonFile, jsonContent)
-#     if verbose:
-#       echo "✓ Nim AST JSON written to: ", nimJsonFile
-#       echo "DEBUG: First 200 chars of nimjs: ", jsonContent[0..<min(200, jsonContent.len)]
+proc stepMapPrimitiveTypes*(xlangAst: var XLangNode, verbose: bool) =
+  ## Step 2.7: Apply primitive type mapping
+  logPrimitiveMapStart(verbose)
+  xlangAst = applyPrimitiveTypeMapping(xlangAst)
+  logPrimitiveMapComplete(verbose)

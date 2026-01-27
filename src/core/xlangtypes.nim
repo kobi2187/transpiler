@@ -47,6 +47,7 @@ type
     opBitAnd = "bitand"        # & (bitwise AND)
     opBitOr = "bitor"          # | (bitwise OR)
     opBitXor = "bitxor"        # ^ (bitwise XOR)
+    opBitAndNot = "bitandnot"  # &^ (bit clear, Go: a & ~b)
     opShiftLeft = "shl"        # << (left shift)
     opShiftRight = "shr"       # >> (right shift)
     opShiftRightUnsigned = "shru"  # >>> (unsigned right shift, Java/JavaScript)
@@ -109,6 +110,9 @@ type
     opAddressOf = "addrof"     # & (address-of)
     opDereference = "deref"    # * (dereference)
 
+    # Go channel operations
+    opChannelReceive = "chanrecv"  # <- (channel receive, Go)
+
     # Async
     opAwait = "await"          # await (async/await)
 
@@ -117,6 +121,8 @@ type
 
     # Delete operator
     opDelete = "delete"        # delete (property deletion, JavaScript)
+    # Index from end (C# ^)
+    opIndexFromEnd = "^"       # ^n (index from end, C# 8+)
 
 type
   # Import/Export types
@@ -169,7 +175,8 @@ type
 
     # Types
     xnkNamedType, xnkArrayType, xnkMapType, xnkFuncType, xnkPointerType
-    xnkReferenceType, xnkGenericType, xnkUnionType, xnkIntersectionType, xnkDistinctType
+    xnkReferenceType, xnkGenericType, xnkUnionType, xnkIntersectionType, xnkDistinctType, xnkTupleType
+    xnkInlineStruct, xnkInlineInterface
 
     # Other
     xnkIdentifier, xnkComment, xnkImport, xnkExport, xnkAttribute
@@ -253,6 +260,19 @@ type
     xnkExternal_Goroutine       # Go goroutine (go stmt) → lowered to spawn/async
     xnkExternal_GoDefer         # Go defer (different semantics from Nim defer)
     xnkExternal_GoSelect        # Go select statement → lowered to channel multiplexing
+    xnkExternal_GoCommClause    # Go select case (communication clause)
+    xnkExternal_GoChannelSend   # Go channel send: ch <- value
+    xnkExternal_GoChanType      # Go channel type: chan T, <-chan T, chan<- T
+    xnkExternal_GoTypeSwitch      # Go type switch: switch x.(type) { }
+    xnkExternal_GoTypeCase        # Go type case clause in type switch
+    xnkExternal_GoTaglessSwitch   # Go tagless switch: switch { case cond: ... }
+    xnkExternal_GoVariadic        # Go variadic parameter type: ...T
+    xnkExternal_GoEmptyInterfaceType  # Go empty interface{} type literal → lowered to object (Nim) or object (C#)
+    xnkExternal_GoEmptyStructType     # Go empty struct{} type literal → lowered to void (Nim) or EmptyStruct (C#)
+
+    # C# 9+ Features
+    xnkExternal_Record          # C# record type → lowered to struct/class with value equality
+    xnkExternal_RecordWith      # C# with expression → record copy with modifications
 
 
 
@@ -288,6 +308,12 @@ type
       mreturnType*: Option[XLangNode]
       mbody*: XLangNode
       methodIsAsync*: bool
+      methodIsStatic*: bool
+      methodIsAbstract*: bool
+      methodIsFinal*: bool
+      methodIsPrivate*: bool
+      methodIsProtected*: bool
+      methodIsPublic*: bool
     of xnkIteratorDecl:
       iteratorName*: string
       iteratorParams*: seq[XLangNode]
@@ -297,9 +323,20 @@ type
       typeNameDecl*: string
       baseTypes*: seq[XLangNode]
       members*: seq[XLangNode]
+      typeIsStatic*: bool
+      typeIsFinal*: bool
+      typeIsAbstract*: bool
+      typeIsPrivate*: bool
+      typeIsProtected*: bool
+      typeIsPublic*: bool
+    of xnkInlineStruct, xnkInlineInterface:
+      inlineMembers*: seq[XLangNode]
     of xnkEnumDecl:
       enumName*: string
       enumMembers*: seq[XLangNode]
+      enumIsPrivate*: bool
+      enumIsProtected*: bool
+      enumIsPublic*: bool
     of xnkVarDecl, xnkLetDecl, xnkConstDecl:
       declName*: string
       declType*: Option[XLangNode]
@@ -316,10 +353,20 @@ type
       fieldName*: string
       fieldType*: XLangNode
       fieldInitializer*: Option[XLangNode]
+      fieldIsStatic*: bool
+      fieldIsFinal*: bool
+      fieldIsVolatile*: bool
+      fieldIsTransient*: bool
+      fieldIsPrivate*: bool
+      fieldIsProtected*: bool
+      fieldIsPublic*: bool
     of xnkConstructorDecl:
       constructorParams*: seq[XLangNode]
       constructorInitializers*: seq[XLangNode]
       constructorBody*: XLangNode
+      constructorIsPrivate*: bool
+      constructorIsProtected*: bool
+      constructorIsPublic*: bool
     of xnkDestructorDecl:
       destructorBody*: Option[XLangNode]
     # of xnkDelegateDecl:
@@ -334,6 +381,7 @@ type
     of xnkIfStmt:
       ifCondition*: XLangNode
       ifBody*: XLangNode
+      elifBranches*: seq[tuple[condition: XLangNode, body: XLangNode]]
       elseBody*: Option[XLangNode]
     of xnkSwitchStmt:
       switchExpr*: XLangNode
@@ -517,6 +565,7 @@ type
       discard
     of xnkNamedType:
       typeName*: string
+      isEmptyMarkerType*: Option[bool]  # Some(true) for Go empty interface{}/struct{} markers
     of xnkArrayType:
       elementType*: XLangNode
       arraySize*: Option[XLangNode]
@@ -538,6 +587,8 @@ type
       typeMembers*: seq[XLangNode]
     of xnkDistinctType:
       distinctBaseType*: XLangNode
+    of xnkTupleType:
+      tupleTypeElements*: seq[XLangNode]  # Each element is a Parameter with optional name and type
     of xnkIdentifier:
       identName*: string
 
@@ -786,12 +837,17 @@ type
     # These share the same field structure as their common counterparts.
     # The external prefix indicates they must be lowered by transformation passes.
 
-    # C# Property → shares fields with xnkPropertyDecl
+    # C# Property with explicit accessor info
     of xnkExternal_Property:
       extPropName*: string
       extPropType*: Option[XLangNode]
-      extPropGetter*: Option[XLangNode]
-      extPropSetter*: Option[XLangNode]
+      extPropVisibility*: string          # "public", "private", "protected", "internal"
+      extPropIsStatic*: bool
+      extPropHasGetter*: bool             # Does get accessor exist?
+      extPropHasSetter*: bool             # Does set accessor exist?
+      extPropGetterBody*: Option[XLangNode]  # Body if explicit, none if auto
+      extPropSetterBody*: Option[XLangNode]  # Body if explicit, none if auto
+      extPropInitializer*: Option[XLangNode] # For: public int X { get; } = 5;
 
     # C# Indexer → shares fields with xnkIndexerDecl
     of xnkExternal_Indexer:
@@ -990,6 +1046,58 @@ type
       extSelectCases*: seq[XLangNode]   # select cases (channel operations)
       extSelectDefault*: Option[XLangNode]
 
+    # Go communication clause (case in select)
+    of xnkExternal_GoCommClause:
+      extCommOp*: XLangNode              # channel operation (send/recv) or nil for default
+      extCommBody*: XLangNode            # body of the case
+      extCommIsDefault*: bool            # true if this is the default case
+
+    # Go channel send: ch <- value
+    of xnkExternal_GoChannelSend:
+      extSendChannel*: XLangNode         # the channel to send to
+      extSendValue*: XLangNode           # the value to send
+
+    # Go channel type: chan T, <-chan T, chan<- T
+    of xnkExternal_GoChanType:
+      extChanElemType*: XLangNode        # element type of the channel
+      extChanDir*: string                # "both", "recv", or "send"
+
+    # Go type switch: switch x.(type) { }
+    of xnkExternal_GoTypeSwitch:
+      extGoTypeSwitchExpr*: XLangNode    # the expression being switched on
+      extGoTypeSwitchCases*: seq[XLangNode]  # type cases
+
+    # Go type case clause
+    of xnkExternal_GoTypeCase:
+      extTypeCaseTypes*: seq[XLangNode]  # types to match (nil for default)
+      extTypeCaseBody*: XLangNode        # body of the case
+      extTypeCaseIsDefault*: bool        # true if this is the default case
+
+    # Go tagless switch: switch { case cond: ... }
+    of xnkExternal_GoTaglessSwitch:
+      extGoTaglessSwitchCases*: seq[XLangNode]  # case clauses (xnkCaseClause/xnkDefaultClause)
+
+    # Go variadic parameter type: ...T
+    of xnkExternal_GoVariadic:
+      extVariadicElemType*: XLangNode    # element type of the variadic
+
+    # Go empty type literals
+    of xnkExternal_GoEmptyInterfaceType:  # Go interface{} type literal
+      discard
+    of xnkExternal_GoEmptyStructType:     # Go struct{} type literal
+      discard
+
+    # C# record
+    of xnkExternal_Record:
+      extRecordName*: string
+      extRecordParams*: seq[XLangNode]     # Positional parameters for primary constructor
+      extRecordBaseTypes*: seq[XLangNode]
+      extRecordMembers*: seq[XLangNode]
+
+    of xnkExternal_RecordWith:
+      extWithExpression*: XLangNode        # The base record expression to copy from
+      extWithInitializer*: XLangNode       # The object initializer with modifications
+
     of xnkUnknown:
       unknownData*: string
     # else: discard
@@ -1105,6 +1213,12 @@ proc `$`*(node: XLangNode): string =
     result &= "(" & node.labelName & ")"
   of xnkGotoStmt:
     result &= "(" & node.gotoLabel & ")"
+  of xnkTupleType:
+    result &= "(" & $node.tupleTypeElements.len & " elements)"
+  of xnkExternal_Record:
+    result &= "(" & node.extRecordName & ")"
+  of xnkExternal_RecordWith:
+    result &= "(with expression)"
   of xnkQualifiedName:
     result &= "(" & $node.qualifiedRight.kind & ")"
   of xnkAliasQualifiedName:
@@ -1167,6 +1281,8 @@ proc `$`*(node: XLangNode): string =
     result &= "(" & node.extExtMethodName & ")"
   of xnkExternal_Channel:
     result &= "(" & (if node.extChannelBuffered: "buffered" else: "unbuffered") & ")"
+  of xnkExternal_GoTaglessSwitch:
+    result &= "(" & $node.extGoTaglessSwitchCases.len & " cases)"
 
   # Statements and expressions with no meaningful string fields to display
   of xnkConstructorDecl, xnkDestructorDecl, xnkAsgn, xnkBlockStmt, xnkIfStmt,
@@ -1200,7 +1316,10 @@ proc `$`*(node: XLangNode): string =
      xnkExternal_With, xnkExternal_Destructure, xnkExternal_Await,
      xnkExternal_FallthroughCase, xnkExternal_Unless, xnkExternal_Until,
      xnkExternal_Pass, xnkExternal_Goroutine, xnkExternal_GoDefer,
-     xnkExternal_GoSelect:
+     xnkExternal_GoSelect, xnkExternal_GoCommClause, xnkExternal_GoChannelSend,
+      xnkExternal_GoChanType, xnkExternal_GoTypeSwitch, xnkExternal_GoTypeCase,
+      xnkExternal_GoVariadic, xnkExternal_GoEmptyInterfaceType, xnkExternal_GoEmptyStructType,
+      xnkInlineStruct, xnkInlineInterface:
     discard
     
 
@@ -1228,7 +1347,14 @@ const externalKinds*: set[XLangNodeKind] = {
   xnkExternal_Channel,          # Go channel
   xnkExternal_Goroutine,        # Go goroutine
   xnkExternal_GoDefer,          # Go defer
-  xnkExternal_GoSelect          # Go select
+  xnkExternal_GoSelect,         # Go select
+  xnkExternal_GoCommClause,     # Go select case
+  xnkExternal_GoChannelSend,    # Go channel send
+  xnkExternal_GoChanType,       # Go channel type
+  xnkExternal_GoTypeSwitch,     # Go type switch
+  xnkExternal_GoTypeCase,       # Go type case
+  xnkExternal_GoTaglessSwitch,  # Go tagless switch
+  xnkExternal_GoVariadic        # Go variadic type
 }
 
 proc isExternalKind*(kind: XLangNodeKind): bool =

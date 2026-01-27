@@ -491,6 +491,7 @@ proc renderMethodDef(n: MyNimNode): string =
   if n.len > 6 and n[MethodBody].kind != nnkEmpty:
     result &= renderNode(n[MethodBody])
   decIndent()
+  result &= "\n\n"
 
 proc renderIteratorDef(n: MyNimNode): string =
   result = ind() & "iterator "

@@ -24,7 +24,7 @@ import core/xlangtypes
 import transforms/transform_context
 import options
 import strutils
-import sequtils
+# import sequtils
 
 proc hasMultipleInheritance*(node: XLangNode): bool =
   ## Check if class has multiple base classes

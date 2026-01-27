@@ -13,7 +13,7 @@
 import core/xlangtypes
 import transforms/transform_context
 import options
-import strutils
+# import strutils
 
 proc transformLambda*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform lambda expressions to Nim anonymous procs

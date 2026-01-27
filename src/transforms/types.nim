@@ -2,7 +2,7 @@
 
 
 import core/xlangtypes
-import semantic/semantic_analysis
+# import semantic/semantic_analysis
 import transform_context
 import sets, hashes
 
@@ -14,6 +14,7 @@ type TransformPassID* = enum
     tpForToWhile = "for-to-while"
     tpDoWhileToWhile = "dowhile-to-while"
     tpTernaryToIf = "ternary-to-if"
+    tpGoTaglessSwitchToIf = "go-tagless-switch-to-if"
     tpNimInterfaceToConcept = "nim-interface-to-concept"
     tpPropertyToProcs = "property-to-procs"
     tpSwitchFallthrough = "switch-fallthrough"
@@ -42,6 +43,8 @@ type TransformPassID* = enum
     tpLambdaNormalization = "lambda-normalization"
     tpGoTypeAssertions = "go-type-assertions"
     tpGoImplicitInterfaces = "go-implicit-interfaces"
+    tpGoEmptyInterfaceType = "go-empty-interface-type"
+    tpGoEmptyStructType = "go-empty-struct-type"
     tpEnumNormalization = "enum-normalization"
     tpPythonMultipleInheritance = "python-multiple-inheritance"
     tpLockToWithLock = "lock-to-withlock"
@@ -62,6 +65,8 @@ type TransformPassID* = enum
     tpNullableToOption = "nullable-to-option"
     tpAddSelfParameter = "add-self-parameter"
     tpNormalizeOperators = "normalize-operators"
+    tpRecordToStruct = "record-to-struct"
+    tpRecordWithToBlock = "record-with-to-block"
     # Add more passes here as they are implemented
 
 type TransformPass* = ref object

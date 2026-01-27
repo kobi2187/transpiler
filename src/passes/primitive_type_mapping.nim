@@ -98,12 +98,21 @@ proc mapTypesInNode(node: var XLangNode) =
       mapTypesInNode(node.fieldType)
 
   # Function declarations - map return type and parameters
-  of xnkFuncDecl, xnkMethodDecl:
+  of xnkFuncDecl:
     if node.returnType.isSome:
       var retType = node.returnType.get
       mapTypesInNode(retType)
       node.returnType = some(retType)
     for param in node.params.mitems:
+      mapTypesInNode(param)
+
+  # Method declarations - use method-specific fields
+  of xnkMethodDecl:
+    if node.mreturnType.isSome:
+      var retType = node.mreturnType.get
+      mapTypesInNode(retType)
+      node.mreturnType = some(retType)
+    for param in node.mparams.mitems:
       mapTypesInNode(param)
 
   # Class/struct/interface members - map recursively
@@ -114,9 +123,9 @@ proc mapTypesInNode(node: var XLangNode) =
       mapTypesInNode(baseType)
 
   of xnkInterfaceDecl:
-    for member in node.extInterfaceMembers.mitems:
+    for member in node.members.mitems:
       mapTypesInNode(member)
-    for baseType in node.extInterfaceBaseTypes.mitems:
+    for baseType in node.baseTypes.mitems:
       mapTypesInNode(baseType)
 
   else:

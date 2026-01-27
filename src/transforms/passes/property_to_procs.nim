@@ -1,174 +1,172 @@
 ## Property to Getter/Setter Procs Transformation
 ##
-## Transforms: property Age { get {...} set {...} }
-## Into:       proc getAge(): T = {...}
-##             proc setAge(value: T) = {...}
+## Transforms C# properties into getter/setter procedures.
+##
+## Handles all property variants:
+## - { get; set; }           - auto r/w property, needs backing field
+## - { get; }                - auto read-only property, needs backing field
+## - { set; }                - auto write-only property (C# 9+), needs backing field
+## - { get { ... } }         - explicit getter only
+## - { set { ... } }         - explicit setter only
+## - { get { ... } set { ... } } - explicit both
+## - { get; set { ... } }    - mixed: auto get, explicit set, needs backing field
+## - { get { ... } set; }    - mixed: explicit get, auto set, needs backing field
+## - { get; } = value;       - auto with initializer
 
 import core/xlangtypes
 import transforms/transform_context
 import error_collector
 import options
 import strutils
-import tables
 
-proc transformPropertyHelper(node: XLangNode, ctx: TransformContext, parentClass: XLangNode): XLangNode =
-  ## Transform a single property node
-  case node.kind
-  of xnkExternal_Property:
-    let prop = node
-    var results: seq[XLangNode] = @[]
+proc makeBackingFieldName(propName: string): string =
+  ## Convert PropertyName to _propertyName
+  "_" & propName[0].toLowerAscii() & propName[1..^1]
 
-    # Determine if this is an auto-property (no explicit getter/setter bodies)
-    let isAutoProperty = prop.extPropGetter.isNone() and prop.extPropSetter.isNone()
+proc makeGetterName(propName: string): string =
+  "get" & propName
 
-    # Register the property rename in semantic info
-    # Look up the property symbol and register its getter/setter names
-    if ctx.semanticInfo != nil:
-      let propSym = ctx.getDeclSymbol(node)
-      if propSym.isSome():
-        let sym = propSym.get()
-        # Register getter as the primary rename for property access
-        let getterName = "get" & prop.extPropName
-        ctx.semanticInfo.renames[sym] = getterName
+proc makeSetterName(propName: string): string =
+  "set" & propName
 
-    # For auto-properties, create a private backing field and add it to the containing class
-    # Following C# convention: PropertyName -> _propertyName
-    if isAutoProperty:
-      let backingFieldName = "_" & prop.extPropName[0].toLowerAscii() & prop.extPropName[1..^1]
+proc createBackingField(prop: XLangNode, backingFieldName: string): XLangNode =
+  ## Create a backing field declaration for an auto-property
+  XLangNode(
+    kind: xnkFieldDecl,
+    fieldName: backingFieldName,
+    fieldType: if prop.extPropType.isSome(): prop.extPropType.get
+               else: XLangNode(kind: xnkNamedType, typeName: "auto"),
+    fieldInitializer: prop.extPropInitializer  # May include initializer like = 5
+  )
 
-      # Find the containing class and add the backing field to it
-      let containingClass = ctx.findContainingClass(node)
-      if containingClass != nil:
-        let backingField = XLangNode(
-          kind: xnkFieldDecl,
-          fieldName: backingFieldName,
-          fieldType: if prop.extPropType.isSome(): prop.extPropType.get else: XLangNode(kind: xnkNamedType, typeName: "auto"),
-          fieldInitializer: none(XLangNode)
-        )
-        ctx.addFieldToClass(containingClass, backingField)
-      else:
-        ctx.addWarning(tekTransformError,
-          "Auto-property '" & prop.extPropName & "' not inside a class - cannot create backing field",
-          ctx.currentFile)
-
-      # Create getter that returns backing field
-      let getterName = "get" & prop.extPropName
-      let getterBody = XLangNode(
-        kind: xnkBlockStmt,
-        blockBody: @[
-          XLangNode(
-            kind: xnkReturnStmt,
-            returnExpr: some(XLangNode(
-              kind: xnkMemberAccessExpr,
-              memberExpr: XLangNode(kind: xnkIdentifier, identName: "self"),
-              memberName: backingFieldName
-            ))
-          )
-        ]
+proc createAutoGetterBody(backingFieldName: string): XLangNode =
+  ## Create body for auto-getter: return self._field
+  XLangNode(
+    kind: xnkBlockStmt,
+    blockBody: @[
+      XLangNode(
+        kind: xnkReturnStmt,
+        returnExpr: some(XLangNode(
+          kind: xnkMemberAccessExpr,
+          memberExpr: XLangNode(kind: xnkIdentifier, identName: "self"),
+          memberName: backingFieldName
+        ))
       )
-      let getter = XLangNode(
-        kind: xnkFuncDecl,
-        funcName: getterName,
-        params: @[],
-        returnType: prop.extPropType,
-        body: getterBody,
-        isAsync: false,
-        funcVisibility: "public",
-        funcIsStatic: false
-      )
-      results.add(getter)
+    ]
+  )
 
-      # Create setter for read-write auto-properties
-      let setterName = "set" & prop.extPropName
-      let valueParam = XLangNode(
-        kind: xnkParameter,
-        paramName: "value",
-        paramType: prop.extPropType,
-        defaultValue: none(XLangNode)
+proc createAutoSetterBody(backingFieldName: string): XLangNode =
+  ## Create body for auto-setter: self._field = value
+  XLangNode(
+    kind: xnkBlockStmt,
+    blockBody: @[
+      XLangNode(
+        kind: xnkAsgn,
+        asgnLeft: XLangNode(
+          kind: xnkMemberAccessExpr,
+          memberExpr: XLangNode(kind: xnkIdentifier, identName: "self"),
+          memberName: backingFieldName
+        ),
+        asgnRight: XLangNode(kind: xnkIdentifier, identName: "value")
       )
-      let setterBody = XLangNode(
-        kind: xnkBlockStmt,
-        blockBody: @[
-          XLangNode(
-            kind: xnkAsgn,
-            asgnLeft: XLangNode(
-              kind: xnkMemberAccessExpr,
-              memberExpr: XLangNode(kind: xnkIdentifier, identName: "self"),
-              memberName: backingFieldName
-            ),
-            asgnRight: XLangNode(kind: xnkIdentifier, identName: "value")
-          )
-        ]
-      )
-      let setter = XLangNode(
-        kind: xnkFuncDecl,
-        funcName: setterName,
-        params: @[valueParam],
-        returnType: none(XLangNode),
-        body: setterBody,
-        isAsync: false,
-        funcVisibility: "public",
-        funcIsStatic: false
-      )
-      results.add(setter)
-      stderr.writeLine("DEBUG: Added setter, total results.len = ", results.len)
-    else:
-      # Explicit getter/setter bodies - use them directly
-      # Create getter proc
-      if prop.extPropGetter.isSome():
-        let getterName = "get" & prop.extPropName
-        let getter = XLangNode(
-          kind: xnkFuncDecl,
-          funcName: getterName,
-          params: @[],
-          returnType: prop.extPropType,
-          body: prop.extPropGetter.get,
-          isAsync: false,
-          funcVisibility: "public",
-          funcIsStatic: false
-        )
-        results.add(getter)
+    ]
+  )
 
-      # Create setter proc
-      if prop.extPropSetter.isSome():
-        let setterName = "set" & prop.extPropName
-        let valueParam = XLangNode(
-          kind: xnkParameter,
-          paramName: "value",
-          paramType: prop.extPropType,
-          defaultValue: none(XLangNode)
-        )
-        let setter = XLangNode(
-          kind: xnkFuncDecl,
-          funcName: setterName,
-          params: @[valueParam],
-          returnType: none(XLangNode),
-          body: prop.extPropSetter.get,
-          isAsync: false,
-          funcVisibility: "public",
-          funcIsStatic: false
-        )
-        results.add(setter)
+proc createGetterProc(prop: XLangNode, body: XLangNode): XLangNode =
+  ## Create a getter procedure
+  XLangNode(
+    kind: xnkFuncDecl,
+    funcName: makeGetterName(prop.extPropName),
+    params: @[],
+    returnType: prop.extPropType,
+    body: body,
+    isAsync: false,
+    funcVisibility: prop.extPropVisibility,
+    funcIsStatic: prop.extPropIsStatic
+  )
 
-    # Return getter and setter in a block (backing field was added directly to parent)
-    if results.len == 0:
-      # No getter/setter (shouldn't happen)
-      result = node
-    elif results.len == 1:
-      result = results[0]
-    else:
-      result = XLangNode(
-        kind: xnkBlockStmt,
-        blockBody: results
-      )
-  else:
-    return node
+proc createSetterProc(prop: XLangNode, body: XLangNode): XLangNode =
+  ## Create a setter procedure
+  let valueParam = XLangNode(
+    kind: xnkParameter,
+    paramName: "value",
+    paramType: prop.extPropType,
+    defaultValue: none(XLangNode)
+  )
+  XLangNode(
+    kind: xnkFuncDecl,
+    funcName: makeSetterName(prop.extPropName),
+    params: @[valueParam],
+    returnType: none(XLangNode),
+    body: body,
+    isAsync: false,
+    funcVisibility: prop.extPropVisibility,
+    funcIsStatic: prop.extPropIsStatic
+  )
 
 proc transformPropertyToProcs*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform property declarations into getter/setter procedures
-  case node.kind
-  of xnkExternal_Property:
-    result = transformPropertyHelper(node, ctx, nil)
+  if node.kind != xnkExternal_Property:
+    return node
 
-  else:
+  let prop = node
+  var results: seq[XLangNode] = @[]
+
+  # Determine what kind of accessors we have
+  let hasGetter = prop.extPropHasGetter
+  let hasSetter = prop.extPropHasSetter
+  let getterIsAuto = hasGetter and prop.extPropGetterBody.isNone
+  let setterIsAuto = hasSetter and prop.extPropSetterBody.isNone
+
+  # If any accessor is auto, we need a backing field
+  let needsBackingField = getterIsAuto or setterIsAuto
+  let backingFieldName = makeBackingFieldName(prop.extPropName)
+
+  # Register the property rename in semantic info
+  if ctx.semanticInfo != nil:
+    let propSym = ctx.getDeclSymbol(node)
+    if propSym.isSome():
+      let sym = propSym.get()
+      ctx.renameSymbol("PropertyToProcs", sym, makeGetterName(prop.extPropName))
+
+  # Add backing field if needed
+  if needsBackingField:
+    let containingClass = ctx.findContainingClass(node)
+    if containingClass != nil:
+      let backingField = createBackingField(prop, backingFieldName)
+      ctx.queueFieldForClass("PropertyToProcs", containingClass, backingField)
+    else:
+      ctx.addWarning(tekTransformError,
+        "Auto-property '" & prop.extPropName & "' - could not find containing class",
+        ctx.currentFile)
+
+  # Create getter if present
+  if hasGetter:
+    let getterBody = if getterIsAuto:
+      createAutoGetterBody(backingFieldName)
+    else:
+      prop.extPropGetterBody.get
+    results.add(createGetterProc(prop, getterBody))
+
+  # Create setter if present
+  if hasSetter:
+    let setterBody = if setterIsAuto:
+      createAutoSetterBody(backingFieldName)
+    else:
+      prop.extPropSetterBody.get
+    results.add(createSetterProc(prop, setterBody))
+
+  # Return result
+  if results.len == 0:
+    # Property with no accessors (shouldn't happen, but handle gracefully)
+    ctx.addWarning(tekTransformError,
+      "Property '" & prop.extPropName & "' has no accessors",
+      ctx.currentFile)
     result = node
+  elif results.len == 1:
+    result = results[0]
+  else:
+    result = XLangNode(
+      kind: xnkBlockStmt,
+      blockBody: results
+    )

@@ -11,9 +11,15 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 
 import java.io.FileInputStream;
+import java.io.FileWriter;
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Comprehensive Java to XLang Parser
@@ -23,45 +29,166 @@ import java.util.Map;
 public class JavaToXLangParser {
     private static final ObjectMapper mapper = new ObjectMapper();
     private static final Map<String, Integer> statistics = new HashMap<>();
+    private static int successCount = 0;
+    private static int failCount = 0;
+    private static List<String> failedFiles = new ArrayList<>();
+
+    // Binary operator mapping: Java syntax -> XLang semantic operator
+    private static final Map<String, String> BINARY_OP_MAP = new HashMap<>();
+    static {
+        // Arithmetic
+        BINARY_OP_MAP.put("+", "add");
+        BINARY_OP_MAP.put("-", "sub");
+        BINARY_OP_MAP.put("*", "mul");
+        BINARY_OP_MAP.put("/", "div");
+        BINARY_OP_MAP.put("%", "mod");
+        // Bitwise
+        BINARY_OP_MAP.put("&", "bitand");
+        BINARY_OP_MAP.put("|", "bitor");
+        BINARY_OP_MAP.put("^", "bitxor");
+        BINARY_OP_MAP.put("<<", "shl");
+        BINARY_OP_MAP.put(">>", "shr");
+        BINARY_OP_MAP.put(">>>", "shru");
+        // Comparison
+        BINARY_OP_MAP.put("==", "eq");
+        BINARY_OP_MAP.put("!=", "neq");
+        BINARY_OP_MAP.put("<", "lt");
+        BINARY_OP_MAP.put("<=", "le");
+        BINARY_OP_MAP.put(">", "gt");
+        BINARY_OP_MAP.put(">=", "ge");
+        // Logical
+        BINARY_OP_MAP.put("&&", "and");
+        BINARY_OP_MAP.put("||", "or");
+        // Compound assignment
+        BINARY_OP_MAP.put("+=", "adda");
+        BINARY_OP_MAP.put("-=", "suba");
+        BINARY_OP_MAP.put("*=", "mula");
+        BINARY_OP_MAP.put("/=", "diva");
+        BINARY_OP_MAP.put("%=", "moda");
+        BINARY_OP_MAP.put("&=", "bitanda");
+        BINARY_OP_MAP.put("|=", "bitora");
+        BINARY_OP_MAP.put("^=", "bitxora");
+        BINARY_OP_MAP.put("<<=", "shla");
+        BINARY_OP_MAP.put(">>=", "shra");
+        BINARY_OP_MAP.put(">>>=", "shrua");
+    }
+
+    // Unary operator mapping: Java syntax -> XLang semantic operator
+    private static final Map<String, String> UNARY_OP_MAP = new HashMap<>();
+    static {
+        UNARY_OP_MAP.put("-", "neg");
+        UNARY_OP_MAP.put("+", "pos");
+        UNARY_OP_MAP.put("!", "not");
+        UNARY_OP_MAP.put("~", "bitnot");
+        // Increment/decrement handled separately based on prefix/postfix
+    }
+
+    private static String mapBinaryOp(String javaOp) {
+        return BINARY_OP_MAP.getOrDefault(javaOp, javaOp);
+    }
+
+    private static String mapUnaryOp(String javaOp, boolean isPrefix) {
+        if (javaOp.equals("++")) {
+            return isPrefix ? "preinc" : "postinc";
+        } else if (javaOp.equals("--")) {
+            return isPrefix ? "predec" : "postdec";
+        }
+        return UNARY_OP_MAP.getOrDefault(javaOp, javaOp);
+    }
 
     public static void main(String[] args) throws Exception {
         if (args.length != 1) {
-            System.err.println("Usage: java JavaToXLangParser <java_file_path>");
+            System.err.println("Usage: java JavaToXLangParser <java_file_or_directory>");
+            System.err.println("  For a file: outputs JSON to stdout");
+            System.err.println("  For a directory: recursively creates .xljs files next to each .java file");
             System.exit(1);
         }
 
-        String filePath = args[0];
-        File inputFile = new File(filePath);
+        String inputPath = args[0];
+        File inputFile = new File(inputPath);
 
         if (!inputFile.exists()) {
-            System.err.println("Error: File not found: " + filePath);
+            System.err.println("Error: Path not found: " + inputPath);
             System.exit(1);
         }
 
-        ParseResult<CompilationUnit> parseResult = new JavaParser().parse(new FileInputStream(filePath));
-
-        if (parseResult.isSuccessful() && parseResult.getResult().isPresent()) {
-            CompilationUnit cu = parseResult.getResult().get();
-            ObjectNode xlangAst = convertToXLang(cu, filePath);
-            String json = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(xlangAst);
-            System.out.println(json);
-
-            // Print statistics to stderr
-            if (!statistics.isEmpty()) {
-                System.err.println("\nJava AST Node Statistics:");
-                System.err.println("=========================");
-                statistics.entrySet().stream()
-                    .sorted(Map.Entry.<String, Integer>comparingByKey())
-                    .forEach(e -> System.err.printf("%-25s: %d%n", e.getKey(), e.getValue()));
-                System.err.println("-------------------------");
-                System.err.println("Total node types: " + statistics.size());
-            }
+        if (inputFile.isDirectory()) {
+            processDirectory(inputFile);
+            printSummary();
         } else {
-            System.err.println("Failed to parse Java file: " + filePath);
-            parseResult.getProblems().forEach(problem ->
-                System.err.println(problem.getVerboseMessage()));
-            System.exit(1);
+            processSingleFile(inputFile, true);
         }
+    }
+
+    private static void processDirectory(File directory) {
+        try {
+            Files.walk(directory.toPath())
+                .filter(path -> path.toString().endsWith(".java"))
+                .forEach(path -> processSingleFile(path.toFile(), false));
+        } catch (IOException e) {
+            System.err.println("Error walking directory: " + e.getMessage());
+        }
+    }
+
+    private static void processSingleFile(File javaFile, boolean outputToStdout) {
+        String filePath = javaFile.getAbsolutePath();
+        try {
+            ParseResult<CompilationUnit> parseResult = new JavaParser().parse(new FileInputStream(filePath));
+
+            if (parseResult.isSuccessful() && parseResult.getResult().isPresent()) {
+                CompilationUnit cu = parseResult.getResult().get();
+                ObjectNode xlangAst = convertToXLang(cu, filePath);
+                String json = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(xlangAst);
+
+                if (outputToStdout) {
+                    System.out.println(json);
+                    printStatistics();
+                } else {
+                    // Write to .xljs file next to the .java file
+                    String xljsPath = filePath.replaceAll("\\.java$", ".xljs");
+                    try (FileWriter writer = new FileWriter(xljsPath)) {
+                        writer.write(json);
+                    }
+                    successCount++;
+                    System.err.println("OK: " + javaFile.getName());
+                }
+            } else {
+                failCount++;
+                failedFiles.add(filePath);
+                System.err.println("FAIL: " + javaFile.getName());
+                parseResult.getProblems().forEach(problem ->
+                    System.err.println("  " + problem.getMessage()));
+            }
+        } catch (Exception e) {
+            failCount++;
+            failedFiles.add(filePath);
+            System.err.println("FAIL: " + javaFile.getName() + " - " + e.getMessage());
+        }
+    }
+
+    private static void printStatistics() {
+        if (!statistics.isEmpty()) {
+            System.err.println("\nJava AST Node Statistics:");
+            System.err.println("=========================");
+            statistics.entrySet().stream()
+                .sorted(Map.Entry.<String, Integer>comparingByKey())
+                .forEach(e -> System.err.printf("%-25s: %d%n", e.getKey(), e.getValue()));
+            System.err.println("-------------------------");
+            System.err.println("Total node types: " + statistics.size());
+        }
+    }
+
+    private static void printSummary() {
+        System.err.println("\n=================================");
+        System.err.println("Parse Summary");
+        System.err.println("=================================");
+        System.err.println("Success: " + successCount);
+        System.err.println("Failed:  " + failCount);
+        if (!failedFiles.isEmpty()) {
+            System.err.println("\nFailed files:");
+            failedFiles.forEach(f -> System.err.println("  " + f));
+        }
+        printStatistics();
     }
 
     private static void incrementStat(String key) {
@@ -73,26 +200,31 @@ public class JavaToXLangParser {
         ObjectNode root = mapper.createObjectNode();
         root.put("kind", "xnkFile");
         root.put("fileName", new File(filePath).getName());
+        root.put("sourceLang", "java");
 
-        // Handle package declaration
+        ArrayNode declarations = mapper.createArrayNode();
+
+        // Add package declaration to moduleDecls (as first element if present)
         cu.getPackageDeclaration().ifPresent(pkg -> {
             incrementStat("PackageDeclaration");
-            root.set("packageDecl", convertPackageDeclaration(pkg));
+            declarations.add(convertPackageDeclaration(pkg));
         });
 
-        // Handle imports
+        // Add imports to moduleDecls
         if (cu.getImports().isNonEmpty()) {
-            root.set("imports", convertImports(cu.getImports()));
+            ArrayNode imports = convertImports(cu.getImports());
+            imports.forEach(declarations::add);
         }
 
         // Handle module declaration (Java 9+)
         cu.getModule().ifPresent(module -> {
             incrementStat("ModuleDeclaration");
-            root.set("moduleDecl", convertModuleDeclaration(module));
+            declarations.add(convertModuleDeclaration(module));
         });
 
-        ArrayNode declarations = mapper.createArrayNode();
+        // Add type declarations
         cu.getTypes().forEach(type -> declarations.add(convertTypeDeclaration(type)));
+
         root.set("moduleDecls", declarations);
 
         return root;
@@ -102,6 +234,9 @@ public class JavaToXLangParser {
         ObjectNode node = mapper.createObjectNode();
         node.put("kind", "xnkNamespace");
         node.put("namespaceName", pkg.getNameAsString());
+        // Java package declarations don't have a body - they're just labels
+        // But xlangtypes expects namespaceBody field, so provide empty array
+        node.set("namespaceBody", mapper.createArrayNode());
         return node;
     }
 
@@ -139,10 +274,47 @@ public class JavaToXLangParser {
 
     private static ObjectNode convertModuleDirective(ModuleDirective directive) {
         ObjectNode node = mapper.createObjectNode();
-        // Module directives - simplified version for compatibility
         incrementStat("ModuleDirective");
-        node.put("kind", "xnkModuleDirective");
-        node.put("directiveType", directive.getClass().getSimpleName());
+
+        if (directive instanceof ModuleRequiresDirective) {
+            ModuleRequiresDirective req = (ModuleRequiresDirective) directive;
+            node.put("kind", "xnkRequiresDirective");
+            node.put("moduleName", req.getNameAsString());
+            node.put("isStatic", req.isStatic());
+            node.put("isTransitive", req.isTransitive());
+        } else if (directive instanceof ModuleExportsDirective) {
+            ModuleExportsDirective exp = (ModuleExportsDirective) directive;
+            node.put("kind", "xnkExportsDirective");
+            node.put("packageName", exp.getNameAsString());
+            if (exp.getModuleNames().isNonEmpty()) {
+                ArrayNode modules = mapper.createArrayNode();
+                exp.getModuleNames().forEach(m -> modules.add(m.asString()));
+                node.set("toModules", modules);
+            }
+        } else if (directive instanceof ModuleOpensDirective) {
+            ModuleOpensDirective opens = (ModuleOpensDirective) directive;
+            node.put("kind", "xnkOpensDirective");
+            node.put("packageName", opens.getNameAsString());
+            if (opens.getModuleNames().isNonEmpty()) {
+                ArrayNode modules = mapper.createArrayNode();
+                opens.getModuleNames().forEach(m -> modules.add(m.asString()));
+                node.set("toModules", modules);
+            }
+        } else if (directive instanceof ModuleUsesDirective) {
+            ModuleUsesDirective uses = (ModuleUsesDirective) directive;
+            node.put("kind", "xnkUsesDirective");
+            node.put("serviceName", uses.getNameAsString());
+        } else if (directive instanceof ModuleProvidesDirective) {
+            ModuleProvidesDirective provides = (ModuleProvidesDirective) directive;
+            node.put("kind", "xnkProvidesDirective");
+            node.put("serviceName", provides.getNameAsString());
+            ArrayNode implementations = mapper.createArrayNode();
+            provides.getWith().forEach(impl -> implementations.add(impl.asString()));
+            node.set("implementations", implementations);
+        } else {
+            node.put("kind", "xnkModuleDirective");
+            node.put("directiveType", directive.getClass().getSimpleName());
+        }
         return node;
     }
 
@@ -167,73 +339,43 @@ public class JavaToXLangParser {
                 // Sealed classes not supported in this JavaParser version
             }
 
-            // Base types (extends/implements)
             ArrayNode baseTypes = mapper.createArrayNode();
             coid.getExtendedTypes().forEach(t -> baseTypes.add(convertType(t)));
             coid.getImplementedTypes().forEach(t -> baseTypes.add(convertType(t)));
-            if (baseTypes.size() > 0) {
-                node.set("baseTypes", baseTypes);
-            }
+            node.set("baseTypes", baseTypes);
 
-            // Members
             ArrayNode members = mapper.createArrayNode();
             coid.getMembers().forEach(member -> members.add(convertClassMember(member)));
             node.set("members", members);
 
-            // Generic type parameters
-            if (coid.getTypeParameters().isNonEmpty()) {
-                node.set("typeParameters", convertTypeParameters(coid.getTypeParameters()));
-            }
-
-            // Annotations
-            if (coid.getAnnotations().isNonEmpty()) {
-                node.set("decorators", convertAnnotations(coid.getAnnotations()));
-            }
-
-            // Modifiers
-            node.set("modifiers", convertModifiers(coid.getModifiers()));
+            // Inline modifier fields
+            node.put("typeIsStatic", coid.isStatic());
+            node.put("typeIsFinal", coid.isFinal());
+            node.put("typeIsAbstract", coid.isAbstract());
+            node.put("typeIsPrivate", coid.isPrivate());
+            node.put("typeIsProtected", coid.isProtected());
+            node.put("typeIsPublic", coid.isPublic());
 
         } else if (type instanceof EnumDeclaration) {
             incrementStat("EnumDeclaration");
             EnumDeclaration enumDecl = (EnumDeclaration) type;
             node.put("kind", "xnkEnumDecl");
-            node.put("typeNameDecl", enumDecl.getNameAsString());
+            node.put("enumName", enumDecl.getNameAsString());
 
-            // Enum constants
             ArrayNode enumMembers = mapper.createArrayNode();
             enumDecl.getEntries().forEach(entry -> {
                 incrementStat("EnumConstantDeclaration");
                 ObjectNode memberNode = mapper.createObjectNode();
                 memberNode.put("kind", "xnkEnumMember");
                 memberNode.put("enumMemberName", entry.getNameAsString());
-                if (entry.getArguments().isNonEmpty()) {
-                    ArrayNode args = mapper.createArrayNode();
-                    entry.getArguments().forEach(arg -> args.add(convertExpression(arg)));
-                    memberNode.set("arguments", args);
-                }
-                if (entry.getClassBody().isNonEmpty()) {
-                    ArrayNode body = mapper.createArrayNode();
-                    entry.getClassBody().forEach(member ->
-                        body.add(convertClassMember(member)));
-                    memberNode.set("classBody", body);
-                }
                 enumMembers.add(memberNode);
             });
             node.set("enumMembers", enumMembers);
 
-            // Implemented interfaces
-            if (enumDecl.getImplementedTypes().isNonEmpty()) {
-                ArrayNode interfaces = mapper.createArrayNode();
-                enumDecl.getImplementedTypes().forEach(t -> interfaces.add(convertType(t)));
-                node.set("implementedTypes", interfaces);
-            }
-
-            // Enum methods and fields
-            ArrayNode members = mapper.createArrayNode();
-            enumDecl.getMembers().forEach(member -> members.add(convertClassMember(member)));
-            if (members.size() > 0) {
-                node.set("members", members);
-            }
+            // Inline visibility fields
+            node.put("enumIsPrivate", enumDecl.isPrivate());
+            node.put("enumIsProtected", enumDecl.isProtected());
+            node.put("enumIsPublic", enumDecl.isPublic());
 
         } else if (type instanceof AnnotationDeclaration) {
             incrementStat("AnnotationDeclaration");
@@ -278,6 +420,9 @@ public class JavaToXLangParser {
         if (member instanceof MethodDeclaration) {
             return convertMethodDeclaration((MethodDeclaration) member);
         } else if (member instanceof FieldDeclaration) {
+            // Note: convertFieldDeclaration now returns only the first variable declarator
+            // To handle multiple declarators, we would need to return an array
+            // For now, keeping it simple with first declarator only
             return convertFieldDeclaration((FieldDeclaration) member);
         } else if (member instanceof ConstructorDeclaration) {
             return convertConstructorDeclaration((ConstructorDeclaration) member);
@@ -293,6 +438,29 @@ public class JavaToXLangParser {
         return mapper.createObjectNode().put("kind", "xnkUnknown");
     }
 
+    /**
+     * Convert a field declaration, expanding multiple variable declarators into separate field declarations.
+     * Returns an array node containing one xnkFieldDecl per variable.
+     */
+    private static ArrayNode convertFieldDeclarationExpanded(FieldDeclaration field) {
+        ArrayNode fields = mapper.createArrayNode();
+
+        field.getVariables().forEach(var -> {
+            incrementStat("FieldDeclaration");
+            ObjectNode node = mapper.createObjectNode();
+            node.put("kind", "xnkFieldDecl");
+
+            node.put("fieldName", var.getNameAsString());
+            var.getInitializer().ifPresent(init ->
+                node.set("fieldInitializer", convertExpression(init)));
+
+            node.set("fieldType", convertType(var.getType()));
+            fields.add(node);
+        });
+
+        return fields;
+    }
+
     private static ObjectNode convertMethodDeclaration(MethodDeclaration method) {
         incrementStat("MethodDeclaration");
         ObjectNode node = mapper.createObjectNode();
@@ -301,48 +469,58 @@ public class JavaToXLangParser {
 
         node.set("mparams", convertParameters(method.getParameters()));
         node.set("mreturnType", convertType(method.getType()));
-        method.getBody().ifPresent(body -> node.set("mbody", convertBlockStmt(body)));
-
-        if (method.getTypeParameters().isNonEmpty()) {
-            node.set("typeParameters", convertTypeParameters(method.getTypeParameters()));
+        // mbody is required by xlangtypes - use empty block for abstract methods
+        if (method.getBody().isPresent()) {
+            node.set("mbody", convertBlockStmt(method.getBody().get()));
+        } else {
+            // Abstract method - create empty block
+            ObjectNode emptyBlock = mapper.createObjectNode();
+            emptyBlock.put("kind", "xnkBlockStmt");
+            emptyBlock.set("blockBody", mapper.createArrayNode());
+            node.set("mbody", emptyBlock);
         }
 
-        if (method.getAnnotations().isNonEmpty()) {
-            node.set("decorators", convertAnnotations(method.getAnnotations()));
-        }
-
-        node.set("modifiers", convertModifiers(method.getModifiers()));
-
-        if (method.getThrownExceptions().isNonEmpty()) {
-            ArrayNode exceptions = mapper.createArrayNode();
-            method.getThrownExceptions().forEach(ex -> exceptions.add(convertType(ex)));
-            node.set("throwsTypes", exceptions);
-        }
+        // Inline modifier fields
+        node.put("methodIsAsync", false); // Java doesn't have async methods
+        node.put("methodIsStatic", method.isStatic());
+        node.put("methodIsAbstract", method.isAbstract());
+        node.put("methodIsFinal", method.isFinal());
+        node.put("methodIsPrivate", method.isPrivate());
+        node.put("methodIsProtected", method.isProtected());
+        node.put("methodIsPublic", method.isPublic());
 
         return node;
     }
 
     private static ObjectNode convertFieldDeclaration(FieldDeclaration field) {
         incrementStat("FieldDeclaration");
-        ObjectNode node = mapper.createObjectNode();
-        node.put("kind", "xnkFieldDecl");
-        node.set("fieldType", convertType(field.getElementType()));
 
-        ArrayNode variables = mapper.createArrayNode();
-        field.getVariables().forEach(var -> {
-            ObjectNode varNode = mapper.createObjectNode();
-            varNode.put("varName", var.getNameAsString());
-            var.getInitializer().ifPresent(init ->
-                varNode.set("initializer", convertExpression(init)));
-            variables.add(varNode);
-        });
-        node.set("fieldVars", variables);
-
-        if (field.getAnnotations().isNonEmpty()) {
-            node.set("decorators", convertAnnotations(field.getAnnotations()));
+        // Handle case where there are multiple variable declarators
+        if (field.getVariables().size() > 1) {
+            System.err.println("WARNING: Field has multiple declarators, only first will be captured: " +
+                              field.getVariables().stream()
+                                  .map(v -> v.getNameAsString())
+                                  .reduce((a, b) -> a + ", " + b).orElse(""));
         }
 
-        node.set("modifiers", convertModifiers(field.getModifiers()));
+        ObjectNode node = mapper.createObjectNode();
+        node.put("kind", "xnkFieldDecl");
+
+        // Field data
+        VariableDeclarator firstVar = field.getVariables().get(0);
+        node.put("fieldName", firstVar.getNameAsString());
+        node.set("fieldType", convertType(firstVar.getType()));
+        firstVar.getInitializer().ifPresent(init ->
+            node.set("fieldInitializer", convertExpression(init)));
+
+        // Inline modifier fields
+        node.put("fieldIsStatic", field.isStatic());
+        node.put("fieldIsFinal", field.isFinal());
+        node.put("fieldIsVolatile", field.isVolatile());
+        node.put("fieldIsTransient", field.isTransient());
+        node.put("fieldIsPrivate", field.isPrivate());
+        node.put("fieldIsProtected", field.isProtected());
+        node.put("fieldIsPublic", field.isPublic());
 
         return node;
     }
@@ -351,26 +529,15 @@ public class JavaToXLangParser {
         incrementStat("ConstructorDeclaration");
         ObjectNode node = mapper.createObjectNode();
         node.put("kind", "xnkConstructorDecl");
-        node.put("constructorName", constructor.getNameAsString());
 
-        node.set("cparams", convertParameters(constructor.getParameters()));
-        node.set("cbody", convertBlockStmt(constructor.getBody()));
+        node.set("constructorParams", convertParameters(constructor.getParameters()));
+        node.set("constructorInitializers", mapper.createArrayNode()); // Java doesn't have C#-style field initializers
+        node.set("constructorBody", convertBlockStmt(constructor.getBody()));
 
-        if (constructor.getTypeParameters().isNonEmpty()) {
-            node.set("typeParameters", convertTypeParameters(constructor.getTypeParameters()));
-        }
-
-        if (constructor.getAnnotations().isNonEmpty()) {
-            node.set("decorators", convertAnnotations(constructor.getAnnotations()));
-        }
-
-        node.set("modifiers", convertModifiers(constructor.getModifiers()));
-
-        if (constructor.getThrownExceptions().isNonEmpty()) {
-            ArrayNode exceptions = mapper.createArrayNode();
-            constructor.getThrownExceptions().forEach(ex -> exceptions.add(convertType(ex)));
-            node.set("throwsTypes", exceptions);
-        }
+        // Inline visibility fields
+        node.put("constructorIsPrivate", constructor.isPrivate());
+        node.put("constructorIsProtected", constructor.isProtected());
+        node.put("constructorIsPublic", constructor.isPublic());
 
         return node;
     }
@@ -382,7 +549,7 @@ public class JavaToXLangParser {
         node.put("isStaticInitializer", initializer.isStatic());
         ArrayNode statements = mapper.createArrayNode();
         initializer.getBody().getStatements().forEach(stmt -> statements.add(convertStatement(stmt)));
-        node.set("blockStmts", statements);
+        node.set("blockBody", statements);
         return node;
     }
 
@@ -394,12 +561,13 @@ public class JavaToXLangParser {
             node.put("kind", "xnkMethodDecl");
             node.put("methodName", amd.getNameAsString());
             node.set("mreturnType", convertType(amd.getType()));
-            amd.getDefaultValue().ifPresent(defaultValue ->
-                node.set("defaultValue", convertExpression(defaultValue)));
-            node.set("modifiers", convertModifiers(amd.getModifiers()));
-            if (amd.getAnnotations().isNonEmpty()) {
-                node.set("decorators", convertAnnotations(amd.getAnnotations()));
-            }
+            // Annotation members don't have params or body, but xlangtypes requires mbody
+            node.set("mparams", mapper.createArrayNode());
+            ObjectNode emptyBlock = mapper.createObjectNode();
+            emptyBlock.put("kind", "xnkBlockStmt");
+            emptyBlock.set("blockBody", mapper.createArrayNode());
+            node.set("mbody", emptyBlock);
+            node.put("methodIsAsync", false);
             return node;
         }
         return mapper.createObjectNode().put("kind", "xnkUnknown");
@@ -431,7 +599,7 @@ public class JavaToXLangParser {
         node.put("kind", "xnkBlockStmt");
         ArrayNode statements = mapper.createArrayNode();
         body.getStatements().forEach(stmt -> statements.add(convertStatement(stmt)));
-        node.set("blockStmts", statements);
+        node.set("blockBody", statements);
         return node;
     }
 
@@ -494,8 +662,10 @@ public class JavaToXLangParser {
         incrementStat("IfStmt");
         ObjectNode node = mapper.createObjectNode();
         node.put("kind", "xnkIfStmt");
-        node.set("ifCond", convertExpression(stmt.getCondition()));
+        node.set("ifCondition", convertExpression(stmt.getCondition()));
         node.set("ifBody", convertStatement(stmt.getThenStmt()));
+        // elifBranches is required - always include (empty array for simple if-else)
+        node.set("elifBranches", mapper.createArrayNode());
         stmt.getElseStmt().ifPresent(elseStmt ->
             node.set("elseBody", convertStatement(elseStmt)));
         return node;
@@ -505,7 +675,7 @@ public class JavaToXLangParser {
         incrementStat("WhileStmt");
         ObjectNode node = mapper.createObjectNode();
         node.put("kind", "xnkWhileStmt");
-        node.set("whileCond", convertExpression(stmt.getCondition()));
+        node.set("whileCondition", convertExpression(stmt.getCondition()));
         node.set("whileBody", convertStatement(stmt.getBody()));
         return node;
     }
@@ -513,16 +683,29 @@ public class JavaToXLangParser {
     private static ObjectNode convertForStatement(ForStmt stmt) {
         incrementStat("ForStmt");
         ObjectNode node = mapper.createObjectNode();
-        node.put("kind", "xnkForStmt");
-        ArrayNode initialization = mapper.createArrayNode();
-        stmt.getInitialization().forEach(init -> initialization.add(convertExpression(init)));
-        node.set("forInit", initialization);
+        node.put("kind", "xnkExternal_ForStmt");
+        // Convert init - may be multiple expressions or a single var decl
+        if (stmt.getInitialization().isNonEmpty()) {
+            if (stmt.getInitialization().size() == 1) {
+                node.set("extForInit", convertExpression(stmt.getInitialization().get(0)));
+            } else {
+                ArrayNode initialization = mapper.createArrayNode();
+                stmt.getInitialization().forEach(init -> initialization.add(convertExpression(init)));
+                node.set("extForInit", initialization);
+            }
+        }
         stmt.getCompare().ifPresent(compare ->
-            node.set("forCond", convertExpression(compare)));
-        ArrayNode update = mapper.createArrayNode();
-        stmt.getUpdate().forEach(upd -> update.add(convertExpression(upd)));
-        node.set("forUpdate", update);
-        node.set("forBody", convertStatement(stmt.getBody()));
+            node.set("extForCond", convertExpression(compare)));
+        if (stmt.getUpdate().isNonEmpty()) {
+            if (stmt.getUpdate().size() == 1) {
+                node.set("extForIncrement", convertExpression(stmt.getUpdate().get(0)));
+            } else {
+                ArrayNode update = mapper.createArrayNode();
+                stmt.getUpdate().forEach(upd -> update.add(convertExpression(upd)));
+                node.set("extForIncrement", update);
+            }
+        }
+        node.set("extForBody", convertStatement(stmt.getBody()));
         return node;
     }
 
@@ -539,9 +722,9 @@ public class JavaToXLangParser {
     private static ObjectNode convertDoWhileStatement(DoStmt stmt) {
         incrementStat("DoStmt");
         ObjectNode node = mapper.createObjectNode();
-        node.put("kind", "xnkDoWhileStmt");
-        node.set("doBody", convertStatement(stmt.getBody()));
-        node.set("doCond", convertExpression(stmt.getCondition()));
+        node.put("kind", "xnkExternal_DoWhile");
+        node.set("extDoWhileBody", convertStatement(stmt.getBody()));
+        node.set("extDoWhileCondition", convertExpression(stmt.getCondition()));
         return node;
     }
 
@@ -553,21 +736,43 @@ public class JavaToXLangParser {
         ArrayNode entries = mapper.createArrayNode();
         stmt.getEntries().forEach(entry -> {
             ObjectNode entryNode = mapper.createObjectNode();
-            entryNode.put("kind", "xnkSwitchCase");
             if (entry.getLabels().isNonEmpty()) {
+                entryNode.put("kind", "xnkCaseClause");
                 ArrayNode labels = mapper.createArrayNode();
                 entry.getLabels().forEach(label -> labels.add(convertExpression(label)));
-                entryNode.set("caseLabels", labels);
+                entryNode.set("caseValues", labels);
+                // Build case body as block
+                ObjectNode bodyNode = mapper.createObjectNode();
+                bodyNode.put("kind", "xnkBlockStmt");
+                ArrayNode statements = mapper.createArrayNode();
+                entry.getStatements().forEach(s -> statements.add(convertStatement(s)));
+                bodyNode.set("blockBody", statements);
+                entryNode.set("caseBody", bodyNode);
+                // Java has implicit fallthrough unless break is present
+                entryNode.put("caseFallthrough", !hasBreakStatement(entry.getStatements()));
             } else {
-                entryNode.put("isDefault", true);
+                entryNode.put("kind", "xnkDefaultClause");
+                ObjectNode bodyNode = mapper.createObjectNode();
+                bodyNode.put("kind", "xnkBlockStmt");
+                ArrayNode statements = mapper.createArrayNode();
+                entry.getStatements().forEach(s -> statements.add(convertStatement(s)));
+                bodyNode.set("blockBody", statements);
+                entryNode.set("defaultBody", bodyNode);
             }
-            ArrayNode statements = mapper.createArrayNode();
-            entry.getStatements().forEach(s -> statements.add(convertStatement(s)));
-            entryNode.set("caseBody", statements);
             entries.add(entryNode);
         });
         node.set("switchCases", entries);
         return node;
+    }
+
+    private static boolean hasBreakStatement(NodeList<Statement> statements) {
+        for (Statement stmt : statements) {
+            if (stmt instanceof BreakStmt) return true;
+            if (stmt instanceof BlockStmt) {
+                if (hasBreakStatement(((BlockStmt) stmt).getStatements())) return true;
+            }
+        }
+        return false;
     }
 
     private static ObjectNode convertReturnStatement(ReturnStmt stmt) {
@@ -597,7 +802,8 @@ public class JavaToXLangParser {
         stmt.getCatchClauses().forEach(catchClause -> {
             ObjectNode catchNode = mapper.createObjectNode();
             catchNode.put("kind", "xnkCatchStmt");
-            catchNode.set("catchParam", convertParameter(catchClause.getParameter()));
+            catchNode.set("catchType", convertType(catchClause.getParameter().getType()));
+            catchNode.put("catchVar", catchClause.getParameter().getNameAsString());
             catchNode.set("catchBody", convertBlockStmt(catchClause.getBody()));
             catchClauses.add(catchNode);
         });
@@ -625,7 +831,7 @@ public class JavaToXLangParser {
         incrementStat("BreakStmt");
         ObjectNode node = mapper.createObjectNode();
         node.put("kind", "xnkBreakStmt");
-        stmt.getLabel().ifPresent(label -> node.put("breakLabel", label.asString()));
+        stmt.getLabel().ifPresent(label -> node.put("label", label.asString()));
         return node;
     }
 
@@ -633,7 +839,7 @@ public class JavaToXLangParser {
         incrementStat("ContinueStmt");
         ObjectNode node = mapper.createObjectNode();
         node.put("kind", "xnkContinueStmt");
-        stmt.getLabel().ifPresent(label -> node.put("continueLabel", label.asString()));
+        stmt.getLabel().ifPresent(label -> node.put("label", label.asString()));
         return node;
     }
 
@@ -659,9 +865,9 @@ public class JavaToXLangParser {
     private static ObjectNode convertSynchronizedStatement(SynchronizedStmt stmt) {
         incrementStat("SynchronizedStmt");
         ObjectNode node = mapper.createObjectNode();
-        node.put("kind", "xnkLockStmt");
-        node.set("lockExpr", convertExpression(stmt.getExpression()));
-        node.set("lockBody", convertBlockStmt(stmt.getBody()));
+        node.put("kind", "xnkExternal_Lock");
+        node.set("extLockExpr", convertExpression(stmt.getExpression()));
+        node.set("extLockBody", convertBlockStmt(stmt.getBody()));
         return node;
     }
 
@@ -669,18 +875,18 @@ public class JavaToXLangParser {
         incrementStat("YieldStmt");
         ObjectNode node = mapper.createObjectNode();
         node.put("kind", "xnkIteratorYield");
-        node.set("yieldExpr", convertExpression(stmt.getExpression()));
+        node.set("iteratorYieldValue", convertExpression(stmt.getExpression()));
         return node;
     }
 
     private static ObjectNode convertExplicitConstructorInvocationStmt(ExplicitConstructorInvocationStmt stmt) {
         incrementStat("ExplicitConstructorInvocationStmt");
         ObjectNode node = mapper.createObjectNode();
-        node.put("kind", "xnkCallExpr");
-        node.put("callName", stmt.isThis() ? "this" : "super");
+        // Use xnkThisCall or xnkBaseCall for constructor chains
+        node.put("kind", stmt.isThis() ? "xnkThisCall" : "xnkBaseCall");
         ArrayNode arguments = mapper.createArrayNode();
         stmt.getArguments().forEach(arg -> arguments.add(convertExpression(arg)));
-        node.set("callArgs", arguments);
+        node.set("arguments", arguments);
         return node;
     }
 
@@ -728,7 +934,7 @@ public class JavaToXLangParser {
         } else if (expr instanceof ArrayInitializerExpr) {
             ObjectNode node = mapper.createObjectNode();
             node.put("kind", "xnkArrayLiteral");
-            node.set("arrayElements", convertArrayInitializerExpression((ArrayInitializerExpr) expr));
+            node.set("elements", convertArrayInitializerExpression((ArrayInitializerExpr) expr));
             return node;
         } else if (expr instanceof EnclosedExpr) {
             return convertEnclosedExpression((EnclosedExpr) expr);
@@ -762,7 +968,7 @@ public class JavaToXLangParser {
         ObjectNode node = mapper.createObjectNode();
         node.put("kind", "xnkBinaryExpr");
         node.set("binaryLeft", convertExpression(expr.getLeft()));
-        node.put("binaryOp", expr.getOperator().asString());
+        node.put("binaryOp", mapBinaryOp(expr.getOperator().asString()));
         node.set("binaryRight", convertExpression(expr.getRight()));
         return node;
     }
@@ -771,9 +977,9 @@ public class JavaToXLangParser {
         incrementStat("UnaryExpr");
         ObjectNode node = mapper.createObjectNode();
         node.put("kind", "xnkUnaryExpr");
-        node.put("unaryOp", expr.getOperator().asString());
-        node.set("unaryExpr", convertExpression(expr.getExpression()));
-        node.put("isPrefix", expr.getOperator().isPrefix());
+        boolean isPrefix = expr.getOperator().isPrefix();
+        node.put("unaryOp", mapUnaryOp(expr.getOperator().asString(), isPrefix));
+        node.set("unaryOperand", convertExpression(expr.getExpression()));
         return node;
     }
 
@@ -781,12 +987,24 @@ public class JavaToXLangParser {
         incrementStat("MethodCallExpr");
         ObjectNode node = mapper.createObjectNode();
         node.put("kind", "xnkCallExpr");
-        expr.getScope().ifPresent(scope ->
-            node.set("callReceiver", convertExpression(scope)));
-        node.put("callName", expr.getNameAsString());
+
+        // Build callee: either just method name, or receiver.methodName
+        if (expr.getScope().isPresent()) {
+            ObjectNode calleeNode = mapper.createObjectNode();
+            calleeNode.put("kind", "xnkMemberAccessExpr");
+            calleeNode.set("memberExpr", convertExpression(expr.getScope().get()));
+            calleeNode.put("memberName", expr.getNameAsString());
+            node.set("callee", calleeNode);
+        } else {
+            ObjectNode calleeNode = mapper.createObjectNode();
+            calleeNode.put("kind", "xnkIdentifier");
+            calleeNode.put("identName", expr.getNameAsString());
+            node.set("callee", calleeNode);
+        }
+
         ArrayNode arguments = mapper.createArrayNode();
         expr.getArguments().forEach(arg -> arguments.add(convertExpression(arg)));
-        node.set("callArgs", arguments);
+        node.set("args", arguments);
 
         if (expr.getTypeArguments().isPresent()) {
             ArrayNode typeArgs = mapper.createArrayNode();
@@ -801,7 +1019,7 @@ public class JavaToXLangParser {
         incrementStat("FieldAccessExpr");
         ObjectNode node = mapper.createObjectNode();
         node.put("kind", "xnkMemberAccessExpr");
-        node.set("memberObject", convertExpression(expr.getScope()));
+        node.set("memberExpr", convertExpression(expr.getScope()));
         node.put("memberName", expr.getNameAsString());
         return node;
     }
@@ -811,10 +1029,11 @@ public class JavaToXLangParser {
         ObjectNode node = mapper.createObjectNode();
         node.put("kind", "xnkCallExpr");
         node.put("isNewExpr", true);
-        node.set("callType", convertType(expr.getType()));
+        // Callee is the type being constructed
+        node.set("callee", convertType(expr.getType()));
         ArrayNode arguments = mapper.createArrayNode();
         expr.getArguments().forEach(arg -> arguments.add(convertExpression(arg)));
-        node.set("callArgs", arguments);
+        node.set("args", arguments);
 
         // Anonymous class body
         expr.getAnonymousClassBody().ifPresent(body -> {
@@ -882,7 +1101,7 @@ public class JavaToXLangParser {
         } else if (expr instanceof BooleanLiteralExpr) {
             incrementStat("BooleanLiteralExpr");
             node.put("kind", "xnkBoolLit");
-            node.put("literalValue", ((BooleanLiteralExpr) expr).getValue());
+            node.put("boolValue", ((BooleanLiteralExpr) expr).getValue());
         } else if (expr instanceof NullLiteralExpr) {
             incrementStat("NullLiteralExpr");
             node.put("kind", "xnkNilLit");
@@ -908,7 +1127,7 @@ public class JavaToXLangParser {
         incrementStat("InstanceOfExpr");
         ObjectNode node = mapper.createObjectNode();
         node.put("kind", "xnkBinaryExpr");
-        node.put("binaryOp", "instanceof");
+        node.put("binaryOp", "istype");  // semantic operator for type check
         node.set("binaryLeft", convertExpression(expr.getExpression()));
         node.set("binaryRight", convertType(expr.getType()));
 
@@ -928,10 +1147,10 @@ public class JavaToXLangParser {
     private static ObjectNode convertConditionalExpression(ConditionalExpr expr) {
         incrementStat("ConditionalExpr");
         ObjectNode node = mapper.createObjectNode();
-        node.put("kind", "xnkTernaryExpr");
-        node.set("ternaryCond", convertExpression(expr.getCondition()));
-        node.set("ternaryThen", convertExpression(expr.getThenExpr()));
-        node.set("ternaryElse", convertExpression(expr.getElseExpr()));
+        node.put("kind", "xnkExternal_Ternary");
+        node.set("extTernaryCondition", convertExpression(expr.getCondition()));
+        node.set("extTernaryThen", convertExpression(expr.getThenExpr()));
+        node.set("extTernaryElse", convertExpression(expr.getElseExpr()));
         return node;
     }
 
@@ -946,13 +1165,20 @@ public class JavaToXLangParser {
             node.set("asgnRight", convertExpression(expr.getValue()));
             return node;
         } else {
-            // Compound assignment like +=, -=, etc.
+            // Compound assignment like +=, -=, etc. → model as xnkAsgn with binary expr
+            // e.g., x += 1 → x = x + 1
             ObjectNode node = mapper.createObjectNode();
-            node.put("kind", "xnkBinaryExpr");
-            node.set("binaryLeft", convertExpression(expr.getTarget()));
-            node.put("binaryOp", operator);
-            node.set("binaryRight", convertExpression(expr.getValue()));
-            node.put("isCompoundAssignment", true);
+            node.put("kind", "xnkAsgn");
+            node.set("asgnLeft", convertExpression(expr.getTarget()));
+            // Build the binary expr: target op value
+            ObjectNode binExpr = mapper.createObjectNode();
+            binExpr.put("kind", "xnkBinaryExpr");
+            binExpr.set("binaryLeft", convertExpression(expr.getTarget()));
+            // Map compound operator to base operator
+            String baseOp = operator.substring(0, operator.length() - 1); // remove '='
+            binExpr.put("binaryOp", mapBinaryOp(baseOp));
+            binExpr.set("binaryRight", convertExpression(expr.getValue()));
+            node.set("asgnRight", binExpr);
             return node;
         }
     }
@@ -960,20 +1186,26 @@ public class JavaToXLangParser {
     private static ObjectNode convertArrayCreationExpression(ArrayCreationExpr expr) {
         incrementStat("ArrayCreationExpr");
         ObjectNode node = mapper.createObjectNode();
-        node.put("kind", "xnkArrayLiteral");
-        node.set("arrayElemType", convertType(expr.getElementType()));
-
-        ArrayNode dimensions = mapper.createArrayNode();
-        expr.getLevels().forEach(level -> {
-            level.getDimension().ifPresent(dim -> dimensions.add(convertExpression(dim)));
-        });
-        if (dimensions.size() > 0) {
-            node.set("arrayDimensions", dimensions);
+        // Use xnkCallExpr with isNewExpr for array creation with dimensions
+        // Use xnkArrayLiteral for initializer-based creation
+        if (expr.getInitializer().isPresent()) {
+            node.put("kind", "xnkArrayLiteral");
+            node.set("elements", convertArrayInitializerExpression(expr.getInitializer().get()));
+        } else {
+            // Array creation with dimensions: new int[5]
+            node.put("kind", "xnkCallExpr");
+            node.put("isNewExpr", true);
+            node.put("isArrayCreation", true);
+            ObjectNode arrayType = mapper.createObjectNode();
+            arrayType.put("kind", "xnkArrayType");
+            arrayType.set("elementType", convertType(expr.getElementType()));
+            node.set("callee", arrayType);
+            ArrayNode dimensions = mapper.createArrayNode();
+            expr.getLevels().forEach(level -> {
+                level.getDimension().ifPresent(dim -> dimensions.add(convertExpression(dim)));
+            });
+            node.set("args", dimensions);
         }
-
-        expr.getInitializer().ifPresent(init ->
-            node.set("arrayElements", convertArrayInitializerExpression(init)));
-
         return node;
     }
 
@@ -988,8 +1220,10 @@ public class JavaToXLangParser {
         incrementStat("ArrayAccessExpr");
         ObjectNode node = mapper.createObjectNode();
         node.put("kind", "xnkIndexExpr");
-        node.set("indexBase", convertExpression(expr.getName()));
-        node.set("indexExpr", convertExpression(expr.getIndex()));
+        node.set("indexExpr", convertExpression(expr.getName()));
+        ArrayNode args = mapper.createArrayNode();
+        args.add(convertExpression(expr.getIndex()));
+        node.set("indexArgs", args);
         return node;
     }
 
@@ -1038,7 +1272,7 @@ public class JavaToXLangParser {
         incrementStat("ClassExpr");
         ObjectNode node = mapper.createObjectNode();
         node.put("kind", "xnkTypeOfExpr");
-        node.set("typeofType", convertType(expr.getType()));
+        node.set("typeOfType", convertType(expr.getType()));
         return node;
     }
 
@@ -1047,23 +1281,17 @@ public class JavaToXLangParser {
         ObjectNode node = mapper.createObjectNode();
         node.put("kind", "xnkVarDecl");
 
-        ArrayNode variables = mapper.createArrayNode();
-        expr.getVariables().forEach(var -> {
-            ObjectNode varNode = mapper.createObjectNode();
-            varNode.put("varName", var.getNameAsString());
-            varNode.set("varType", convertType(var.getType()));
-            var.getInitializer().ifPresent(init ->
-                varNode.set("varInit", convertExpression(init)));
-            variables.add(varNode);
-        });
-        node.set("varDecls", variables);
-
-        if (expr.getAnnotations().isNonEmpty()) {
-            node.set("decorators", convertAnnotations(expr.getAnnotations()));
+        // xlangtypes expects: declName, declType, initializer
+        // Java can have multiple vars, but xlang expects one per node - use first
+        if (expr.getVariables().isNonEmpty()) {
+            VariableDeclarator firstVar = expr.getVariables().get(0);
+            node.put("declName", firstVar.getNameAsString());
+            node.set("declType", convertType(firstVar.getType()));
+            firstVar.getInitializer().ifPresent(init ->
+                node.set("initializer", convertExpression(init)));
         }
 
-        node.set("modifiers", convertModifiers(expr.getModifiers()));
-
+        // Note: decorators and modifiers not in xlangtypes for xnkVarDecl
         return node;
     }
 
@@ -1116,7 +1344,7 @@ public class JavaToXLangParser {
             node.put("typeName", "void");
         } else if (type.isArrayType()) {
             node.put("kind", "xnkArrayType");
-            node.set("arrayElementType", convertType(type.asArrayType().getComponentType()));
+            node.set("elementType", convertType(type.asArrayType().getComponentType()));
         } else if (type.isWildcardType()) {
             WildcardType wt = type.asWildcardType();
             node.put("kind", "xnkWildcardType");
@@ -1188,27 +1416,4 @@ public class JavaToXLangParser {
         return annotationNodes;
     }
 
-    private static ObjectNode convertModifiers(NodeList<Modifier> modifiers) {
-        ObjectNode mods = mapper.createObjectNode();
-        mods.put("isPublic", modifiers.contains(Modifier.publicModifier()));
-        mods.put("isPrivate", modifiers.contains(Modifier.privateModifier()));
-        mods.put("isProtected", modifiers.contains(Modifier.protectedModifier()));
-        mods.put("isStatic", modifiers.contains(Modifier.staticModifier()));
-        mods.put("isFinal", modifiers.contains(Modifier.finalModifier()));
-        mods.put("isAbstract", modifiers.contains(Modifier.abstractModifier()));
-        mods.put("isSynchronized", modifiers.contains(Modifier.synchronizedModifier()));
-        mods.put("isNative", modifiers.contains(Modifier.nativeModifier()));
-        mods.put("isStrictfp", modifiers.contains(Modifier.strictfpModifier()));
-        mods.put("isTransient", modifiers.contains(Modifier.transientModifier()));
-        mods.put("isVolatile", modifiers.contains(Modifier.volatileModifier()));
-        // Check if defaultModifier exists in this version
-        try {
-            java.lang.reflect.Method defaultModifierMethod = Modifier.class.getMethod("defaultModifier");
-            Modifier defaultMod = (Modifier) defaultModifierMethod.invoke(null);
-            mods.put("isDefault", modifiers.contains(defaultMod));
-        } catch (Exception e) {
-            mods.put("isDefault", false);
-        }
-        return mods;
-    }
 }

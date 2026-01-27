@@ -20,8 +20,8 @@
 
 import core/xlangtypes
 import transforms/transform_context
-import options
-import strutils
+# import options
+# import strutils
 
 type
   ConcurrencyModel = enum

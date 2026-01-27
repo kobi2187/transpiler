@@ -51,6 +51,8 @@ import passes/local_function_to_proc
 import passes/from_csharp/unsafe_to_nim_block
 import passes/delegate_to_proc_type
 import passes/normalize_operators
+import passes/record_to_struct
+import passes/record_with_to_block
 
 # Import draft/untested transforms
 import passes/from_python/with_to_defer
@@ -59,11 +61,13 @@ import passes/pattern_matching
 import passes/from_go/go_error_handling
 import passes/from_go/go_defer
 import passes/from_go/go_concurrency
+import passes/from_go/go_tagless_switch
 import passes/from_python/python_generators
 import passes/from_python/python_type_hints
 import passes/from_go/go_panic_recover
 import passes/from_go/go_type_assertions
 import passes/from_go/go_implicit_interfaces
+import passes/from_go/go_empty_types
 import passes/from_python/python_multiple_inheritance
 
 # Helper template to convert transform functions to closures
@@ -89,6 +93,7 @@ proc loadExternalTransforms*() =
   globalTransformRegistry[tpTernaryToIf] = newTransformPass(tpTernaryToIf, toClosure(transformTernaryToIf), @[xnkExternal_Ternary])
   globalTransformRegistry[tpSwitchExprToCase] = newTransformPass(tpSwitchExprToCase, toClosure(transformSwitchExprToCase), @[xnkExternal_SwitchExpr])
   globalTransformRegistry[tpSwitchFallthrough] = newTransformPass(tpSwitchFallthrough, toClosure(transformSwitchFallthrough), @[])
+  globalTransformRegistry[tpGoTaglessSwitchToIf] = newTransformPass(tpGoTaglessSwitchToIf, toClosure(transformGoTaglessSwitch), @[xnkExternal_GoTaglessSwitch])
 
   # OOP feature lowering
   globalTransformRegistry[tpNimInterfaceToConcept] = newTransformPass(tpNimInterfaceToConcept, toClosure(transformInterfaceToConcept), @[xnkExternal_Interface])
@@ -139,6 +144,8 @@ proc loadExternalTransforms*() =
   globalTransformRegistry[tpLocalFunctionToProc] = newTransformPass(tpLocalFunctionToProc, toClosure(transformLocalFunctionToProc), @[xnkExternal_LocalFunction])
   globalTransformRegistry[tpUnsafeToNimBlock] = newTransformPass(tpUnsafeToNimBlock, toClosure(transformUnsafeToNimBlock), @[xnkExternal_Unsafe])
   globalTransformRegistry[tpDelegateToProcType] = newTransformPass(tpDelegateToProcType, toClosure(transformDelegateToTypeAlias), @[xnkExternal_Delegate])
+  globalTransformRegistry[tpRecordToStruct] = newTransformPass(tpRecordToStruct, toClosure(transformRecordToStruct), @[xnkExternal_Record])
+  globalTransformRegistry[tpRecordWithToBlock] = newTransformPass(tpRecordWithToBlock, toClosure(transformRecordWithToBlock), @[xnkExternal_RecordWith])
 
 proc loadGoTransforms*() =
   ## Load Go-specific transforms (DRAFT - untested)
@@ -147,6 +154,7 @@ proc loadGoTransforms*() =
   globalTransformRegistry[tpGoConcurrency] = newTransformPass(tpGoConcurrency, toClosure(transformGoStatement), @[])
   globalTransformRegistry[tpGoTypeAssertions] = newTransformPass(tpGoTypeAssertions, toClosure(transformGoTypeAssertions), @[])
   globalTransformRegistry[tpGoImplicitInterfaces] = newTransformPass(tpGoImplicitInterfaces, toClosure(transformGoImplicitInterfaces), @[])
+  globalTransformRegistry[tpGoEmptyInterfaceType] = newTransformPass(tpGoEmptyInterfaceType, toClosure(transformGoEmptyTypes), @[xnkExternal_GoEmptyInterfaceType, xnkExternal_GoEmptyStructType, xnkInlineStruct, xnkInlineInterface])
   globalTransformRegistry[tpGoPanicRecover] = newTransformPass(tpGoPanicRecover, toClosure(transformGoPanicRecover), @[])
 
 proc loadPythonTransforms*() =

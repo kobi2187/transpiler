@@ -1,0 +1,231 @@
+================================================================================
+XLANG EXTENSIONS NEEDED FOR KOTLIN SUPPORT
+================================================================================
+
+This document outlines potential XLang extensions that may be needed for
+complete Kotlin language support. The current parser maps to existing XLang
+constructs where possible, using External kinds for Kotlin-specific features.
+
+================================================================================
+EXISTING XLANG KINDS USED (No Extensions Needed)
+================================================================================
+
+The following Kotlin constructs map directly to existing XLang kinds:
+
+DECLARATIONS:
+- Classes, interfaces, enums → xnkClassDecl, xnkInterfaceDecl, xnkEnumDecl
+- Functions → xnkFuncDecl
+- Variables (val/var) → xnkLetDecl, xnkVarDecl
+- Constants → xnkConstDecl
+- Type aliases → xnkTypeAlias
+- Constructors → xnkConstructorDecl
+- Enum members → xnkEnumMember
+
+STATEMENTS:
+- If/else → xnkIfStmt
+- When (with subject) → xnkSwitchStmt
+- For-in → xnkForeachStmt
+- While → xnkWhileStmt
+- Try/catch/finally → xnkTryStmt, xnkCatchStmt, xnkFinallyStmt
+- Return/break/continue → xnkReturnStmt, xnkBreakStmt, xnkContinueStmt
+- Throw → xnkThrowStmt
+- Labeled statements → xnkLabeledStmt
+
+EXPRESSIONS:
+- Binary/unary operators → xnkBinaryExpr, xnkUnaryExpr
+- Calls → xnkCallExpr
+- Member access → xnkMemberAccessExpr
+- Index access → xnkIndexExpr
+- Lambda → xnkLambdaExpr
+- Cast → xnkCastExpr
+- Literals → xnkIntLit, xnkFloatLit, xnkStringLit, etc.
+- Identifiers → xnkIdentifier
+- This/super → xnkThisExpr, xnkBaseExpr
+- Method reference → xnkMethodReference
+
+TYPES:
+- Named types → xnkNamedType
+- Generic types → xnkGenericType
+- Function types → xnkFuncType
+- Array types → xnkArrayType
+
+================================================================================
+KOTLIN-SPECIFIC FEATURES USING EXISTING EXTERNAL KINDS
+================================================================================
+
+These Kotlin features use existing xnkExternal_* kinds:
+
+1. EXTENSION FUNCTIONS/PROPERTIES
+   Kind: xnkExternal_ExtensionMethod, xnkExternal_Property
+   Kotlin: fun String.foo() = ...
+   Notes: Already supported, maps naturally
+
+2. SAFE CALL OPERATOR (?.)
+   Kind: xnkExternal_SafeNavigation
+   Kotlin: obj?.property
+   Notes: Already supported
+
+3. ELVIS OPERATOR (?:)
+   Kind: xnkExternal_NullCoalesce
+   Kotlin: value ?: default
+   Notes: Already supported
+
+4. STRING TEMPLATES
+   Kind: xnkExternal_StringInterp
+   Kotlin: "Hello, $name!"
+   Notes: Already supported
+
+5. DO-WHILE LOOPS
+   Kind: xnkExternal_DoWhile
+   Kotlin: do { } while (cond)
+   Notes: Already supported
+
+6. PROPERTIES WITH ACCESSORS
+   Kind: xnkExternal_Property
+   Kotlin: var x: Int get() = ... set(v) { ... }
+   Notes: Already supported
+
+7. DESTRUCTURING
+   Kind: xnkExternal_Destructure
+   Kotlin: val (a, b) = pair
+   Notes: Already supported
+
+================================================================================
+POTENTIAL NEW EXTERNAL KINDS FOR KOTLIN
+================================================================================
+
+The following Kotlin-specific constructs could benefit from dedicated External
+kinds for better semantic preservation. Currently mapped to generic constructs.
+
+1. WHEN EXPRESSION WITHOUT SUBJECT
+   Current: xnkExternal_SwitchExpr with dummy subject
+   Proposed: xnkExternal_KotlinWhenExpr
+   Kotlin: when { cond1 -> ... cond2 -> ... }
+   Rationale: Different semantics from switch - conditions are expressions
+
+2. SEALED CLASSES
+   Current: xnkClassDecl with "isSealed": true flag
+   Proposed: Could use xnkExternal_SealedClass
+   Kotlin: sealed class Result { ... }
+   Rationale: Special exhaustiveness checking in when expressions
+   Decision: FLAGS ARE SUFFICIENT - no new kind needed
+
+3. DATA CLASSES
+   Current: xnkClassDecl with "isData": true flag
+   Proposed: Could use xnkExternal_DataClass
+   Kotlin: data class Person(val name: String)
+   Rationale: Auto-generates equals, hashCode, toString, copy, componentN
+   Decision: FLAGS ARE SUFFICIENT - transformation can generate methods
+
+4. VALUE/INLINE CLASSES
+   Current: xnkClassDecl with "isValue": true flag
+   Proposed: Could use xnkExternal_ValueClass
+   Kotlin: @JvmInline value class Password(val s: String)
+   Rationale: Compile-time wrapper, no runtime overhead
+   Decision: FLAGS ARE SUFFICIENT - backend handles optimization
+
+5. OBJECT DECLARATIONS (Singletons)
+   Current: xnkClassDecl with "isObject": true flag
+   Proposed: Could use xnkExternal_ObjectDecl
+   Kotlin: object Singleton { ... }
+   Rationale: Thread-safe lazy singleton initialization
+   Decision: FLAGS ARE SUFFICIENT - transformation can handle
+
+6. COMPANION OBJECTS
+   Current: xnkClassDecl with "isCompanion": true flag nested in parent
+   Proposed: Could use xnkExternal_CompanionObject
+   Kotlin: companion object Factory { ... }
+   Rationale: Special scoping and factory pattern
+   Decision: FLAGS ARE SUFFICIENT
+
+7. DELEGATION (by keyword)
+   Current: Stored as flags and expressions
+   Proposed: xnkExternal_KotlinDelegation
+   Kotlin: class Derived(b: Base) : Base by b
+   Rationale: Both class and property delegation have special semantics
+   Fields: delegateExpr, isDelegatedProperty, isClassDelegation
+
+8. SUSPEND FUNCTIONS / COROUTINES
+   Current: xnkFuncDecl with "isAsync": true (same as other async)
+   Proposed: xnkExternal_SuspendFunction (if coroutine semantics differ)
+   Kotlin: suspend fun fetchData() { ... }
+   Rationale: Kotlin coroutines have specific continuation-passing style
+   Decision: MAYBE - depends on target language coroutine support
+
+9. REIFIED TYPE PARAMETERS
+   Current: xnkGenericParameter with "isReified": true
+   Proposed: Could track specially for inline functions
+   Kotlin: inline fun <reified T> isInstance(v: Any) = v is T
+   Rationale: Type available at runtime, affects generated code
+   Decision: FLAGS ARE SUFFICIENT
+
+10. CONTRACTS
+    Current: Not captured
+    Proposed: xnkExternal_KotlinContract
+    Kotlin: contract { returns() implies (value != null) }
+    Rationale: Affects smart casting and null analysis
+    Decision: LOW PRIORITY - mostly for tooling
+
+================================================================================
+RECOMMENDED NEW KINDS FOR KOTLIN (If Needed)
+================================================================================
+
+Based on the analysis, most Kotlin features can be represented with:
+1. Existing XLang kinds
+2. Existing External kinds
+3. Additional JSON fields/flags on existing kinds
+
+If new External kinds are added, these would be the priorities:
+
+HIGH PRIORITY:
+- xnkExternal_KotlinDelegation - for class/property delegation
+
+MEDIUM PRIORITY:
+- xnkExternal_KotlinWhenExpr - for when without subject
+
+LOW PRIORITY:
+- Most class modifiers (sealed, data, value) work well as flags
+- Coroutine specifics could use xnkExternal_Await pattern
+
+================================================================================
+CURRENT IMPLEMENTATION NOTES
+================================================================================
+
+The current parser implementation uses these strategies:
+
+1. JSON FLAGS: Kotlin-specific modifiers stored as boolean fields:
+   - isData, isSealed, isInner, isValue, isInline
+   - isCompanion, isObject
+   - isSuspend, isTailrec, isInfix, isOperator
+   - isLateinit, isReified
+   - variance: "in" | "out"
+
+2. EXISTING EXTERNAL KINDS: Reused for semantically similar constructs:
+   - xnkExternal_ExtensionMethod for extension functions
+   - xnkExternal_Property for property accessors
+   - xnkExternal_SafeNavigation for ?.
+   - xnkExternal_NullCoalesce for ?:
+   - xnkExternal_StringInterp for string templates
+   - xnkExternal_DoWhile for do-while loops
+   - xnkExternal_Destructure for destructuring
+
+3. SEMANTIC OPERATORS: Kotlin operators mapped to existing semantic ops:
+   - Range (..) → "range"
+   - In/!in → "in"/"notin"
+   - Identity (===) → "is"/"isnot"
+   - Elvis (?:) → via xnkExternal_NullCoalesce
+
+================================================================================
+CONCLUSION
+================================================================================
+
+The XLang specification is well-suited for Kotlin with minimal extensions.
+The existing External kinds cover most Kotlin-specific features. Additional
+flags on existing node kinds handle the rest.
+
+Only xnkExternal_KotlinDelegation is strongly recommended as a new kind
+to properly capture Kotlin's delegation semantics (both class and property
+delegation via the `by` keyword).
+
+All other Kotlin features can be adequately represented with the current
+XLang specification plus appropriate flags.

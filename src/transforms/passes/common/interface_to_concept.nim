@@ -5,7 +5,7 @@
 
 import core/xlangtypes
 import transforms/transform_context
-import options
+# import options
 
 proc transformInterfaceToConcept*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform interface declarations into Nim concepts

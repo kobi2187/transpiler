@@ -188,7 +188,7 @@ type
   MyNimNode* = ref MyNimNodeObj
   MyNimNodeSeq* = seq[MyNimNode]
 
-  MyNimNodeObj* = object
+  MyNimNodeObj* = object of RootObj
     ## Independent NimNode structure based on the Nim compiler's TNode
     literalText*: string  # Optional: preserves original literal format (e.g., "0xFF")
     case kind*: MyNodeKind

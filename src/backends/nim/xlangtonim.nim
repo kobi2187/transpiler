@@ -19,72 +19,74 @@ import uuid4
 
 proc isInClassScope*(ctx: TransformContext): bool =
   ## Check if we're currently inside a class
-  ctx.currentClass.isSome()
+  ctx.conversion.currentClass.isSome()
 
 proc getClassName*(ctx: TransformContext): string =
   ## Get the name of the current class (or empty string)
-  if ctx.currentClass.isSome():
-    result = ctx.currentClass.get().typeNameDecl
+  if ctx.conversion.currentClass.isSome():
+    result = ctx.conversion.currentClass.get().typeNameDecl
   else:
     result = ""
 
 proc isClassField*(ctx: TransformContext, name: string): bool =
-  ## Check if a name is a field of the current class
-  if ctx.currentClass.isSome():
-    let classNode = ctx.currentClass.get()
+  ## Check if a name is a non-static field of the current class
+  ## Returns false for static fields (they don't need self. prefix)
+  if ctx.conversion.currentClass.isSome():
+    let classNode = ctx.conversion.currentClass.get()
     for member in classNode.members:
       if member.kind == xnkFieldDecl and member.fieldName == name:
-        return true
+        # Only non-static fields need self. prefix
+        return not member.fieldIsStatic
   return false
 
 proc classHasBaseTypes*(ctx: TransformContext): bool =
   ## Check if the current class has any base types (inheritance)
-  if ctx.currentClass.isSome():
-    let classNode = ctx.currentClass.get()
+  if ctx.conversion.currentClass.isSome():
+    let classNode = ctx.conversion.currentClass.get()
     return classNode.baseTypes.len > 0
   return false
 
 proc isInFunctionScope*(ctx: TransformContext): bool =
   ## Check if we're currently inside a function
-  ctx.currentFunction.isSome()
+  ctx.conversion.currentFunction.isSome()
 
 proc isInAsyncFunction*(ctx: TransformContext): bool =
   ## Check if we're in an async function
-  if ctx.currentFunction.isSome():
-    return ctx.currentFunction.get().isAsync
+  if ctx.conversion.currentFunction.isSome():
+    return ctx.conversion.currentFunction.get().isAsync
   return false
 
 proc addImport*(ctx: TransformContext, module: string) =
   ## Track that a Nim module needs to be imported
-  ctx.requiredImports.incl(module)
+  ctx.conversion.requiredImports.incl(module)
 
 proc getImports*(ctx: TransformContext): seq[string] =
   ## Get sorted list of required imports
-  result = toSeq(ctx.requiredImports)
+  result = toSeq(ctx.conversion.requiredImports)
   result.sort()
 
 proc setCurrentClass*(ctx: TransformContext, classNode: XLangNode) =
   ## Set the current class being converted
-  ctx.currentClass = some(classNode)
+  ctx.conversion.currentClass = some(classNode)
 
 proc clearCurrentClass*(ctx: TransformContext) =
   ## Clear the current class context
-  ctx.currentClass = none(XLangNode)
+  ctx.conversion.currentClass = none(XLangNode)
 
 proc setCurrentFunction*(ctx: TransformContext, funcNode: XLangNode) =
   ## Set the current function being converted
-  ctx.currentFunction = some(funcNode)
+  ctx.conversion.currentFunction = some(funcNode)
 
 proc clearCurrentFunction*(ctx: TransformContext) =
   ## Clear the current function context
-  ctx.currentFunction = none(XLangNode)
+  ctx.conversion.currentFunction = none(XLangNode)
 
 proc setCurrentNamespace*(ctx: TransformContext, nsNode: XLangNode) =
   ## Set the current namespace
-  ctx.currentNamespace = some(nsNode)
+  ctx.conversion.currentNamespace = some(nsNode)
 
 proc clearCurrentNamespace*(ctx: TransformContext) =
-  ctx.currentNamespace = none(XLangNode)
+  ctx.conversion.currentNamespace = none(XLangNode)
 
 proc newMinimalContext*(): TransformContext =
   ## Create a minimal TransformContext for backward compatibility
@@ -296,6 +298,12 @@ proc conv_xnkFile(node: XLangNode, ctx: TransformContext): MyNimNode =
       importStmt.add(newIdentNode(modulePath))
       result.add(importStmt)
 
+  elif ctx.sourceLang == "go":
+    # Go: add gocompat import for channel/select support
+    let gocompatImport = newNimNode(nnkImportStmt)
+    gocompatImport.add(newIdentNode("gocompat"))
+    result.add(gocompatImport)
+
   elif ctx.sourceLang != "" and ctx.sourceLang != "unknown" and ctx.sourceLang != "nim":
     # Fallback for non-C# languages: add blanket compat import
     let compatImport = newNimNode(nnkImportStmt)
@@ -332,13 +340,13 @@ proc conv_xnkFuncDecl_standalone(node: XLangNode, ctx: TransformContext): MyNimN
   var baseName = memberNameToNim(node.funcName)
 
   # If this is a static method in a file with multiple classes, add class name prefix
-  if ctx.currentClass.isSome() and node.funcIsStatic and ctx.classCount > 1:
+  if ctx.conversion.currentClass.isSome() and node.funcIsStatic and ctx.conversion.classCount > 1:
     # Get the class name and create prefix (e.g., JarUtil -> jarUtil_)
-    let className = ctx.currentClass.get().typeNameDecl
+    let className = ctx.conversion.currentClass.get().typeNameDecl
     let prefix = className[0].toLowerAscii() & className[1..^1] & "_"
     baseName = prefix & baseName
 
-  let procName = if node.funcVisibility == "public": baseName & "*" else: baseName
+  let procName = wrapProcName(baseName, node.funcVisibility == "public")
   result.add(newIdentNode(procName))
   # 1: pattern/term rewriting placeholder
   result.add(newEmptyNode())
@@ -357,8 +365,11 @@ proc conv_xnkFuncDecl_standalone(node: XLangNode, ctx: TransformContext): MyNimN
   result.add(newEmptyNode())
   # 5: reserved
   result.add(newEmptyNode())
-  # 6: body
+  # 6: body - set static context so identifiers don't get self. prefix
+  let wasInStatic = ctx.conversion.inStaticFunction
+  ctx.conversion.inStaticFunction = true
   result.add(convertToNimAST(node.body, ctx))
+  ctx.conversion.inStaticFunction = wasInStatic
   if node.isAsync:
     setPragma(result, newPragma(newIdentNode("async")))
 
@@ -374,7 +385,7 @@ proc conv_xnkFuncDecl_instanceMethod(node: XLangNode, ctx: TransformContext): My
   # 0: name - add asterisk for public procs/methods
   # Convert C# PascalCase to Nim camelCase (e.g., ToString -> toString)
   let baseName = memberNameToNim(node.funcName)
-  let procName = if node.funcVisibility == "public": baseName & "*" else: baseName
+  let procName = wrapProcName(baseName, node.funcVisibility == "public")
   result.add(newIdentNode(procName))
   # 1: pattern/term rewriting placeholder
   result.add(newEmptyNode())
@@ -407,6 +418,45 @@ proc conv_xnkFuncDecl_instanceMethod(node: XLangNode, ctx: TransformContext): My
   # 6: body
   result.add(convertToNimAST(node.body, ctx))
   if node.isAsync:
+    setPragma(result, newPragma(newIdentNode("async")))
+
+proc conv_xnkMethodDecl(node: XLangNode, ctx: TransformContext): MyNimNode =
+  ## Convert xnkMethodDecl (used in interfaces and for Go methods with receiver)
+  ## For interface methods (mbody is nil), just generate signature
+  result = newNimNode(nnkProcDef)
+
+  # 0: name
+  let procName = memberNameToNim(node.methodName)
+  result.add(newIdentNode(procName))
+  # 1: pattern/term rewriting placeholder
+  result.add(newEmptyNode())
+  # 2: generic params placeholder
+  result.add(newEmptyNode())
+  # 3: formal params
+  let formalParams = newNimNode(nnkFormalParams)
+  if node.mreturnType.isSome():
+    formalParams.add(convertToNimAST(node.mreturnType.get, ctx))
+  else:
+    formalParams.add(newEmptyNode())
+
+  # Add receiver as first parameter if present (Go methods)
+  if node.receiver.isSome():
+    formalParams.add(convertToNimAST(node.receiver.get, ctx))
+
+  # Add method parameters
+  for param in node.mparams:
+    formalParams.add(convertToNimAST(param, ctx))
+  result.add(formalParams)
+  # 4: pragmas
+  result.add(newEmptyNode())
+  # 5: reserved
+  result.add(newEmptyNode())
+  # 6: body (may be nil for interface methods)
+  if not node.mbody.isNil:
+    result.add(convertToNimAST(node.mbody, ctx))
+  else:
+    result.add(newEmptyNode())
+  if node.methodIsAsync:
     setPragma(result, newPragma(newIdentNode("async")))
 
 proc conv_xnkClassDecl_structDecl(node: XLangNode, ctx: TransformContext): MyNimNode =
@@ -501,10 +551,21 @@ proc conv_xnkVarLetConst(node: XLangNode, ctx: TransformContext): MyNimNode =
 
 proc conv_xnkIfStmt(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkIfStmt)
+
+  # Main if branch
   let branchNode = newNimNode(nnkElifBranch)
   branchNode.add(convertToNimAST(node.ifCondition, ctx))
   branchNode.add(convertToNimAST(node.ifBody, ctx))
   result.add(branchNode)
+
+  # Elif branches
+  for elifBranch in node.elifBranches:
+    let elifNode = newNimNode(nnkElifBranch)
+    elifNode.add(convertToNimAST(elifBranch.condition, ctx))
+    elifNode.add(convertToNimAST(elifBranch.body, ctx))
+    result.add(elifNode)
+
+  # Else branch
   if node.elseBody.isSome():
     let elseNode = newNimNode(nnkElse)
     elseNode.add(convertToNimAST(node.elseBody.get, ctx))
@@ -727,8 +788,9 @@ proc conv_xnkIdentifier(node: XLangNode, ctx: TransformContext): MyNimNode =
       identName = effectiveName.get
 
   # Check if this identifier is a class field being accessed in an instance method
-  # In constructors, don't add self. prefix - fields will be accessed directly or via result.
-  if ctx.isInClassScope() and ctx.isClassField(node.identName) and not ctx.inConstructor:
+  # In constructors and static functions, don't add self. prefix
+  if ctx.isInClassScope() and ctx.isClassField(node.identName) and
+     not ctx.conversion.inConstructor and not ctx.conversion.inStaticFunction:
     # Convert to self.fieldName
     result = newNimNode(nnkDotExpr)
     result.add(newIdentNode("self"))
@@ -798,7 +860,33 @@ proc conv_xnkNumberLit(node: XLangNode, ctx: TransformContext): MyNimNode =
 
 proc conv_xnkIntLit(node: XLangNode, ctx: TransformContext): MyNimNode =
   # Parse integer literal value and create integer literal node
-  result = newIntLitNode(parseInt(node.literalValue))
+  # Handle hex (0x...), octal (0o...), binary (0b...) and decimal
+  let literal = node.literalValue
+  try:
+    var value: BiggestInt
+    if literal.len > 2:
+      if literal[0..1] == "0x" or literal[0..1] == "0X":
+        value = parseHexInt(literal)
+      elif literal[0..1] == "0o" or literal[0..1] == "0O":
+        value = parseOctInt(literal)
+      elif literal[0..1] == "0b" or literal[0..1] == "0B":
+        value = parseBinInt(literal)
+      else:
+        value = parseInt(literal)
+    else:
+      value = parseInt(literal)
+    result = newIntLitNode(value)
+  except RangeDefect, ValueError:
+    # Value too large for int64, emit as uint64 literal with 'u64 suffix
+    result = newNimNode(nnkUInt64Lit)
+    # Try parsing as unsigned
+    try:
+      result.intVal = cast[BiggestInt](parseUInt(literal))
+    except:
+      # Fallback: emit as raw literal string with suffix
+      result = newNimNode(nnkCall)
+      result.add(newIdentNode("uint64"))
+      result.add(newStrLitNode(literal))
 
 proc conv_xnkFloatLit(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newFloatLitNode(parseFloat(node.literalValue))
@@ -927,8 +1015,8 @@ proc conv_xnkThisCall(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkCall)
 
   # Get the current class name for the constructor call
-  let typeName = if ctx.currentClass.isSome():
-    ctx.currentClass.get().typeNameDecl
+  let typeName = if ctx.conversion.currentClass.isSome():
+    ctx.conversion.currentClass.get().typeNameDecl
   else:
     "UnknownType"
 
@@ -943,9 +1031,9 @@ proc conv_xnkBaseCall(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkCall)
 
   # Try to determine parent type name
-  let parentTypeName = if ctx.currentClass.isSome() and ctx.currentClass.get().baseTypes.len > 0:
+  let parentTypeName = if ctx.conversion.currentClass.isSome() and ctx.conversion.currentClass.get().baseTypes.len > 0:
     # Get first base type name (simplified - assumes it's xnkNamedType)
-    let baseType = ctx.currentClass.get().baseTypes[0]
+    let baseType = ctx.conversion.currentClass.get().baseTypes[0]
     if baseType.kind == xnkNamedType:
       baseType.typeName
     else:
@@ -981,9 +1069,10 @@ proc binaryOpToNim(op: BinaryOp): string =
   of opIntDiv: "div"
 
   # Bitwise
-  of opBitAnd: "and"
-  of opBitOr: "or"
-  of opBitXor: "xor"
+  of opBitAnd: "bitand"
+  of opBitOr: "bitor"
+  of opBitXor: "bitxor"
+  of opBitAndNot: "bitandnot"  # Go bit clear, define as Nim proc later
   of opShiftLeft: "shl"
   of opShiftRight: "shr"
   of opShiftRightUnsigned: "shr"  # Nim doesn't distinguish signed/unsigned shift
@@ -1040,6 +1129,8 @@ proc unaryOpToNim(op: UnaryOp): string =
   of opDereference: "[]"     # Will need special handling
   of opAwait: "await"
   of opSpread: "..."         # May need lowering
+  of opIndexFromEnd: "^"     # Nim uses same syntax for backIndex
+  of opChannelReceive: "recv" # Go channel receive, needs lowering to channel lib
 
 proc conv_xnkBinaryExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkInfix)
@@ -1057,6 +1148,13 @@ proc conv_xnkUnaryExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
     result = newNimNode(nnkCall)
     result.add(newIdentNode(unaryOpToNim(node.unaryOp)))
     result.add(convertToNimAST(node.unaryOperand, ctx))
+  of opChannelReceive:
+    # Go channel receive: <-ch → ch.goRecv()
+    result = newNimNode(nnkCall)
+    let dotExpr = newNimNode(nnkDotExpr)
+    dotExpr.add(convertToNimAST(node.unaryOperand, ctx))
+    dotExpr.add(newIdentNode("goRecv"))
+    result.add(dotExpr)
   else:
     result = newNimNode(nnkPrefix)
     result.add(newIdentNode(unaryOpToNim(node.unaryOp)))
@@ -1122,7 +1220,7 @@ proc conv_xnkYieldFromStmt(node: XLangNode, ctx: TransformContext): MyNimNode = 
 proc conv_xnkThisExpr(node: XLangNode, ctx: TransformContext): MyNimNode =
   # In constructors, 'this' should be 'result'
   # In instance methods, 'this' should be 'self'
-  if ctx.inConstructor:
+  if ctx.conversion.inConstructor:
     newIdentNode("result")
   else:
     newIdentNode("self")
@@ -1265,7 +1363,7 @@ proc conv_xnkConstructorDecl(node: XLangNode, ctx: TransformContext): MyNimNode 
     body.add(initStmt)
 
   # Set constructor flag so field accesses use result. instead of self.
-  ctx.inConstructor = true
+  ctx.conversion.inConstructor = true
 
   # Helper to convert field assignment to result.field = value
   proc convertConstructorFieldAssignment(stmt: XLangNode, ctx: TransformContext): MyNimNode =
@@ -1309,7 +1407,7 @@ proc conv_xnkConstructorDecl(node: XLangNode, ctx: TransformContext): MyNimNode 
       body.add(convertConstructorFieldAssignment(node.constructorBody, ctx))
 
   # Clear constructor flag
-  ctx.inConstructor = false
+  ctx.conversion.inConstructor = false
 
   result.add(body)
 
@@ -1335,11 +1433,11 @@ proc conv_xnkDestructorDecl(node: XLangNode, ctx: TransformContext): MyNimNode =
   params.add(newEmptyNode()) # no return type (void)
 
   # Add self parameter as var (destructors modify the object)
-  if ctx.currentClass.isSome():
+  if ctx.conversion.currentClass.isSome():
     let selfParam = newNimNode(nnkIdentDefs)
     selfParam.add(newIdentNode("self"))
     let varType = newNimNode(nnkVarTy)
-    varType.add(newIdentNode(ctx.currentClass.get().typeNameDecl))
+    varType.add(newIdentNode(ctx.conversion.currentClass.get().typeNameDecl))
     selfParam.add(varType)
     selfParam.add(newEmptyNode())
     params.add(selfParam)
@@ -1478,7 +1576,7 @@ proc conv_xnkConversionOperatorDecl(node: XLangNode, ctx: TransformContext): MyN
 
   # IMPORTANT: Conversion operators are ALWAYS static in C#
   # Create a non-class context to prevent identifier resolution from adding implicit self.
-  let savedClass = ctx.currentClass
+  let savedClass = ctx.conversion.currentClass
   ctx.clearCurrentClass()
 
   let newBody = newStmtList()
@@ -1515,7 +1613,7 @@ proc conv_xnkConversionOperatorDecl(node: XLangNode, ctx: TransformContext): MyN
       newBody.add(convertToNimAST(stmt, ctx))
 
   # Restore class context
-  ctx.currentClass = savedClass
+  ctx.conversion.currentClass = savedClass
 
   result.add(newBody)
 proc conv_xnkEnumMember(node: XLangNode, ctx: TransformContext): MyNimNode = notYetImpl("xnkEnumMember")
@@ -1848,6 +1946,11 @@ proc conv_xnkArrowFunc(node: XLangNode, ctx: TransformContext): MyNimNode =
 ## TypeScript: `x as string`
 ## Nim: `x`  (type assertion not needed at runtime)
 proc conv_xnkTypeAssertion(node: XLangNode, ctx: TransformContext): MyNimNode =
+  # Check if assertType is nil (malformed type assertion from error cases)
+  if node.assertType.isNil():
+    # Just return the expression without type assertion
+    return convertToNimAST(node.assertExpr, ctx)
+
   # Check if this is a null check: `x is null`
   if node.assertType.kind == xnkNamedType and node.assertType.typeName == "null":
     # Convert to: x == nil
@@ -2052,6 +2155,25 @@ proc conv_xnkReferenceType(node: XLangNode, ctx: TransformContext): MyNimNode =
   result = newNimNode(nnkRefTy)
   result.add(convertToNimAST(node.referentType, ctx))
 
+## C#: `(int x, string y)`
+## Nim: `tuple[x: int, y: string]`
+proc conv_xnkTupleType(node: XLangNode, ctx: TransformContext): MyNimNode =
+  result = newNimNode(nnkTupleTy)
+  for elem in node.tupleTypeElements:
+    # Each element should be a Parameter with paramName and paramType
+    if elem.kind == xnkParameter:
+      var identDefs = newNimNode(nnkIdentDefs)
+      if elem.paramName.len > 0:
+        identDefs.add(newIdentNode(elem.paramName))
+      else:
+        identDefs.add(newEmptyNode())  # Unnamed tuple element
+      if elem.paramType.isSome():
+        identDefs.add(convertToNimAST(elem.paramType.get, ctx))
+      else:
+        identDefs.add(newEmptyNode())
+      identDefs.add(newEmptyNode())  # No default value for tuple type fields
+      result.add(identDefs)
+
 ## C#: `List<T>`
 ## Nim: `List[T]`
 proc conv_xnkGenericType(node: XLangNode, ctx: TransformContext): MyNimNode =
@@ -2172,9 +2294,12 @@ proc getNodeDescription(node: XLangNode): string =
   of xnkModule:
     if node.moduleName.len > 0:
       result &= " (module: " & node.moduleName & ")"
-  of xnkFuncDecl, xnkMethodDecl:
+  of xnkFuncDecl:
     if node.funcName.len > 0:
       result &= " (name: " & node.funcName & ")"
+  of xnkMethodDecl:
+    if node.methodName.len > 0:
+      result &= " (name: " & node.methodName & ")"
   of xnkVarDecl, xnkLetDecl, xnkConstDecl:
     if node.declName.len > 0:
       result &= " (name: " & node.declName & ")"
@@ -2223,7 +2348,9 @@ proc modifyBeforeConversion(node: XLangNode, ctx: TransformContext): XLangNode =
     # Also check if any function/method declarations have isAsync=true
     var needsAsync = false
     traverseTree(mutableNode, proc(n: var XLangNode) =
-      if n.kind in {xnkFuncDecl, xnkMethodDecl} and n.isAsync:
+      if n.kind == xnkFuncDecl and n.isAsync:
+        needsAsync = true
+      elif n.kind == xnkMethodDecl and n.methodIsAsync:
         needsAsync = true
     )
     if needsAsync:
@@ -2248,17 +2375,27 @@ proc convertToNimAST(node: XLangNode, ctx: TransformContext = nil): MyNimNode =
   # Check for nil node
   if node.isNil:
     let fileInfo = if not ctx.isNil and ctx.currentFile != "": " in " & ctx.currentFile else: ""
-    echo "WARNING: convertToNimAST called with nil node", fileInfo
+
+    # Print context stack to understand where the nil came from
+    if not ctx.isNil and ctx.conversion.nodeStack.len > 0:
+      echo "WARNING: convertToNimAST called with nil node", fileInfo
+      echo "  Context stack (parent nodes):"
+      for i in countdown(ctx.conversion.nodeStack.len - 1, max(0, ctx.conversion.nodeStack.len - 3)):
+        let parentNode = ctx.conversion.nodeStack[i]
+        echo "    [", i, "] kind=", parentNode.kind, " (checking which field had nil...)"
+    else:
+      echo "WARNING: convertToNimAST called with nil node", fileInfo, " (no context available)"
+
     return newNimNode(nnkDiscardStmt)
 
   # Create temporary context if none provided (for backward compatibility)
   let context = if ctx.isNil: newMinimalContext() else: ctx
 
   # Push node onto stack for error tracking
-  context.nodeStack.add(node)
+  context.conversion.nodeStack.add(node)
   defer:
     # Pop node from stack when we exit (success or failure)
-    discard context.nodeStack.pop()
+    discard context.conversion.nodeStack.pop()
 
   # Wrap in try-except to provide better error context
   try:
@@ -2270,7 +2407,7 @@ proc convertToNimAST(node: XLangNode, ctx: TransformContext = nil): MyNimNode =
       result = conv_xnkModule(node, context)
     of xnkNamespace:
       result = conv_xnkNamespace(node, context)
-    of xnkFuncDecl, xnkMethodDecl:
+    of xnkFuncDecl:
       # Choose converter based on whether we're in a class context and if it's static
       if context.isInClassScope() and not node.funcIsStatic:
         # Instance method - add self parameter
@@ -2278,6 +2415,8 @@ proc convertToNimAST(node: XLangNode, ctx: TransformContext = nil): MyNimNode =
       else:
         # Standalone function or static method
         result = conv_xnkFuncDecl_standalone(node, context)
+    of xnkMethodDecl:
+      result = conv_xnkMethodDecl(node, context)
     of xnkClassDecl, xnkStructDecl:
       result = conv_xnkClassDecl_structDecl(node, context)
     of xnkInterfaceDecl:
@@ -2577,6 +2716,8 @@ proc convertToNimAST(node: XLangNode, ctx: TransformContext = nil): MyNimNode =
       result = conv_xnkPointerType(node, ctx)
     of xnkReferenceType:
       result = conv_xnkReferenceType(node, ctx)
+    of xnkTupleType:
+      result = conv_xnkTupleType(node, ctx)
     of xnkGenericType:
       result = conv_xnkGenericType(node, ctx)
     of xnkUnionType:
@@ -2634,19 +2775,133 @@ proc convertToNimAST(node: XLangNode, ctx: TransformContext = nil): MyNimNode =
     
     of xnkDictEntry:
       result = conv_xnkDictEntry(node, ctx)
+
+    # Go-specific external nodes - using gocompat abstraction layer
+    of xnkExternal_GoChanType:
+      # Go channel type: chan T, <-chan T, chan<- T → GoChan[T]
+      result = newNimNode(nnkBracketExpr)
+      result.add(newIdentNode("GoChan"))
+      if not node.extChanElemType.isNil:
+        result.add(convertToNimAST(node.extChanElemType, context))
+      else:
+        result.add(newIdentNode("void"))
+
+    of xnkExternal_GoVariadic:
+      # Go variadic: ...T → varargs[T]
+      result = newNimNode(nnkBracketExpr)
+      result.add(newIdentNode("varargs"))
+      if not node.extVariadicElemType.isNil:
+        result.add(convertToNimAST(node.extVariadicElemType, context))
+      else:
+        result.add(newIdentNode("auto"))
+
+    of xnkExternal_GoChannelSend:
+      # Go channel send: ch <- value → ch.goSend(value)
+      result = newNimNode(nnkCall)
+      let dotExpr = newNimNode(nnkDotExpr)
+      dotExpr.add(convertToNimAST(node.extSendChannel, context))
+      dotExpr.add(newIdentNode("goSend"))
+      result.add(dotExpr)
+      result.add(convertToNimAST(node.extSendValue, context))
+
+    of xnkExternal_GoSelect:
+      # Go select statement → goSelect: <cases>
+      result = newNimNode(nnkCall)
+      result.add(newIdentNode("goSelect"))
+      let stmtList = newNimNode(nnkStmtList)
+      for caseNode in node.extSelectCases:
+        stmtList.add(convertToNimAST(caseNode, context))
+      if node.extSelectDefault.isSome:
+        stmtList.add(convertToNimAST(node.extSelectDefault.get, context))
+      result.add(stmtList)
+
+    of xnkExternal_GoCommClause:
+      # Go select case → goCase or goDefault
+      if node.extCommIsDefault:
+        # Generate: goDefault: <body>
+        result = newNimNode(nnkCall)
+        result.add(newIdentNode("goDefault"))
+        if not node.extCommBody.isNil:
+          result.add(convertToNimAST(node.extCommBody, context))
+        else:
+          result.add(newNimNode(nnkStmtList))
+      else:
+        # Generate: goCase <op>: <body>
+        # Check if op is an assignment (variable binding from receive)
+        result = newNimNode(nnkCall)
+        result.add(newIdentNode("goCase"))
+        if not node.extCommOp.isNil:
+          let op = node.extCommOp
+          # Check for variable binding: msg := <-ch or msg, ok := <-ch
+          if op.kind == xnkAsgn and op.asgnRight.kind == xnkUnaryExpr and
+             op.asgnRight.unaryOp == opChannelReceive:
+            # Variable binding case: generate goCase(ch.goRecv(), varName, body)
+            let chanExpr = convertToNimAST(op.asgnRight.unaryOperand, context)
+            let recvCall = newNimNode(nnkCall)
+            let recvDot = newNimNode(nnkDotExpr)
+            recvDot.add(chanExpr)
+            recvDot.add(newIdentNode("goRecv"))
+            recvCall.add(recvDot)
+            result.add(recvCall)
+            # Add variable name as identifier
+            if op.asgnLeft.kind == xnkIdentifier:
+              result.add(newIdentNode(op.asgnLeft.identName))
+            else:
+              result.add(convertToNimAST(op.asgnLeft, context))
+          else:
+            # Non-binding case (send or plain receive)
+            result.add(convertToNimAST(op, context))
+        if not node.extCommBody.isNil:
+          result.add(convertToNimAST(node.extCommBody, context))
+        else:
+          result.add(newNimNode(nnkStmtList))
+
+    of xnkExternal_GoTypeSwitch:
+      # Go type switch → case/of with type checks
+      # switch v := x.(type) { case T1: ... case T2: ... }
+      # → case x.kind: of T1: let v = T1(x); ... of T2: ...
+      result = newNimNode(nnkCaseStmt)
+      # Use the expression
+      if not node.extGoTypeSwitchExpr.isNil:
+        result.add(convertToNimAST(node.extGoTypeSwitchExpr, context))
+      else:
+        result.add(newIdentNode("typeSwitchExpr"))
+      # Add each type case
+      for caseNode in node.extGoTypeSwitchCases:
+        result.add(convertToNimAST(caseNode, context))
+
+    of xnkExternal_GoTypeCase:
+      # Go type case clause
+      if node.extTypeCaseIsDefault:
+        result = newNimNode(nnkElse)
+        let body = newStmtList()
+        if not node.extTypeCaseBody.isNil:
+          body.add(convertToNimAST(node.extTypeCaseBody, context))
+        result.add(body)
+      else:
+        result = newNimNode(nnkOfBranch)
+        # Add type conditions
+        for typeNode in node.extTypeCaseTypes:
+          result.add(convertToNimAST(typeNode, context))
+        # Add body
+        let body = newStmtList()
+        if not node.extTypeCaseBody.isNil:
+          body.add(convertToNimAST(node.extTypeCaseBody, context))
+        result.add(body)
+
     else:
       raise newException(ValueError, "Unsupported or unlowered XLang node kind: " & $node.kind)
   except Exception as e:
     # Print hierarchy only once - when we first catch the error
     # Check if this is the first time we're seeing this error by checking
     # if we're deeper in the stack than a simple File node
-    if context.nodeStack.len > 1:
+    if context.conversion.nodeStack.len > 1:
       let fileInfo = if context.currentFile != "": " in " & context.currentFile else: ""
       echo "ERROR", fileInfo, ":"
       echo "  ", e.msg
       echo "  Node hierarchy (innermost first):"
-      for i in countdown(context.nodeStack.len - 1, 0):
-        let desc = getNodeDescription(context.nodeStack[i])
+      for i in countdown(context.conversion.nodeStack.len - 1, 0):
+        let desc = getNodeDescription(context.conversion.nodeStack[i])
         echo "    ", desc
     raise  # Re-raise the exception with original stack trace
 

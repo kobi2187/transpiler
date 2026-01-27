@@ -14,7 +14,7 @@
 
 import core/xlangtypes
 import transforms/transform_context
-import options
+# import options
 
 proc transformDelegateToTypeAlias*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform C# delegate declarations into Nim type aliases for proc types

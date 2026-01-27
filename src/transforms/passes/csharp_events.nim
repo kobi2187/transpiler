@@ -17,7 +17,7 @@
 import core/xlangtypes
 import transforms/transform_context
 import options
-import strutils
+# import strutils
 
 proc transformDelegate*(node: XLangNode, ctx: TransformContext): XLangNode =
   ## Transform C# delegate declaration to Nim proc type

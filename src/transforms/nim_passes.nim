@@ -4,7 +4,7 @@
 ## The global transform registry contains all available transforms;
 ## this module simply chooses the appropriate ones for Nim output.
 
-import core/xlangtypes
+# import core/xlangtypes
 import fixed_point_transformer
 import transform_registry
 import types
@@ -23,6 +23,7 @@ const nimDefaultPassIDs* = @[
   tpTernaryToIf,
   tpSwitchExprToCase,
   tpSwitchFallthrough,
+  tpGoTaglessSwitchToIf,
 
   # OOP feature lowering
   tpNimInterfaceToConcept,
@@ -52,7 +53,7 @@ const nimDefaultPassIDs* = @[
 
   # Resource management
   tpResourceToDefer,
-  tpResourceToTryFinally,
+  # tpResourceToTryFinally,
   tpLockToWithLock,
 
   # Async/await
@@ -72,7 +73,10 @@ const nimDefaultPassIDs* = @[
   tpFixedToBlock,
   tpLocalFunctionToProc,
   tpUnsafeToNimBlock,
-  tpDelegateToProcType
+  tpDelegateToProcType,
+  tpRecordToStruct,
+  tpRecordWithToBlock
+
 ]
 
 proc selectTransformsForNim*(): seq[TransformPass] =

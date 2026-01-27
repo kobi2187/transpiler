@@ -24,7 +24,7 @@
 import core/xlangtypes
 import transforms/transform_context
 import options
-import strutils
+# import strutils
 
 type
   PatternKind = enum

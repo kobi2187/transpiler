@@ -25,7 +25,7 @@
 import core/xlangtypes
 import transforms/transform_context
 import options
-import strutils
+# import strutils
 
 proc isTypeAssertion(node: XLangNode): bool =
   ## Check if this is a Go type assertion: x.(Type)

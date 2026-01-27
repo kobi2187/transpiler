@@ -8,14 +8,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 if [ $# -eq 0 ]; then
-    echo "Usage: $0 <java_file>"
+    echo "Usage: $0 <java_file_or_directory>"
     exit 1
 fi
 
-JAVA_FILE="$1"
+INPUT_PATH="$1"
 
-if [ ! -f "$JAVA_FILE" ]; then
-    echo "Error: File not found: $JAVA_FILE"
+if [ ! -e "$INPUT_PATH" ]; then
+    echo "Error: Path not found: $INPUT_PATH"
     exit 1
 fi
 
@@ -36,4 +36,4 @@ if [ ! -f "JavaToXLangParser.class" ]; then
 fi
 
 # Run parser
-java -cp "$CLASSPATH" JavaToXLangParser "$JAVA_FILE"
+java -cp "$CLASSPATH" JavaToXLangParser "$INPUT_PATH"

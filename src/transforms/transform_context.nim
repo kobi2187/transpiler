@@ -8,6 +8,7 @@
 ## - Helper utilities
 ##
 ## Design: Instead of passing many parameters, we pass one context with everything.
+## Uses composition: ctx.transform.* for transform-phase state, ctx.conversion.* for conversion-phase state.
 
 import core/xlangtypes
 import semantic/semantic_analysis
@@ -19,46 +20,88 @@ import std/sets
 import core/apply_to_kids
 
 type
-  TransformContext* = ref object
-    ## Central context for all AST passes - transforms AND conversion
-    ## Provides access to semantic info, scope tracking, and all services
+  # =============================================================================
+  # Phase-Specific State Objects
+  # =============================================================================
+  
+  PendingField* = object
+    ## A field to be added to a class after iteration completes
+    classId*: Uuid        ## UUID of the class to add to
+    field*: XLangNode     ## The field to add
+    source*: string       ## Transform that requested it
 
-    # Core semantic data
-    semanticInfo*: SemanticInfo        ## Symbol tables, scopes, resolved references
-
-    # Services
-    errorCollector*: ErrorCollector    ## For reporting errors/warnings during transforms
-
-    # Configuration
-    targetLang*: string                ## Target output language ("nim", "go", etc.)
-    sourceLang*: string                ## Source language from input file
-    verbose*: bool                     ## Verbose output flag
-
-    # Current file being processed
-    currentFile*: string               ## Path to current input file
-
-    # Transform state
+  TransformState* = object
+    ## State used during the transform/lowering phase
+    ## Access via ctx.transform.*
+    nodeById*: Table[Uuid, XLangNode]  ## Quick lookup of nodes by UUID
     transformCount*: int               ## How many times transforms have been applied
-    nodeById*: Table[Uuid, XLangNode]  ## Quick lookup of nodes by UUID (built on demand)
+    log*: seq[string]                  ## Audit log of transform actions
+    pendingFields*: seq[PendingField]  ## Fields to add after iteration
 
-    # Conversion scope tracking (for code generation phase)
+  ConversionState* = object
+    ## State used during the conversion/code-gen phase
+    ## Access via ctx.conversion.*
     currentClass*: Option[XLangNode]      ## Current class/interface being converted
     currentFunction*: Option[XLangNode]   ## Current function/method being converted
     currentNamespace*: Option[XLangNode]  ## Current namespace being converted
     currentModule*: Option[XLangNode]     ## Current file/module being converted
     inConstructor*: bool                  ## True if inside a constructor body
+    inStaticFunction*: bool               ## True if inside a static function (no self access)
     nodeStack*: seq[XLangNode]            ## Stack for error reporting (shows hierarchy)
-
-    # Symbol tables for conversion (XLangNode references)
     types*: Table[string, XLangNode]      ## Type declarations
     variables*: Table[string, XLangNode]  ## Variable declarations
     functions*: Table[string, XLangNode]  ## Function declarations
-
-    # Import tracking
     requiredImports*: HashSet[string]     ## Nim modules to import (tables, options, etc.)
-
-    # Multi-class file handling
     classCount*: int                      ## Number of classes in file (for static method prefixing)
+
+  # =============================================================================
+  # Main Context Type
+  # =============================================================================
+
+  TransformContext* = ref object
+    ## Central context for all AST passes - transforms AND conversion
+    ## Provides access to semantic info, scope tracking, and all services
+
+    # Shared - both phases need these
+    semanticInfo*: SemanticInfo        ## Symbol tables, scopes, resolved references
+    errorCollector*: ErrorCollector    ## For reporting errors/warnings
+    targetLang*: string                ## Target output language ("nim", "go", etc.)
+    sourceLang*: string                ## Source language from input file
+    currentFile*: string               ## Path to current input file
+    verbose*: bool                     ## Verbose output flag
+
+    # Phase-specific state (one dot away, still direct access)
+    transform*: TransformState         ## Transform-phase state
+    conversion*: ConversionState       ## Conversion-phase state
+
+# =============================================================================
+# Initialization Helpers
+# =============================================================================
+
+proc initTransformState(): TransformState =
+  ## Initialize transform-phase state
+  TransformState(
+    nodeById: initTable[Uuid, XLangNode](),
+    transformCount: 0,
+    log: @[],
+    pendingFields: @[]
+  )
+
+proc initConversionState(): ConversionState =
+  ## Initialize conversion-phase state
+  ConversionState(
+    currentClass: none(XLangNode),
+    currentFunction: none(XLangNode),
+    currentNamespace: none(XLangNode),
+    currentModule: none(XLangNode),
+    inConstructor: false,
+    nodeStack: @[],
+    types: initTable[string, XLangNode](),
+    variables: initTable[string, XLangNode](),
+    functions: initTable[string, XLangNode](),
+    requiredImports: initHashSet[string](),
+    classCount: 0
+  )
 
 proc newTransformContext*(semanticInfo: SemanticInfo,
                          errorCollector: ErrorCollector,
@@ -74,20 +117,8 @@ proc newTransformContext*(semanticInfo: SemanticInfo,
     sourceLang: sourceLang,
     currentFile: currentFile,
     verbose: verbose,
-    transformCount: 0,
-    nodeById: initTable[Uuid, XLangNode](),
-    # Initialize conversion state fields
-    currentClass: none(XLangNode),
-    currentFunction: none(XLangNode),
-    currentNamespace: none(XLangNode),
-    currentModule: none(XLangNode),
-    inConstructor: false,
-    nodeStack: @[],
-    types: initTable[string, XLangNode](),
-    variables: initTable[string, XLangNode](),
-    functions: initTable[string, XLangNode](),
-    requiredImports: initHashSet[string](),
-    classCount: 0
+    transform: initTransformState(),
+    conversion: initConversionState()
   )
 
 # =============================================================================
@@ -143,6 +174,35 @@ proc log*(ctx: TransformContext, message: string) =
   if ctx.verbose:
     echo "  [Transform] ", message
 
+proc logAction*(ctx: TransformContext, source: string, action: string) =
+  ## Record a transform action in the audit log
+  ## source: name of the transform or component performing the action
+  ## action: description of what was done
+  ctx.transform.log.add("[" & source & "] " & action)
+
+proc getTransformLog*(ctx: TransformContext): seq[string] =
+  ## Get the accumulated transform log
+  ctx.transform.log
+
+proc clearTransformLog*(ctx: TransformContext) =
+  ## Clear the transform log
+  ctx.transform.log.setLen(0)
+
+proc formatTransformLog*(ctx: TransformContext): string =
+  ## Format the transform log as a human-readable string
+  if ctx.transform.log.len == 0:
+    return ""
+  result = "=== Transform Log (" & $ctx.transform.log.len & " entries) ===\n"
+  for entry in ctx.transform.log:
+    result.add(entry & "\n")
+
+proc renameSymbol*(ctx: TransformContext, source: string, sym: Symbol, newName: string) =
+  ## Rename a symbol and log the action
+  ## source: name of the transform performing this action
+  let oldName = sym.name
+  ctx.semanticInfo.renames[sym] = newName
+  ctx.logAction(source, "renamed '" & oldName & "' -> '" & newName & "'")
+
 # =============================================================================
 # Symbol Queries - Easy access to semantic info
 # =============================================================================
@@ -186,8 +246,8 @@ proc cloneNode*(ctx: TransformContext, node: XLangNode): XLangNode =
 proc getNodeById*(ctx: TransformContext, id: Uuid): XLangNode =
   ## Get a node by its UUID from the cache
   ## Returns nil if not found
-  if ctx.nodeById.hasKey(id):
-    return ctx.nodeById[id]
+  if ctx.transform.nodeById.hasKey(id):
+    return ctx.transform.nodeById[id]
   return nil
 
 proc getParentNode*(ctx: TransformContext, node: XLangNode): XLangNode =
@@ -197,61 +257,157 @@ proc getParentNode*(ctx: TransformContext, node: XLangNode): XLangNode =
     return nil
   return ctx.getNodeById(node.parentId.get())
 
+# =============================================================================
+# Class/Struct Detection Helpers
+# =============================================================================
+
+proc isClassOrStruct(node: XLangNode): bool =
+  ## Check if node is a class or struct declaration
+  # node.kind in {xnkClassDecl, xnkStructDecl}
+  node.kind in {xnkStructDecl, xnkClassDecl}
+
+proc exceedsMaxDepth(depth: int): bool =
+  ## Check if we've exceeded safe traversal depth
+  const maxDepth = 100
+  depth > maxDepth
+
+proc warnExcessiveDepth() =
+  ## Warn about potential infinite loop
+  echo "WARNING: findContainingClass exceeded max depth, breaking to avoid infinite loop"
+
 proc findContainingClass*(ctx: TransformContext, node: XLangNode): XLangNode =
-  ## Walk up the parent chain to find the containing class declaration
-  ## Returns nil if not inside a class
+  ## Walk up the parent chain to find the containing class/struct declaration
+  ## Returns nil if not inside a class or struct
   var current = node
+  var depth = 0
   while current != nil:
-    if current.kind == xnkClassDecl:
+    if isClassOrStruct(current):
       return current
     current = ctx.getParentNode(current)
+    depth.inc()
+    if exceedsMaxDepth(depth):
+      warnExcessiveDepth()
+      break
   return nil
 
-proc addFieldToClass*(ctx: TransformContext, classNode: XLangNode, field: XLangNode) =
-  ## Add a field to a class's field/member list
-  ## This mutates the class node to include the new field
-  if classNode.kind in {xnkClassDecl, xnkStructDecl, xnkInterfaceDecl}:
-    classNode.members.add(field)
-    # Also register the new field in nodeById if it has an ID
-    if field.id.isSome:
-      ctx.nodeById[field.id.get()] = field
-    ctx.log("Added field '" & field.fieldName & "' to type '" & classNode.typeNameDecl & "'")
+# =============================================================================
+# Field Addition Helpers
+# =============================================================================
+
+proc canAddField(node: XLangNode): bool =
+  ## Check if node can have fields added to it
+  node.kind in {xnkClassDecl, xnkStructDecl, xnkInterfaceDecl}
+
+proc linkFieldToParent(field: XLangNode, classNode: XLangNode) =
+  ## Set parent ID on field
+  field.parentId = classNode.id
+
+proc registerFieldInIndex(ctx: TransformContext, field: XLangNode) =
+  ## Add field to node index if it has an ID
+  if field.id.isSome:
+    ctx.transform.nodeById[field.id.get()] = field
+
+proc queueFieldForClass*(ctx: TransformContext, source: string, classNode: XLangNode, field: XLangNode) =
+  ## Queue a field to be added to a class after iteration completes
+  ## source: name of the transform performing this action (for logging)
+  ## This avoids modifying the members seq during iteration
+  if not canAddField(classNode):
+    return
+  if classNode.id.isNone:
+    ctx.logAction(source, "ERROR: class has no id, cannot queue field '" & field.fieldName & "'")
+    return
+  ctx.transform.pendingFields.add(PendingField(
+    classId: classNode.id.get(),
+    field: field,
+    source: source
+  ))
+  ctx.logAction(source, "queued field '" & field.fieldName & "' for " & classNode.typeNameDecl)
+
+proc flushPendingFields*(ctx: TransformContext) =
+  ## Add all pending fields to their classes
+  ## Call this after each iteration of the fixed-point transformer
+  for pending in ctx.transform.pendingFields:
+    let classNode = ctx.getNodeById(pending.classId)
+    if classNode.isNil:
+      ctx.logAction(pending.source, "ERROR: class not found for pending field")
+      continue
+    classNode.members.add(pending.field)
+    linkFieldToParent(pending.field, classNode)
+    registerFieldInIndex(ctx, pending.field)
+    ctx.logAction(pending.source, "added field '" & pending.field.fieldName & "' to " & classNode.typeNameDecl)
+  ctx.transform.pendingFields.setLen(0)
+
+# =============================================================================
+# Node Index Building Helpers
+# =============================================================================
+
+proc ensureNodeHasId*(node: var XLangNode) =
+  ## Assign a UUID if node doesn't have one
+  if node.id.isNone:
+    node.id = some(uuid4())
+
+proc setParentId*(node: var XLangNode, parentId: Option[Uuid]) =
+  ## Set the parent ID on a node
+  node.parentId = parentId
+
+proc addToNodeIndex*(ctx: TransformContext, node: XLangNode) =
+  ## Add node to the lookup table
+  if node.id.isSome:
+    ctx.transform.nodeById[node.id.get()] = node
+
+proc registerNewNode*(ctx: TransformContext, node: var XLangNode, parentId: Option[Uuid] = none(Uuid)) =
+  ## Register a newly created node with UUID and parent link
+  ## Call this on nodes created during transformations to ensure they're properly tracked
+  ensureNodeHasId(node)
+  setParentId(node, parentId)
+  addToNodeIndex(ctx, node)
+
+proc registerNodeTree*(ctx: TransformContext, node: var XLangNode, parentId: Option[Uuid] = none(Uuid))
+
+proc assignIdsAndParents(node: var XLangNode, parentId: Option[Uuid], ctx: TransformContext) =
+  ## Recursively assign IDs and parent links to all nodes
+  ensureNodeHasId(node)
+  setParentId(node, parentId)
+  addToNodeIndex(ctx, node)
+  
+  let currentId = node.id
+  let nodeId = node.id.get()
+  
+  case node.kind
+  of xnkFile:
+    for child in node.moduleDecls.mitems:
+      assignIdsAndParents(child, currentId, ctx)
+  of xnkNamespace:
+    for child in node.namespaceBody.mitems:
+      assignIdsAndParents(child, currentId, ctx)
+  of xnkClassDecl, xnkStructDecl, xnkInterfaceDecl:
+    for member in node.members.mitems:
+      assignIdsAndParents(member, currentId, ctx)
+  else:
+    visit(node, proc(child: var XLangNode) =
+      if child.id.isSome and child.id.get() != nodeId:
+        assignIdsAndParents(child, currentId, ctx)
+    )
+
+proc clearNodeIndex(ctx: TransformContext) =
+  ## Clear the node index
+  ctx.transform.nodeById.clear()
+
+proc logNodeIndexSize(ctx: TransformContext) =
+  ## Log the size of the node index
+  ctx.log("Built node index with " & $ctx.transform.nodeById.len & " nodes")
 
 proc buildNodeIndex*(ctx: TransformContext, root: var XLangNode) =
   ## Build the nodeById index by traversing the entire AST
   ## Assigns UUIDs to all nodes, sets parent IDs, and builds the lookup table
-  ctx.nodeById.clear()
+  clearNodeIndex(ctx)
+  assignIdsAndParents(root, none(Uuid), ctx)
+  logNodeIndexSize(ctx)
 
-  proc assignIdsAndParents(node: var XLangNode, parentId: Option[Uuid]) =
-    # Assign a new UUID if not set
-    if node.id.isNone:
-      node.id = some(uuid4())
-
-    # Set parent ID
-    node.parentId = parentId
-
-    # Add to lookup table
-    ctx.nodeById[node.id.get()] = node
-
-    # Recursively process children with this node as parent
-    let currentId = node.id
-    let nodeId = node.id.get()  # Capture the ID value, not the node itself
-    case node.kind
-    of xnkFile:
-      for child in node.moduleDecls.mitems:
-        assignIdsAndParents(child, currentId)
-    of xnkClassDecl, xnkStructDecl, xnkInterfaceDecl:
-      for member in node.members.mitems:
-        assignIdsAndParents(member, currentId)
-    else:
-      # For all other node types, use the visitor pattern
-      visit(node, proc(child: var XLangNode) =
-        if child.id.isSome and child.id.get() != nodeId:  # Don't re-process the current node
-          assignIdsAndParents(child, currentId)
-      )
-
-  assignIdsAndParents(root, none(Uuid))
-  ctx.log("Built node index with " & $ctx.nodeById.len & " nodes")
+proc registerNodeTree*(ctx: TransformContext, node: var XLangNode, parentId: Option[Uuid] = none(Uuid)) =
+  ## Register a newly created node tree (node and all its children) with UUIDs and parent links
+  ## Use this when a transformation creates new nodes to ensure they're properly tracked
+  assignIdsAndParents(node, parentId, ctx)
 
 # Future additions:
 # - Type inference helpers

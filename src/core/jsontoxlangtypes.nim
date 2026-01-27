@@ -52,6 +52,33 @@ proc parseXLangJson*(filePath: string): XLangNode =
             j["enumTypeName"] = %""
           if not j.hasKey("enumFullName"):
             j["enumFullName"] = %""
+
+        # Add property-specific fields for xnkExternal_Property
+        if kindStr == "xnkExternal_Property":
+          if not j.hasKey("extPropVisibility"):
+            j["extPropVisibility"] = %"public"
+          if not j.hasKey("extPropIsStatic"):
+            j["extPropIsStatic"] = %false
+          if not j.hasKey("extPropHasGetter"):
+            j["extPropHasGetter"] = %false
+          if not j.hasKey("extPropHasSetter"):
+            j["extPropHasSetter"] = %false
+
+        # Add method-specific fields for xnkMethodDecl
+        if kindStr == "xnkMethodDecl":
+          if not j.hasKey("receiver"):
+            j["receiver"] = newJNull()
+
+        # Add field-specific fields for xnkFieldDecl
+        if kindStr == "xnkFieldDecl":
+          if not j.hasKey("fieldModifiers"):
+            j["fieldModifiers"] = newJNull()
+
+        # Fix Go type case default - extTypeCaseTypes can be null for default case
+        if kindStr == "xnkExternal_GoTypeCase":
+          if j.hasKey("extTypeCaseTypes") and j["extTypeCaseTypes"].kind == JNull:
+            j["extTypeCaseTypes"] = newJArray()
+
       for key, val in j.mpairs:
         addDefaultsToJson(val)
     elif j.kind == JArray:
