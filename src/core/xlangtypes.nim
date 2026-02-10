@@ -88,6 +88,10 @@ type
     opIs = "istype"                  # is (type check)
     opAs = "as"                      # as (type cast)
     opConcat = "concat"              # string concatenation (when different from +)
+    opSpaceship = "spaceship"        # <=> (three-way comparison, PHP/Ruby/C++)
+    opPowAssign = "powa"             # **= (power assignment)
+    opConcatAssign = "concata"       # .= (string concatenation assignment, PHP)
+    opNullCoalesceAssign = "nullcoalescea"  # ??= (null coalescing assignment, PHP/C#)
 
   UnaryOp* = enum
     # Arithmetic
@@ -257,6 +261,16 @@ type
     # C# 9+ Features
     xnkExternal_Record          # C# record type → lowered to struct/class with value equality
     xnkExternal_RecordWith      # C# with expression → record copy with modifications
+
+    # PHP-specific Features
+    xnkExternal_PhpTrait            # PHP trait → lowered to mixin/includes
+    xnkExternal_PhpTraitUse         # PHP trait use statement (inside class) → lowered to mixin includes
+    xnkExternal_PhpDeclare          # PHP declare directive (strict_types, ticks, encoding)
+    xnkExternal_PhpInlineHtml       # PHP inline HTML sections
+    xnkExternal_PhpHaltCompiler     # PHP __halt_compiler()
+    xnkExternal_PhpErrorSuppress    # PHP @ error suppression operator
+    xnkExternal_PhpArrayAppend      # PHP $arr[] = x (array push)
+    xnkExternal_PhpVariableVariable # PHP $$var (variable variables)
 
 
 
@@ -1073,6 +1087,27 @@ type
       extWithExpression*: XLangNode        # The base record expression to copy from
       extWithInitializer*: XLangNode       # The object initializer with modifications
 
+    # PHP-specific kinds
+    of xnkExternal_PhpTrait:
+      extTraitName*: string
+      extTraitMembers*: seq[XLangNode]
+    of xnkExternal_PhpTraitUse:
+      extTraitUseNames*: seq[string]
+      extTraitUseAdaptations*: seq[XLangNode]  # stored as unknown/metadata nodes for now
+    of xnkExternal_PhpDeclare:
+      extDeclareEntries*: seq[XLangNode]       # stored as metadata entries
+      extDeclareBody*: Option[XLangNode]
+    of xnkExternal_PhpInlineHtml:
+      extHtmlContent*: string
+    of xnkExternal_PhpHaltCompiler:
+      extHaltData*: string
+    of xnkExternal_PhpErrorSuppress:
+      extSuppressedExpr*: XLangNode
+    of xnkExternal_PhpArrayAppend:
+      extAppendTarget*: XLangNode
+    of xnkExternal_PhpVariableVariable:
+      extVarVarExpr*: XLangNode
+
     of xnkUnknown:
       unknownData*: string
     # else: discard
@@ -1294,7 +1329,10 @@ proc `$`*(node: XLangNode): string =
      xnkExternal_GoSelect, xnkExternal_GoCommClause, xnkExternal_GoChannelSend,
       xnkExternal_GoChanType, xnkExternal_GoTypeSwitch, xnkExternal_GoTypeCase,
       xnkExternal_GoVariadic, xnkExternal_GoEmptyInterfaceType, xnkExternal_GoEmptyStructType,
-      xnkInlineStruct, xnkInlineInterface:
+      xnkInlineStruct, xnkInlineInterface,
+      xnkExternal_PhpTrait, xnkExternal_PhpTraitUse, xnkExternal_PhpDeclare,
+      xnkExternal_PhpInlineHtml, xnkExternal_PhpHaltCompiler, xnkExternal_PhpErrorSuppress,
+      xnkExternal_PhpArrayAppend, xnkExternal_PhpVariableVariable:
     discard
     
 
@@ -1329,7 +1367,16 @@ const externalKinds*: set[XLangNodeKind] = {
   xnkExternal_GoTypeSwitch,     # Go type switch
   xnkExternal_GoTypeCase,       # Go type case
   xnkExternal_GoTaglessSwitch,  # Go tagless switch
-  xnkExternal_GoVariadic        # Go variadic type
+  xnkExternal_GoVariadic,       # Go variadic type
+  # PHP-specific
+  xnkExternal_PhpTrait,
+  xnkExternal_PhpTraitUse,
+  xnkExternal_PhpDeclare,
+  xnkExternal_PhpInlineHtml,
+  xnkExternal_PhpHaltCompiler,
+  xnkExternal_PhpErrorSuppress,
+  xnkExternal_PhpArrayAppend,
+  xnkExternal_PhpVariableVariable
 }
 
 proc isExternalKind*(kind: XLangNodeKind): bool =

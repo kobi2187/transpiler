@@ -1,0 +1,453 @@
+module Sample1.php
+| source: php
+| body:
+    declare
+      const strict_types = 1
+    namespace App\Models
+    | body:
+        import App\Contracts\Renderable
+        import App\Traits\HasTimestamps
+        import App\Traits\SoftDeletes
+
+        import App\Enums\Status
+        const APP_VERSION = "1.0.0"
+        ## Base model class demonstrating PHP 8.4 features
+        class BaseModel
+        | kind: class
+        | members:
+            const TABLE_PREFIX: string = "app_"
+            id: string
+            name: string = ""
+            var instanceCount: int32 = 0
+            ctor
+            | params:
+                createdAt: string = ""
+                version: int32 = 1
+            | body:
+                self.id = uniqid()
+self.instanceCountpost++
+
+            dtor
+            | body:
+self.instanceCountpost--
+
+            func getTableName
+            | returns: string
+            | body:
+
+            func getId
+            | returns: string
+            | body:
+                return self.id
+
+        ## User model with modern PHP features
+        class User
+        | kind: class
+        | base: BaseModel, Renderable
+        | members:
+            use HasTimestamps, SoftDeletes
+            | adaptations:
+                # alias: HasTimestamps::touch as touchTimestamp
+                # precedence: SoftDeletes::delete insteadof HasTimestamps
+            func getdisplayName
+            | returns: string
+            | body:
+                return self.firstName ++ " " ++ self.lastName
+
+            func setdisplayName
+            | params:
+                value: string
+            | body:
+                (self.firstName, self.lastName) = explode(" ", value, 2)
+
+
+            email: string
+            age: int32
+            ctor
+            | params:
+                firstName: string
+                lastName: string
+                email: string
+                age: int32
+                roles: array = ["user"]
+            | body:
+parent.__construct()
+                self.email = email
+                self.age = age
+
+            func getTableName
+            | returns: string
+            | body:
+                return self.TABLE_PREFIX ++ "users"
+
+            func toArray
+            | returns: array | false
+            | body:
+                return {"id": self.getId(), "name": self.displayName, "email": self.email, "age": self.age, "roles": self.roles}
+
+            func render
+            | params:
+                component: Renderable & Stringable
+            | returns: string
+            | body:
+                return cast(component/string)
+
+            func findRole
+            | params:
+                name: string
+            | returns: Nullable<string>
+            | body:
+                foreach role in self.roles:
+                  if role is name:
+                    return role
+
+
+                return nil
+
+            static func create
+            | params:
+                args: string
+            | returns: static
+            | body:
+                return static(... args)
+
+            func getRoleMapper
+            | returns: Closure
+            | body:
+                return strtoupper(...)
+
+        concept Cacheable
+        | body:
+x.getCacheKey()
+x.getCacheTtl()
+
+        trait Loggable
+        | members:
+            logs: array = []
+            func log
+            | params:
+                message: string
+                level: string = "info"
+            | returns: void
+            | body:
+                self.logs[] = {"message": message, "level": level, "timestamp": time()}
+
+            func getLogs
+            | returns: array
+            | body:
+                return self.logs
+
+        enum Status
+        | values:
+            sActive = "active"
+            sInactive = "inactive"
+            sPending = "pending"
+            sSuspended = "suspended"
+
+        enum Direction
+        | values:
+            dNorth
+            dSouth
+            dEast
+            dWest
+
+        func demonstrateExpressions
+        | returns: void
+        | body:
+            x = 42
+            y = 3.14
+            name = "world"
+            isValid = true
+            nothing = nil
+            sum = x + y
+            diff = x - y
+            product = x * y
+            quotient = x / y
+            remainder = x % 5
+            power = x ** 2
+            greeting = "Hello, " ++ name ++ "!"
+            bitwiseAnd = x & 255
+            bitwiseOr = x | 15
+            bitwiseXor = x ^ 85
+            bitwiseNot = ~ x
+            shiftLeft = x shl 2
+            shiftRight = x shr 1
+            eq = x == y
+            neq = x != y
+            identical = x is 42
+            notIdentical = x isnot "42"
+            lt = x < y
+            lte = x <= y
+            gt = x > y
+            gte = x >= y
+            spaceship = x <=> y
+            andVar = isValid and x > 0
+            orVar = isValid or x < 0
+            notVar = not isValid
+x += 10
+x -= 5
+x *= 2
+x /= 3
+x %= 7
+x **= 2
+x &= 255
+x |= 1
+x ^= 85
+x <<= 1
+x >>= 2
+greeting .= " More"
+xpost++
+xpost--
+++pre x
+--pre x
+            result = if isValid:
+"yes"
+
+else:
+"no"
+
+            val = name ?: "default"
+            safe = if nothing != None:
+nothing
+
+else:
+"fallback"
+
+nothing ??= "new value"
+            status = sActive
+            label = case status
+| sActive:
+"Active"| sInactive, sSuspended:
+"Disabled"else:
+"Unknown"
+            arr = [1, 2, 3, 4, 5]
+            map = {"a": 1, "b": 2, "c": 3}
+            nested = [[1, 2], [3, 4]]
+            first = arr[0]
+            arr[] = 6
+            merged = [... arr, ... [7, 8, 9]]
+            (a, b, c) = arr
+            (va, vb) = map
+            intVal = cast("42"/int32)
+            floatVal = cast("3.14"/float)
+            strVal = cast(42/string)
+            boolVal = cast(1/bool)
+            arrVal = cast(stdClass()/array)
+            objVal = cast({"name": "test"}/RootObj)
+            interpolated = "Hello " ++ $(name) ++ ", you are " ++ $(x) ++ " years old"
+            heredoc = "This is a heredoc string
+with variable: " ++ $(name)
+            nowdoc = "This is a nowdoc string
+no variable interpolation"
+            user = User("John", "Doe", "john@example.com", 30)
+            isUser = user as User
+            clone = clone(user)
+            userName = if user != None:
+user.displayName
+
+else:
+None
+
+            upper = if if user != None:
+user.displayName
+
+else:
+None
+ != None:
+if user != None:
+user.displayName
+
+else:
+None
+.toUpperCase
+
+else:
+None
+()
+            result = array_slice(arr, offset: 1, length: 3)
+            strlen = strlen(...)
+            mapped = array_map(strtoupper(...), ["a", "b", "c"])
+
+        func demonstrateControlFlow
+        | params:
+            value: mixed
+        | returns: string
+        | body:
+            if value is nil:
+              return "null"
+
+            else:
+              return "other"
+
+
+        func demonstrateLoops
+        | returns: void
+        | body:
+            i = 0
+            while i < 10:
+echo(i)
+ipost++
+
+            j = 0
+            while true:
+echo(j)
+jpost++
+              if not j < 5:
+                break
+
+
+            k = 0
+            while k < 10:
+              if k is 5:
+                continue
+
+              if k is 8:
+                break
+
+echo(k)
+kpost++
+
+
+            items = {"a": 1, "b": 2, "c": 3}
+            foreach (key, value) in items:
+echo($(key) ++ ": " ++ $(value))
+
+            foreach num in [1, 2, 3]:
+echo(num)
+
+
+        func demonstrateErrorHandling
+        | returns: void
+        | body:
+            try:
+              result = riskyOperation()
+
+            catch e: InvalidArgumentException:
+echo("Invalid argument: " ++ e.getMessage())
+
+            catch e: RuntimeException | LogicException:
+echo("Runtime or logic error: " ++ e.getMessage())
+
+            catch e: Throwable:
+echo("Unexpected error: " ++ e.getMessage())
+
+            finally:
+cleanup()
+
+            value = if input != None:
+input
+
+else:
+  raise InvalidArgumentException("Input required")
+
+            file = @fopen("nonexistent.txt", "r")
+
+        func demonstrateClosures
+        | returns: void
+        | body:
+            greet = lambda(name: string) -> string:
+  return "Hello, " ++ $(name) ++ "!"
+
+            prefix = "Dear"
+            formalGreet = lambda(name: string) -> string:
+  return $(prefix) ++ " " ++ $(name)
+
+            double = (x: int32) -> int32 => x * 2
+            multiplier = 3
+            multiply = (x) => x * multiplier
+            numbers = [1, 2, 3, 4, 5]
+            evens = array_filter(numbers, (n) => n % 2 is 0)
+            doubled = array_map((n) => n * 2, numbers)
+            sum = array_reduce(numbers, (carry, n) => carry + n, 0)
+
+        func fibonacci
+        | returns: Generator
+        | body:
+            a = 0
+            b = 1
+            while true:
+              yield a
+              (a, b) = [b, a + b]
+
+
+        func indexedItems
+        | params:
+            items: array
+        | returns: Generator
+        | body:
+            foreach (index, item) in items:
+              yield strtoupper(item)
+
+
+        func delegatingGenerator
+        | returns: Generator
+        | body:
+            yield from [1, 2, 3]
+            yield from fibonacci()
+
+        enum Color
+        | values:
+            cRed = 16711680
+            cGreen = 65280
+            cBlue = 255
+
+        class Shape
+        | kind: class
+        | members:
+            func area
+            | returns: float
+            | body:
+
+            func perimeter
+            | returns: float
+            | body:
+
+            func describe
+            | returns: string
+            | body:
+                return sprintf("%s: area=%.2f, perimeter=%.2f", typeof(static), self.area(), self.perimeter())
+
+        class Circle
+        | kind: class
+        | base: Shape
+        | members:
+            ctor
+            | params:
+                radius: float
+            | body:
+
+            func area
+            | returns: float
+            | body:
+                return M_PI * self.radius ** 2
+
+            func perimeter
+            | returns: float
+            | body:
+                return 2 * M_PI * self.radius
+
+        func demonstrateSwitch
+        | params:
+            day: int32
+        | returns: string
+        | body:
+            match day
+            | 1:
+
+              fallthrough            | 2:
+
+              fallthrough            | 3:
+
+              fallthrough            | 4:
+
+              fallthrough            | 5:
+                return "Weekday"
+
+              fallthrough            | 6:
+
+              fallthrough            | 7:
+                return "Weekend"
+
+              fallthrough            | _:
+                return "Invalid"
+
