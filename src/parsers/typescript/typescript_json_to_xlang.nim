@@ -21,7 +21,10 @@
 
 import json, options, strutils, os, tables
 
+# Forward declarations
 proc convertNode(node: JsonNode): JsonNode
+proc convertType(node: JsonNode): JsonNode
+proc convertParameter(param: JsonNode): JsonNode
 
 proc convertFile(node: JsonNode): JsonNode =
   ## Convert TypeScript SourceFile to XLang xnkFile
@@ -291,25 +294,97 @@ proc convertModuleDecl(node: JsonNode): JsonNode =
     result["namespaceBody"].add(convertNode(node["body"]))
 
 proc convertImportDecl(node: JsonNode): JsonNode =
-  ## Convert TypeScript import to XLang xnkImport
+  ## Convert TypeScript import to XLang xnkImport with rich import structure
   result = %* {
     "kind": "xnkImport",
     "importPath": "",
-    "importAlias": nil
+    "importKind": "ikNamed",  # Default, will be determined
+    "importBindings": [],
+    "importAlias": nil  # Deprecated but kept for compatibility
   }
 
+  # Get module path
   if node.hasKey("moduleSpecifier"):
     result["importPath"] = node["moduleSpecifier"]
 
-  # TypeScript imports are complex (named, default, namespace, etc.)
-  # Encode the import bindings
-  if node.hasKey("importClause"):
-    let clause = node["importClause"]
-    if clause.hasKey("name"):
-      result["importAlias"] = clause["name"]
-    elif clause.hasKey("namedBindings"):
-      # For named imports, may need to store as array or encode in path
-      result["importAlias"] = %* ("named: " & $clause["namedBindings"])
+  # Determine import kind and bindings
+  if not node.hasKey("importClause") or node["importClause"].isNil:
+    # Side-effect import: import "./file"
+    result["importKind"] = %"ikSideEffect"
+    return result
+
+  let clause = node["importClause"]
+  var hasDefault = false
+  var hasNamed = false
+  var hasNamespace = false
+
+  # Check for default import
+  if clause.hasKey("name") and not clause["name"].isNil:
+    hasDefault = true
+    let defaultBinding = %* {
+      "sourceName": "default",
+      "localName": clause["name"].getStr,
+      "isDefault": true
+    }
+    result["importBindings"].add(defaultBinding)
+
+  # Check for named bindings (namespace or named imports)
+  if clause.hasKey("namedBindings") and not clause["namedBindings"].isNil:
+    let bindings = clause["namedBindings"]
+    let bindingsKind = if bindings.hasKey("kind"): bindings["kind"].getStr else: ""
+
+    if bindingsKind == "NamespaceImport":
+      # import * as ns from "mod"
+      hasNamespace = true
+      if bindings.hasKey("name"):
+        result["importAlias"] = bindings["name"]
+        let nsBinding = %* {
+          "sourceName": "*",
+          "localName": bindings["name"].getStr,
+          "isDefault": false
+        }
+        result["importBindings"].add(nsBinding)
+
+    elif bindingsKind == "NamedImports":
+      # import { a, b, c as d } from "mod"
+      hasNamed = true
+      if bindings.hasKey("elements") and bindings["elements"].kind == JArray:
+        for elem in bindings["elements"]:
+          var sourceName = ""
+          var localName = ""
+
+          # Get property name (what we're importing from the module)
+          if elem.hasKey("propertyName"):
+            sourceName = elem["propertyName"].getStr
+          elif elem.hasKey("name"):
+            sourceName = elem["name"].getStr
+
+          # Get local name (what we call it locally)
+          if elem.hasKey("name"):
+            localName = elem["name"].getStr
+
+          # If no propertyName, source and local are the same
+          if sourceName == "":
+            sourceName = localName
+
+          let namedBinding = %* {
+            "sourceName": sourceName,
+            "localName": localName,
+            "isDefault": false
+          }
+          result["importBindings"].add(namedBinding)
+
+  # Determine overall import kind
+  if hasDefault and hasNamed:
+    result["importKind"] = %"ikMixed"
+  elif hasDefault and not hasNamed and not hasNamespace:
+    result["importKind"] = %"ikDefault"
+  elif hasNamespace:
+    result["importKind"] = %"ikNamespace"
+  elif hasNamed:
+    result["importKind"] = %"ikNamed"
+  else:
+    result["importKind"] = %"ikSideEffect"
 
 proc convertExportDecl(node: JsonNode): JsonNode =
   ## Convert TypeScript export to XLang xnkExport
@@ -721,19 +796,80 @@ proc convertArrayLiteralExpr(node: JsonNode): JsonNode =
       result["elements"].add(convertNode(elem))
 
 proc convertObjectLiteralExpr(node: JsonNode): JsonNode =
-  ## Convert TypeScript object literal to XLang xnkDictExpr
+  ## Convert TypeScript object literal to XLang xnkMapLiteral with xnkDictEntry
   result = %* {
-    "kind": "xnkDictExpr",
-    "keys": [],
-    "values": []
+    "kind": "xnkMapLiteral",
+    "entries": []
   }
 
   if node.hasKey("properties") and node["properties"].kind == JArray:
     for prop in node["properties"]:
-      if prop.hasKey("name"):
-        result["keys"].add(convertNode(prop["name"]))
-      if prop.hasKey("initializer"):
-        result["values"].add(convertNode(prop["initializer"]))
+      let propKind = if prop.hasKey("kind"): prop["kind"].getStr else: ""
+
+      case propKind
+      of "PropertyAssignment":
+        # Regular property: key: value
+        let entry = %* {
+          "kind": "xnkDictEntry",
+          "key": %* {"kind": "xnkIdentifier", "identName": ""},
+          "value": %* {"kind": "xnkNoneLit"},
+          "isComputed": false,
+          "isShorthand": false
+        }
+        if prop.hasKey("name"):
+          # Check if computed property name [expr]
+          if prop.hasKey("computed") and prop["computed"].getBool:
+            entry["isComputed"] = %true
+          entry["key"] = convertNode(prop["name"])
+        if prop.hasKey("initializer"):
+          entry["value"] = convertNode(prop["initializer"])
+        result["entries"].add(entry)
+
+      of "ShorthandPropertyAssignment":
+        # Shorthand property: { name } → { name: name }
+        let entry = %* {
+          "kind": "xnkDictEntry",
+          "key": %* {"kind": "xnkIdentifier", "identName": ""},
+          "value": %* {"kind": "xnkIdentifier", "identName": ""},
+          "isComputed": false,
+          "isShorthand": true
+        }
+        if prop.hasKey("name"):
+          let nameNode = convertNode(prop["name"])
+          entry["key"] = nameNode
+          entry["value"] = nameNode  # Same identifier for key and value
+        result["entries"].add(entry)
+
+      of "SpreadAssignment":
+        # Spread in object: { ...other }
+        result["entries"].add(convertSpreadElement(prop))
+
+      of "MethodDeclaration":
+        # Method shorthand: { method() { } }
+        let methodNode = convertMethodDecl(prop)
+        # Store as a property with method value
+        let entry = %* {
+          "kind": "xnkDictEntry",
+          "key": %* {"kind": "xnkIdentifier", "identName": ""},
+          "value": methodNode,
+          "isComputed": false,
+          "isShorthand": false
+        }
+        if prop.hasKey("name"):
+          entry["key"] = convertNode(prop["name"])
+        result["entries"].add(entry)
+
+      else:
+        # Fallback for unknown property types
+        if prop.hasKey("name") and prop.hasKey("initializer"):
+          let entry = %* {
+            "kind": "xnkDictEntry",
+            "key": convertNode(prop["name"]),
+            "value": convertNode(prop["initializer"]),
+            "isComputed": false,
+            "isShorthand": false
+          }
+          result["entries"].add(entry)
 
 proc convertTemplateExpression(node: JsonNode): JsonNode =
   ## Convert TypeScript template string to XLang xnkStringInterpolation
@@ -798,6 +934,241 @@ proc convertAwaitExpression(node: JsonNode): JsonNode =
 
   if node.hasKey("expression"):
     result["awaitExpr"] = convertNode(node["expression"])
+
+proc convertNewExpression(node: JsonNode): JsonNode =
+  ## Convert TypeScript new expression to XLang xnkCallExpr with isConstructor flag
+  result = %* {
+    "kind": "xnkCallExpr",
+    "callee": %* {"kind": "xnkIdentifier", "identName": ""},
+    "args": [],
+    "isConstructor": true
+  }
+
+  if node.hasKey("expression"):
+    result["callee"] = convertNode(node["expression"])
+
+  if node.hasKey("arguments") and node["arguments"].kind == JArray:
+    for arg in node["arguments"]:
+      result["args"].add(convertNode(arg))
+
+  # Type arguments for generic constructors
+  if node.hasKey("typeArguments") and node["typeArguments"].kind == JArray:
+    # Store as metadata - may need XLang extension
+    pass
+
+proc convertSpreadElement(node: JsonNode): JsonNode =
+  ## Convert TypeScript spread element (...expr) to XLang xnkUnaryExpr(opSpread)
+  result = %* {
+    "kind": "xnkUnaryExpr",
+    "unaryOp": "spread",
+    "unaryOperand": %* {"kind": "xnkNoneLit"}
+  }
+
+  if node.hasKey("expression"):
+    result["unaryOperand"] = convertNode(node["expression"])
+
+proc convertDeleteExpression(node: JsonNode): JsonNode =
+  ## Convert TypeScript delete expression to XLang xnkDeleteStmt
+  result = %* {
+    "kind": "xnkDeleteStmt",
+    "deleteTarget": %* {"kind": "xnkIdentifier", "identName": ""}
+  }
+
+  if node.hasKey("expression"):
+    result["deleteTarget"] = convertNode(node["expression"])
+
+proc convertVoidExpression(node: JsonNode): JsonNode =
+  ## Convert TypeScript void expression to XLang xnkDiscardStmt
+  result = %* {
+    "kind": "xnkDiscardStmt",
+    "discardExpr": nil
+  }
+
+  if node.hasKey("expression"):
+    result["discardExpr"] = convertNode(node["expression"])
+
+proc convertNonNullExpression(node: JsonNode): JsonNode =
+  ## Convert TypeScript non-null assertion (expr!) - just unwrap, it's compile-time only
+  if node.hasKey("expression"):
+    result = convertNode(node["expression"])
+  else:
+    result = %* {"kind": "xnkNoneLit"}
+
+proc convertFunctionExpression(node: JsonNode): JsonNode =
+  ## Convert TypeScript function expression to XLang xnkLambdaExpr
+  ## Similar to convertArrowFunction but for function() {} syntax
+  result = %* {
+    "kind": "xnkLambdaExpr",
+    "lambdaParams": [],
+    "lambdaReturnType": nil,
+    "lambdaBody": %* {"kind": "xnkBlockStmt", "blockBody": []}
+  }
+
+  if node.hasKey("parameters") and node["parameters"].kind == JArray:
+    for param in node["parameters"]:
+      result["lambdaParams"].add(convertParameter(param))
+
+  if node.hasKey("type") and not node["type"].isNil:
+    result["lambdaReturnType"] = convertType(node["type"])
+
+  if node.hasKey("body"):
+    result["lambdaBody"] = convertNode(node["body"])
+
+proc convertClassExpression(node: JsonNode): JsonNode =
+  ## Convert TypeScript class expression (anonymous class) to XLang xnkClassDecl
+  result = convertClassDecl(node)
+  # Name might be empty for anonymous classes
+
+proc convertYieldExpression(node: JsonNode): JsonNode =
+  ## Convert TypeScript yield expression to XLang xnkIteratorYield
+  result = %* {
+    "kind": "xnkIteratorYield",
+    "iteratorYieldValue": nil
+  }
+
+  if node.hasKey("expression") and not node["expression"].isNil:
+    result["iteratorYieldValue"] = convertNode(node["expression"])
+
+  # Check for yield* (yield from)
+  if node.hasKey("asteriskToken") and node["asteriskToken"].getBool:
+    result["kind"] = "xnkIteratorDelegate"
+    result["iteratorDelegateExpr"] = result["iteratorYieldValue"]
+    result.delete("iteratorYieldValue")
+
+proc convertObjectBindingPattern(node: JsonNode): JsonNode =
+  ## Convert TypeScript object destructuring to XLang xnkDestructureObj
+  result = %* {
+    "kind": "xnkDestructureObj",
+    "destructObjFields": [],
+    "destructObjSource": %* {"kind": "xnkNoneLit"}
+  }
+
+  if node.hasKey("elements") and node["elements"].kind == JArray:
+    for elem in node["elements"]:
+      if elem.hasKey("name"):
+        let name = if elem["name"].kind == JString: elem["name"].getStr
+                   else: elem["name"]["text"].getStr
+        result["destructObjFields"].add(%name)
+
+proc convertArrayBindingPattern(node: JsonNode): JsonNode =
+  ## Convert TypeScript array destructuring to XLang xnkDestructureArray
+  result = %* {
+    "kind": "xnkDestructureArray",
+    "destructArrayVars": [],
+    "destructArrayRest": nil,
+    "destructArraySource": %* {"kind": "xnkNoneLit"}
+  }
+
+  if node.hasKey("elements") and node["elements"].kind == JArray:
+    for elem in node["elements"]:
+      if elem.kind == JNull or (elem.hasKey("kind") and elem["kind"].getStr == "OmittedExpression"):
+        # Array hole, skip
+        result["destructArrayVars"].add(%"")
+      elif elem.hasKey("dotDotDotToken") and elem["dotDotDotToken"].getBool:
+        # Rest element
+        if elem.hasKey("name"):
+          let name = if elem["name"].kind == JString: elem["name"].getStr
+                     else: elem["name"]["text"].getStr
+          result["destructArrayRest"] = %name
+      elif elem.hasKey("name"):
+        let name = if elem["name"].kind == JString: elem["name"].getStr
+                   else: elem["name"]["text"].getStr
+        result["destructArrayVars"].add(%name)
+
+proc convertConstructor(node: JsonNode): JsonNode =
+  ## Convert TypeScript constructor to XLang xnkConstructorDecl
+  result = %* {
+    "kind": "xnkConstructorDecl",
+    "constructorParams": [],
+    "constructorInitializers": [],
+    "constructorBody": %* {"kind": "xnkBlockStmt", "blockBody": []}
+  }
+
+  if node.hasKey("parameters") and node["parameters"].kind == JArray:
+    for param in node["parameters"]:
+      result["constructorParams"].add(convertParameter(param))
+
+  if node.hasKey("body") and not node["body"].isNil:
+    result["constructorBody"] = convertNode(node["body"])
+
+proc convertGetAccessor(node: JsonNode): JsonNode =
+  ## Convert TypeScript getter to XLang xnkExternal_Property
+  result = %* {
+    "kind": "xnkExternal_Property",
+    "extPropName": "",
+    "extPropType": nil,
+    "extPropGetter": %* {"kind": "xnkBlockStmt", "blockBody": []},
+    "extPropSetter": nil
+  }
+
+  if node.hasKey("name"):
+    result["extPropName"] = node["name"]
+
+  if node.hasKey("type") and not node["type"].isNil:
+    result["extPropType"] = convertType(node["type"])
+
+  if node.hasKey("body") and not node["body"].isNil:
+    result["extPropGetter"] = convertNode(node["body"])
+
+proc convertSetAccessor(node: JsonNode): JsonNode =
+  ## Convert TypeScript setter to XLang xnkExternal_Property
+  result = %* {
+    "kind": "xnkExternal_Property",
+    "extPropName": "",
+    "extPropType": nil,
+    "extPropGetter": nil,
+    "extPropSetter": %* {"kind": "xnkBlockStmt", "blockBody": []}
+  }
+
+  if node.hasKey("name"):
+    result["extPropName"] = node["name"]
+
+  # Setter type comes from parameter
+  if node.hasKey("parameters") and node["parameters"].kind == JArray and node["parameters"].len > 0:
+    let param = node["parameters"][0]
+    if param.hasKey("type") and not param["type"].isNil:
+      result["extPropType"] = convertType(param["type"])
+
+  if node.hasKey("body") and not node["body"].isNil:
+    result["extPropSetter"] = convertNode(node["body"])
+
+proc convertDecorator(node: JsonNode): JsonNode =
+  ## Convert TypeScript decorator to XLang xnkDecorator
+  result = %* {
+    "kind": "xnkDecorator",
+    "decoratorExpr": %* {"kind": "xnkIdentifier", "identName": ""}
+  }
+
+  if node.hasKey("expression"):
+    result["decoratorExpr"] = convertNode(node["expression"])
+
+proc convertExpressionStatement(node: JsonNode): JsonNode =
+  ## Convert TypeScript expression statement to XLang xnkExpressionStmt
+  result = %* {
+    "kind": "xnkExpressionStmt",
+    "expr": %* {"kind": "xnkNoneLit"}
+  }
+
+  if node.hasKey("expression"):
+    result["expr"] = convertNode(node["expression"])
+
+proc convertEmptyStatement(node: JsonNode): JsonNode =
+  ## Convert TypeScript empty statement (;) to XLang xnkEmptyStmt
+  result = %* {"kind": "xnkEmptyStmt"}
+
+proc convertLabeledStatement(node: JsonNode): JsonNode =
+  ## Convert TypeScript labeled statement to XLang xnkLabeledStmt
+  result = %* {
+    "kind": "xnkLabeledStmt",
+    "labelName": "",
+    "labeledStmt": %* {"kind": "xnkEmptyStmt"}
+  }
+
+  if node.hasKey("label"):
+    result["labelName"] = node["label"]
+
+  if node.hasKey("statement"):
+    result["labeledStmt"] = convertNode(node["statement"])
 
 proc convertIdentifier(node: JsonNode): JsonNode =
   ## Convert TypeScript identifier to XLang xnkIdentifier
@@ -1082,10 +1453,15 @@ proc convertNode(node: JsonNode): JsonNode =
     result = convertBreakStmt(node)
   of "xnkContinueStmt", "ContinueStatement":
     result = convertContinueStmt(node)
-  of "xnkEmptyStmt":
-    result = %* {"kind": "xnkEmptyStmt"}
-  of "xnkLabeledStmt":
-    result = convertLabeledStmt(node)
+  # Statements
+  of "ExpressionStatement":
+    result = convertExpressionStatement(node)
+  of "EmptyStatement":
+    result = convertEmptyStatement(node)
+  of "LabeledStatement":
+    result = convertLabeledStatement(node)
+
+  # Expressions
   of "xnkBinaryExpr", "BinaryExpression":
     result = convertBinaryExpr(node)
   of "xnkUnaryExpr", "PrefixUnaryExpression", "PostfixUnaryExpression":
@@ -1094,13 +1470,19 @@ proc convertNode(node: JsonNode): JsonNode =
     result = convertConditionalExpr(node)
   of "xnkCallExpr", "CallExpression":
     result = convertCallExpr(node)
+  of "NewExpression":
+    result = convertNewExpression(node)
   of "xnkMemberAccessExpr", "PropertyAccessExpression":
     result = convertPropertyAccessExpr(node)
   of "xnkIndexExpr", "ElementAccessExpression":
     result = convertElementAccessExpr(node)
   of "xnkLambdaExpr", "ArrowFunction", "FunctionExpression":
     result = convertArrowFunction(node)
-  of "xnkArrayLiteral", "ArrayLiteralExpression":
+  of "FunctionExpression":
+    result = convertFunctionExpression(node)
+  of "ClassExpression":
+    result = convertClassExpression(node)
+  of "ArrayLiteralExpression":
     result = convertArrayLiteralExpr(node)
   of "xnkMapLiteral", "ObjectLiteralExpression":
     result = convertObjectLiteralExpr(node)
@@ -1108,12 +1490,38 @@ proc convertNode(node: JsonNode): JsonNode =
     result = node  # Pass through
   of "TemplateExpression":
     result = convertTemplateExpression(node)
-  of "xnkTypeAssertion", "AsExpression", "TypeAssertionExpression":
+  of "AsExpression", "SatisfiesExpression":
     result = convertAsExpression(node)
   of "xnkTypeOfExpr", "TypeOfExpression":
     result = convertTypeOfExpression(node)
+  of "DeleteExpression":
+    result = convertDeleteExpression(node)
+  of "VoidExpression":
+    result = convertVoidExpression(node)
   of "xnkAwaitExpr", "AwaitExpression":
     result = convertAwaitExpression(node)
+  of "YieldExpression":
+    result = convertYieldExpression(node)
+  of "SpreadElement":
+    result = convertSpreadElement(node)
+  of "NonNullExpression":
+    result = convertNonNullExpression(node)
+
+  # Binding patterns (destructuring)
+  of "ObjectBindingPattern":
+    result = convertObjectBindingPattern(node)
+  of "ArrayBindingPattern":
+    result = convertArrayBindingPattern(node)
+
+  # Class members
+  of "Constructor":
+    result = convertConstructor(node)
+  of "GetAccessor":
+    result = convertGetAccessor(node)
+  of "SetAccessor":
+    result = convertSetAccessor(node)
+  of "Decorator":
+    result = convertDecorator(node)
   of "xnkIteratorYield", "YieldExpression":
     result = convertYieldExpression(node)
   of "xnkThisExpr":
