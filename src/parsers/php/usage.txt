@@ -1,0 +1,172 @@
+PHP to XLang JSON Parser - Usage Guide
+=======================================
+
+OVERVIEW
+--------
+php_to_xlang.php parses PHP 8.4 source files using the nikic/PHP-Parser v5.7
+library and produces XLang JSON (.xljs) intermediate representation files,
+which can then be fed into the transpiler pipeline for code generation.
+
+The parser is written in PHP itself, following the convention that each
+source-language parser is written in its own language (e.g. the C# parser
+is written in C#).
+
+
+PREREQUISITES
+-------------
+  - PHP 8.1 or later (PHP 8.4 recommended)
+  - Composer (https://getcomposer.org)
+
+Install dependencies:
+
+    cd src/parsers/php
+    composer install
+
+
+USAGE
+-----
+
+Single file (output to stdout):
+
+    php src/parsers/php/php_to_xlang.php path/to/File.php
+
+    The xljs JSON is printed to stdout.
+    Redirect to save:
+
+    php src/parsers/php/php_to_xlang.php File.php > File.xljs
+
+Batch directory (writes .xljs files alongside each .php file):
+
+    php src/parsers/php/php_to_xlang.php path/to/directory/
+
+    Recursively finds all *.php files in the directory, parses each one,
+    and writes the corresponding .xljs file next to the source file.
+    Progress and a summary report are printed to stdout.
+
+
+OUTPUT FORMAT
+-------------
+The parser produces a JSON object with the following top-level structure:
+
+    {
+      "kind": "xnkFile",
+      "fileName": "File.php",
+      "fileBody": [ ... ]   // Array of top-level XLang nodes
+    }
+
+Each node is a JSON object with at minimum a "kind" field corresponding
+to an XLangNodeKind value (e.g. "xnkClassDecl", "xnkIfStmt", etc.).
+
+See FIELD_MAPPING.md for a complete mapping of PHP constructs to XLang
+node kinds and field names.
+
+
+FEEDING INTO THE TRANSPILER
+---------------------------
+After generating .xljs files, feed them to the transpiler:
+
+    ./main load path/to/File.xljs
+
+Or process an entire batch directory:
+
+    ./main loaddir path/to/directory/
+
+
+BATCH SUMMARY REPORT
+---------------------
+When processing a directory, the parser prints a summary including:
+
+  - Total files found and processed
+  - Success/error counts
+  - Any unknown/unhandled constructs with occurrence counts
+  - Detailed error samples (file, line, source snippet) for the top
+    unknown constructs
+
+This report is useful for identifying missing construct coverage.
+
+
+SUPPORTED PHP CONSTRUCTS
+-------------------------
+The parser handles all modern PHP 8.4 constructs, including:
+
+  Declarations:
+    - Namespaces, use/imports (classes, functions, constants)
+    - Classes (abstract, final, readonly), interfaces, enums (pure, backed)
+    - Traits, trait use with adaptations (alias, precedence)
+    - Functions, closures, arrow functions, methods
+    - Constants (class-level and global), properties
+    - Constructor promotion (PHP 8.0+)
+    - Property hooks (PHP 8.4)
+    - Asymmetric visibility (PHP 8.4)
+
+  Statements:
+    - If/elseif/else, switch/case/default, match expressions
+    - While, do-while, for, foreach
+    - Try/catch/finally (union catch types)
+    - Return, break, continue (with levels), goto, labels
+    - Echo, global, static variables, unset, declare
+    - Throw (as statement and expression)
+
+  Expressions:
+    - All binary operators (+, -, *, /, %, **, ., ==, ===, !=, !==,
+      <, >, <=, >=, <=>, &, |, ^, <<, >>, &&, ||, ??)
+    - All unary operators (-, +, ~, !, @, ++/--)
+    - All compound assignments (+=, -=, *=, /=, %=, **=, .=, &=, |=,
+      ^=, <<=, >>=, ??=)
+    - Ternary, elvis (?:), null coalescing (??)
+    - Function/method/static calls, new, clone, instanceof
+    - Property access, static property access, null-safe access (?->)
+    - Array access, array creation, list() destructuring
+    - String interpolation, heredoc/nowdoc
+    - Yield, yield from (generators)
+    - Named arguments
+    - First-class callable syntax (myFunc(...))
+    - Spread operator (...$args)
+    - Type casting (int, float, string, bool, array, object, unset)
+    - Error suppression (@expr)
+
+  Types:
+    - Named types (int, string, float, bool, array, object, mixed, etc.)
+    - Nullable types (?Type)
+    - Union types (Type1|Type2)
+    - Intersection types (Type1&Type2)
+    - void, never, self, parent, static return types
+
+  PHP-Specific External Kinds:
+    These use xnkExternal_* kinds because they have no direct xlang
+    equivalent and require transform passes to lower:
+
+    - xnkExternal_PhpTrait         Trait declarations
+    - xnkExternal_PhpTraitUse      Trait use statements
+    - xnkExternal_PhpDeclare       declare() directives
+    - xnkExternal_PhpInlineHtml    Inline HTML outside <?php ?>
+    - xnkExternal_PhpHaltCompiler  __halt_compiler()
+    - xnkExternal_PhpErrorSuppress @expression (error suppression)
+    - xnkExternal_PhpArrayAppend   $arr[] = value
+    - xnkExternal_PhpVariableVariable  $$var (variable variables)
+
+
+EXAMPLES
+--------
+
+Parse a single file:
+
+    $ php src/parsers/php/php_to_xlang.php test_php_batch/Sample1.php > test_php_batch/Sample1.xljs
+
+Batch process a directory:
+
+    $ php src/parsers/php/php_to_xlang.php test_php_batch/
+    Found 3 PHP files to process in: test_php_batch/
+
+    Processing: test_php_batch/Sample1.php
+    Processing: test_php_batch/Sample2.php
+    Processing: test_php_batch/Sample3.php
+
+    === BATCH PROCESSING SUMMARY ===
+    Total files: 3
+    Successfully processed: 3
+    Errors: 0
+
+Load into transpiler:
+
+    $ ./main load test_php_batch/Sample1.xljs

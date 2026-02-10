@@ -1,0 +1,89 @@
+=== PHPT Extractor & Parser Error Reporter ===
+
+Source:  /home/user/transpiler/php-src
+Output:  /home/user/transpiler/src/parsers/php/extracted_tests
+
+Phase 1: Extracting PHP code from .phpt files...
+  Found 21554 .phpt files
+  Extracted: 21349
+  Skipped (no --FILE-- or no PHP): 205
+
+Phase 2: Parsing extracted files through php_to_xlang...
+  Progress: 1067/21349 (5%)
+  Progress: 2134/21349 (10%)
+  Progress: 3201/21349 (15%)
+  Progress: 4268/21349 (20%)
+  Progress: 5335/21349 (25%)
+  Progress: 6402/21349 (30%)
+  Progress: 7469/21349 (35%)
+  Progress: 8536/21349 (40%)
+  Progress: 9603/21349 (45%)
+  Progress: 10670/21349 (50%)
+  Progress: 11737/21349 (55%)
+  Progress: 12804/21349 (60%)
+  Progress: 13871/21349 (65%)
+  Progress: 14938/21349 (70%)
+  Progress: 16005/21349 (75%)
+  Progress: 17072/21349 (80%)
+  Progress: 18139/21349 (85%)
+  Progress: 19206/21349 (90%)
+  Progress: 20273/21349 (95%)
+  Progress: 21340/21349 (100%)
+  Progress: 21349/21349 (100%)
+
+========================================================================
+                    PARSER COVERAGE REPORT
+========================================================================
+
+--- Overview ---
+  .phpt files found:         21554
+  Extracted to .php:         21349
+  Skipped (no PHP code):       205
+
+  PHP parse successes:       21168
+  PHP parse errors:            181
+  XLang convert successes:   21168
+  XLang convert errors:          0
+
+  Conversion success rate:  100%
+  Total unknown nodes:           0
+  Distinct unknown kinds:        0
+
+------------------------------------------------------------------------
+PHP PARSE ERRORS (181 files - expected for intentional syntax error tests)
+------------------------------------------------------------------------
+  ERROR PATTERN                                                          COUNT
+  ---------------------------------------------------------------------- ------
+  Syntax error, unexpected T_STRING on line N                               12
+  Invalid indentation - tabs and spaces cannot be mixed on line N            9
+  Multiple access type modifiers are not allowed on line N                   6
+  Syntax error, unexpected T_EXIT, expecting T_STRING on line N              6
+  Invalid body indentation level (expecting an indentation level of at least 1) on line N     6
+  Cannot use the final modifier on an abstract class member on line N        5
+  Cannot use empty array elements in arrays on line N                        5
+  Syntax error, unexpected ',', expecting '}' on line N                      4
+  Syntax error, unexpected EOF on line N                                     4
+  Namespace declaration statement has to be the very first statement in the script on line N     3
+  Syntax error, unexpected T_NAME_QUALIFIED on line N                        3
+  Arrow functions on the right hand side of |> must be parenthesized on line N     3
+  Multiple readonly modifiers are not allowed on line N                      3
+  Multiple final modifiers are not allowed on line N                         2
+  Syntax error, unexpected T_STATIC, expecting T_VARIABLE on line N          2
+  Cannot use 'self' as class name as it is reserved on line N                2
+  Cannot use 'parent' as class name as it is reserved on line N              2
+  Syntax error, unexpected T_DOUBLE_ARROW, expecting '[' or T_OBJECT_OPERATOR or T_NULLSAFE_OBJECT_OPE     2
+  Syntax error, unexpected ':' on line N                                     2
+  Syntax error, unexpected ',' on line N                                     2
+  Syntax error, unexpected ',', expecting ')' on line N                      2
+  Syntax error, unexpected ',', expecting T_STRING or T_FUNCTION or T_CONST or T_NAME_QUALIFIED on lin     2
+  Invalid body indentation level (expecting an indentation level of at least 5) on line N     2
+  Syntax error, unexpected T_ENCAPSED_AND_WHITESPACE, expecting '-' or T_STRING or T_VARIABLE or T_NUM     2
+  Cannot use 'static' as interface name as it is reserved on line N          2
+  Syntax error, unexpected T_STATIC, expecting T_STRING on line N            2
+  Namespace declarations cannot be nested on line N                          2
+  Syntax error, unexpected '=' on line N                                     2
+  Syntax error, unexpected T_STRING, expecting T_VARIABLE or '$' on line N     2
+  Syntax error, unexpected T_OBJECT_OPERATOR, expecting ';' on line N        2
+
+  *** ALL CONSTRUCTS HANDLED - NO GAPS DETECTED ***
+
