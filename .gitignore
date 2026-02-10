@@ -53,6 +53,9 @@ transpiler_output/
 *.swo
 *~
 
+# External repos (cloned for testing)
+php-src/
+
 # OS
 .DS_Store
 Thumbs.db
