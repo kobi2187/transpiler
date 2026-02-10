@@ -81,6 +81,10 @@ proc binaryOpStr(op: BinaryOp): string =
   of opIs: "istype"
   of opAs: "as"
   of opConcat: "++"
+  of opSpaceship: "<=>"
+  of opPowAssign: "**="
+  of opConcatAssign: ".="
+  of opNullCoalesceAssign: "??="
 
 proc unaryOpStr(op: UnaryOp): string =
   case op
@@ -1245,6 +1249,43 @@ proc printNode(node: XLangNode, indent: int): string =
 
   of xnkInlineInterface:
     result = i & "inline interface(" & $node.inlineMembers.len & " methods)"
+
+  # PHP-specific kinds
+  of xnkExternal_PhpTrait:
+    result = i & "trait " & node.extTraitName & "\n"
+    if node.extTraitMembers.len > 0:
+      result &= i & "| members:\n"
+      result &= seqNodes(node.extTraitMembers, indent + 2)
+
+  of xnkExternal_PhpTraitUse:
+    result = i & "use "
+    result &= node.extTraitUseNames.join(", ") & "\n"
+    if node.extTraitUseAdaptations.len > 0:
+      result &= i & "| adaptations:\n"
+      result &= seqNodes(node.extTraitUseAdaptations, indent + 2)
+
+  of xnkExternal_PhpDeclare:
+    result = i & "declare\n"
+    if node.extDeclareEntries.len > 0:
+      result &= seqNodes(node.extDeclareEntries, indent + 1)
+    if node.extDeclareBody.isSome:
+      result &= i & "| body:\n"
+      result &= printNode(node.extDeclareBody.get, indent + 2)
+
+  of xnkExternal_PhpInlineHtml:
+    result = i & "# inline html: " & node.extHtmlContent[0 ..< min(50, node.extHtmlContent.len)]
+
+  of xnkExternal_PhpHaltCompiler:
+    result = i & "# __halt_compiler()"
+
+  of xnkExternal_PhpErrorSuppress:
+    result = i & "@" & printNode(node.extSuppressedExpr, 0)
+
+  of xnkExternal_PhpArrayAppend:
+    result = printNode(node.extAppendTarget, 0) & "[]"
+
+  of xnkExternal_PhpVariableVariable:
+    result = i & "$$" & printNode(node.extVarVarExpr, 0)
 
   of xnkUnknown:
     result = i & "# unknown: " & node.unknownData

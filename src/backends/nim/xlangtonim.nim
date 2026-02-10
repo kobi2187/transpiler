@@ -1113,6 +1113,10 @@ proc binaryOpToNim(op: BinaryOp): string =
   of opIs: "is"
   of opAs: "as"
   of opConcat: "&"
+  of opSpaceship: "cmp"
+  of opPowAssign: "**="   # Will need special handling via transform
+  of opConcatAssign: "&="  # Nim &= for string concat assignment
+  of opNullCoalesceAssign: "??="  # Will need transform pass
 
 proc unaryOpToNim(op: UnaryOp): string =
   ## Map semantic unary operator to Nim syntax
